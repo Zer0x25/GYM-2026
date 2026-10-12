@@ -79,6 +79,18 @@ export function createAuth(opts: AuthOptions): GymAuth {
       // createUser), which is a server-side call, not the public endpoint.
       disableSignUp: true,
     },
+    // CSRF allow-list of browser origins allowed to call /api/auth/*.
+    // In dev the Vite SPA runs on :5173 and proxies /api/* to the API, so the
+    // browser Origin header is the SPA's — it must be trusted explicitly.
+    // In production both are same-origin behind the proxy and the env var
+    // APP_ORIGIN (default: the API's own baseURL) covers it.
+    trustedOrigins: (
+      process.env.TRUSTED_ORIGINS ??
+      "http://localhost:5173,http://localhost:3000"
+    )
+      .split(",")
+      .map((o) => o.trim())
+      .filter(Boolean),
     session: {
       expiresIn: 60 * 60 * sessionTtlHours,
       updateAge: 60 * 60,

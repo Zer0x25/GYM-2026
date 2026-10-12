@@ -15,11 +15,12 @@
 
 ## Unidad activa
 
-- 002 · Auth, tenant y roles + socios y permisos (specs/002-auth-tenant-socios.md, Tier 1) — **implementada y verificada; pendiente de revisión humana del usuario antes de cerrar**. Gate completo en verde (lint, typecheck, build, 22 tests: 14 unit + 8 integración contra Postgres real). Commit local `edfc8fa` sin push.
-- Verificado por CA: CA-1/CA-2 (sesión con org+role desde datos almacenados; cross-tenant 404 sin fuga), CA-3 (listado/búsqueda filtrados por tenant; organizationId del body ignorado), CA-4 (socio edita solo su contacto; ajeno → FORBIDDEN), CA-8 (`grep -ri sauna` en código: 0).
-- Pendiente de esta unidad: rutas HTTP (POST /api/v1/members, GET /api/v1/members, /auth/session) y pantallas de login/panel/portal en apps/web — el servicio, sesión y reglas de permiso están hechos y probados; el cableado fino de rutas+UI es el remanente.
+- 002 · Auth, tenant y roles + socios y permisos (specs/002-auth-tenant-socios.md, Tier 1) — **API + UI implementadas y verificadas; pendiente de revisión humana del usuario antes de cerrar**. Gate completo en verde (lint, typecheck, build; 20 unit + 8 integración contra Postgres real). Commit local `1c09224` sin push.
+- Verificado por CA: CA-1/CA-2 (sesión con org+role desde datos almacenados; cross-tenant 404 sin fuga), CA-3 (listado/búsqueda filtrados por tenant; organizationId del body ignorado), CA-4 (socio edita solo su contacto; ajeno → FORBIDDEN), CA-6 (sign-out invalida sesión en servidor → 401), CA-8 (`grep -ri sauna` en código: 0).
+- Evidencia de ejecución real: flujo end-to-end vía HTTP (login → session → listado → alta socio → logout → 401) verificado con curl contra Postgres real, tanto en el origen de la API (:3000) como vía proxy de Vite (:5173, origin confiable vía `trustedOrigins`).
+- UI en `apps/web`: login (email+password), panel de socios (listado filtrado por tenant + alta), portal «Mi perfil» (socio ve/edita solo su contacto). Cliente API con cookies httpOnly; guards de rol (UX; el API re-valida). Proxy `/api/*` → :3000 en dev.
+- Pendiente de esta unidad: revisión humana Tier 1 (definir identidad/aislamiento/permisos afecta todos los módulos siguientes).
 - Siguiente paso (Entrega 2): planes/períodos/beneficios + pagos manuales/validación + caja/QR.
-
 ## Pendientes críticos (resolver antes del piloto real G2)
 
 - Parámetro de permiso offline P-09.3.1b (duración exacta y verificación; 72 h es valor de trabajo derivado, no aprobado).

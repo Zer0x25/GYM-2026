@@ -8,7 +8,7 @@
  * ever in v1.0 (MVP-SAUNA-01/B).
  */
 import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
-import { toNodeHandler } from "better-auth/node";
+import { eq } from "drizzle-orm";
 import { organizations } from "@gym/db";
 import type { Database } from "@gym/db";
 import { CreateMemberRequest, CreateOrganizationRequest, SessionResponse } from "@gym/contracts";
@@ -89,12 +89,48 @@ export async function buildServer(opts: AppOptions) {
 
   // --- Better Auth handler (sign-in, sign-out, session endpoints) ----------
   if (opts.auth) {
-    // Better Auth's handler delegates the /api/auth/* surface (sign-in/email,
-    // sign-out, session). After a sign-out, its session lookup returns null,
-    // so our own /api/v1 routes correctly answer 401 for the same cookie.
+    // Better Auth's handler works on the WHATWG Request API. Fastify's raw
+    // Node req/res are NOT WHATWG streams — delegating via toNodeHandler
+    // loses the body (the sign-in request arrives with body: undefined and
+    // Better Auth answers 400 VALIDATION_ERROR). So we bridge manually:
+    // build a native Request, call auth.handler, and stream the Response back.
     app.all("/api/auth/*", async (req: FastifyRequest, reply: FastifyReply) => {
-      await toNodeHandler(opts.auth!)(req.raw, reply.raw);
-      reply.hijack();
+      const url = new URL(req.url, `http://${req.headers.host ?? "localhost"}`);
+      const headers = new Headers();
+      for (const [key, value] of Object.entries(req.headers)) {
+        if (value === undefined) continue;
+        headers.set(key, Array.isArray(value) ? value.join(", ") : String(value));
+      }
+      const init: RequestInit = {
+        method: req.method,
+        headers,
+        redirect: "manual",
+      };
+      // Only GET/HEAD have no body.
+      if (req.method !== "GET" && req.method !== "HEAD") {
+        // Re-serialize the already-parsed body when present; fall back to the
+        // raw stream otherwise (e.g. multipart — not used by this app).
+        if (req.body !== undefined && req.body !== null) {
+          init.body = JSON.stringify(req.body);
+          if (!headers.has("content-type")) headers.set("content-type", "application/json");
+        } else {
+          const chunks: Buffer[] = [];
+          for await (const chunk of req.raw) chunks.push(chunk as Buffer);
+          const buf = Buffer.concat(chunks);
+          if (buf.length > 0) init.body = buf;
+        }
+      }
+      const nativeReq = new Request(url.toString(), init);
+      const res = await opts.auth!.handler(nativeReq);
+
+      reply.status(res.status);
+      res.headers.forEach((value, key) => {
+        // Skip hop-by-hop / encoding headers Fastify owns.
+        if (key.toLowerCase() === "content-encoding") return;
+        void reply.header(key, value);
+      });
+      const text = await res.text();
+      void reply.send(text);
     });
   }
 
@@ -150,9 +186,13 @@ export async function buildServer(opts: AppOptions) {
     if (!req.session) {
       return reply.status(401).send(toErrorResponse(new AppError("UNAUTHENTICATED", "Se requiere sesión")));
     }
+    const [org] = await opts.db
+      .select({ id: organizations.id, name: organizations.name })
+      .from(organizations)
+      .where(eq(organizations.id, req.session.organizationId));
     const body = SessionResponse.parse({
       user: { id: req.session.accountId, email: req.session.email, name: req.session.email },
-      organization: { id: req.session.organizationId, name: req.session.organizationId },
+      organization: org ?? { id: req.session.organizationId, name: req.session.organizationId },
       role: req.session.role,
     });
     return reply.send({ data: body });
