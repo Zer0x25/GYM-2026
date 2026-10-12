@@ -10,10 +10,27 @@
  *   admin:   admin@pilot.cl   / SuperSecret123!   (role admin)
  *   socio:   socio@pilot.cl   / SuperSecret123!   (role socio)
  *   miembro: "Miembro Sin Cuenta" (member without login)
+ *
+ * Entrega 2 demo data (money flows for human review):
+ *   - 2 plans (Mensual $30.000 / Trimestral $80.000)
+ *   - memberships in each state: pending_payment, active, expired
+ *   - an OPEN cash session (opening $20.000) so payments can be validated
+ *   - 2 provisional payments (awaiting admin decision) + 1 validated
  */
 import "dotenv/config";
 import { and, eq } from "drizzle-orm";
-import { createDb, identityAccounts, members, organizations, staffAssignments } from "@gym/db";
+import {
+  cashMovements,
+  cashSessions,
+  createDb,
+  identityAccounts,
+  members,
+  memberships,
+  organizations,
+  payments,
+  plans,
+  staffAssignments,
+} from "@gym/db";
 import { createAuth } from "./auth.js";
 
 const log = (msg: string) => {
@@ -100,11 +117,164 @@ async function main() {
     log("  miembro sin cuenta creado");
   }
 
+  await seedEntrega2(org.id, adminId);
+
   log("\nSeed listo. Credenciales de desarrollo (NO produccion):");
   log(`  org:   ${ORG_NAME}`);
   log(`  admin: ${DEV_ADMIN.email} / ${DEV_ADMIN.password}`);
   log(`  socio: ${DEV_SOCIO.email} / ${DEV_SOCIO.password}`);
   process.exit(0);
+}
+
+/**
+ * Entrega 2 demo data: plans, memberships in each state, an open cash
+ * session, and payments awaiting admin decision. Idempotent so re-running
+ * never duplicates money.
+ */
+async function seedEntrega2(orgId: string, adminId: string) {
+  // --- Plans (idempotent by name) -------------------------------------------
+  const planDefs = [
+    { name: "Mensual", priceCents: 30000, durationDays: 30, coverage: "unlimited" as const },
+    { name: "Trimestral", priceCents: 80000, durationDays: 90, coverage: "unlimited" as const },
+  ];
+  const planIds: Record<string, string> = {};
+  for (const p of planDefs) {
+    let [row] = await db.select().from(plans).where(and(eq(plans.organizationId, orgId), eq(plans.name, p.name)));
+    if (!row) {
+      [row] = await db.insert(plans).values({ organizationId: orgId, ...p }).returning();
+      log(`  plan creado: ${p.name}`);
+    }
+    planIds[p.name] = row!.id;
+  }
+
+  // --- Members ---------------------------------------------------------------
+  const allMembers = await db.select().from(members).where(eq(members.organizationId, orgId));
+  const socio = allMembers.find((m) => m.contactEmail === DEV_SOCIO.email) ?? allMembers[0];
+  const plain = allMembers.find((m) => m.fullName === "Miembro Sin Cuenta");
+  if (!socio) throw new Error("No hay miembros para la demo de membresías");
+
+  // --- Membership in each state ----------------------------------------------
+  const now = new Date();
+  const DAY = 24 * 60 * 60 * 1000;
+
+  // active: valid window now.
+  let [active] = await db
+    .select()
+    .from(memberships)
+    .where(and(eq(memberships.organizationId, orgId), eq(memberships.planId, planIds["Mensual"]!)));
+  if (!active) {
+    [active] = await db
+      .insert(memberships)
+      .values({
+        organizationId: orgId,
+        memberId: socio.id,
+        planId: planIds["Mensual"]!,
+        startAt: new Date(now.getTime() - 5 * DAY),
+        endAt: new Date(now.getTime() + 25 * DAY),
+      })
+      .returning();
+    log("  membresia activa creada (socio piloto)");
+  }
+
+  // pending_payment: a second member, no validated payment yet.
+  let pendingMembershipId: string | null = null;
+  if (plain) {
+    const [pending] = await db
+      .select()
+      .from(memberships)
+      .where(and(eq(memberships.organizationId, orgId), eq(memberships.memberId, plain.id)));
+    if (!pending) {
+      const [created] = await db
+        .insert(memberships)
+        .values({
+          organizationId: orgId,
+          memberId: plain.id,
+          planId: planIds["Trimestral"]!,
+          // startAt/endAt stay null until the first validated payment.
+        })
+        .returning();
+      pendingMembershipId = created!.id;
+      log("  membresia pendiente de pago creada (miembro sin cuenta)");
+    } else {
+      pendingMembershipId = pending.id;
+    }
+  }
+
+  // --- Open cash session (so provisional payments can be validated) ----------
+  let [session] = await db
+    .select()
+    .from(cashSessions)
+    .where(and(eq(cashSessions.organizationId, orgId), eq(cashSessions.state, "open")));
+  if (!session) {
+    [session] = await db
+      .insert(cashSessions)
+      .values({ organizationId: orgId, openedBy: adminId, state: "open", openingCents: 20000 })
+      .returning();
+    log("  turno de caja abierto (apertura $20.000)");
+  }
+
+  // --- Payments ---------------------------------------------------------------
+  const existing = await db.select().from(payments).where(eq(payments.organizationId, orgId));
+  if (existing.length === 0) {
+    // One validated payment (already confirmed, generates the cash movement).
+    const [validated] = await db
+      .insert(payments)
+      .values({
+        organizationId: orgId,
+        memberId: socio.id,
+        membershipId: active!.id,
+        planId: planIds["Mensual"]!,
+        amountCents: 30000,
+        method: "cash",
+        state: "validated",
+        registeredBy: adminId,
+        decidedBy: adminId,
+        decidedAt: now,
+      })
+      .returning();
+    log("  pago validado de demo creado (membresia activa)");
+    // Its cash movement — the ONLY place money lands.
+    const [existingMovement] = await db
+      .select()
+      .from(cashMovements)
+      .where(eq(cashMovements.paymentId, validated!.id));
+    if (!existingMovement) {
+      await db.insert(cashMovements).values({
+        organizationId: orgId,
+        sessionId: session!.id,
+        paymentId: validated!.id,
+        type: "income",
+        method: "cash",
+        amountCents: 30000,
+      });
+    }
+    // Two provisional payments awaiting admin decision (registered by admin,
+    // so a DIFFERENT admin must decide them — separation of functions).
+    await db.insert(payments).values([
+      {
+        organizationId: orgId,
+        memberId: socio.id,
+        membershipId: active!.id,
+        planId: planIds["Mensual"]!,
+        amountCents: 30000,
+        method: "transfer",
+        reference: "TRX-DEMO-001",
+        state: "provisional",
+        registeredBy: adminId,
+      },
+      {
+        organizationId: orgId,
+        memberId: plain?.id ?? socio.id,
+        membershipId: pendingMembershipId ?? active!.id,
+        planId: planIds["Trimestral"]!,
+        amountCents: 80000,
+        method: "cash",
+        state: "provisional",
+        registeredBy: adminId,
+      },
+    ]);
+    log("  2 pagos provisionales creados (esperan decision de admin)");
+  }
 }
 
 main().catch((err) => {

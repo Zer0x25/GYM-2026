@@ -35,6 +35,42 @@ Credenciales de desarrollo sembradas (ficticias, NO producción):
 
 Además crea la organización «Gimnasio Piloto» y un miembro sin cuenta.
 
+### Datos de demo de la Entrega 2 (dinero)
+
+`pnpm seed:dev` además siembra (idempotente, sin duplicar dinero):
+
+- **Planes:** Mensual $30.000 (30 días) y Trimestral $80.000 (90 días).
+- **Membresías en cada estado:** una `active` (socio piloto), una `pending_payment`
+  (miembro sin cuenta, sin ventana hasta validar el primer pago).
+- **Turno de caja abierto** (apertura $20.000) para que los pagos provisionales
+  puedan validarse.
+- **Pagos:** 1 validado (con su movimiento de caja) + 2 provisionales esperando
+  decisión. Los provisionales están registrados por el admin, así que **otro
+  admin distinto debe validarlos** (separación de funciones, SPEC:PAY-02).
+
+### Flujo de dinero para probar a mano (con la API en :3000)
+
+```sh
+# 1) login y guardar cookie
+curl -s -c /tmp/cj.txt -X POST http://localhost:3000/api/auth/sign-in/email \
+  -H "Content-Type: application/json" -H "Origin: http://localhost:3000" \
+  -d '{"email":"admin@pilot.cl","password":"SuperSecret123!"}'
+C="-b /tmp/cj.txt -H Origin:http://localhost:3000"
+
+# 2) ver planes, membresías (estado derivado), turno y pagos provisionales
+curl -s $C http://localhost:3000/api/v1/plans
+curl -s $C http://localhost:3000/api/v1/memberships
+curl -s $C http://localhost:3000/api/v1/cash/sessions/current
+curl -s $C "http://localhost:3000/api/v1/payments?state=provisional"
+
+# 3) el admin NO puede validar su propio registro → 403 (esperado)
+curl -s $C -X POST http://localhost:3000/api/v1/payments/<id>/validate
+```
+
+Para completar la validación, creá un **segundo admin** (`POST /api/v1/staff`,
+rol admin) y validá con su cookie: el pago pasa a `validated`, la membresía a
+`active` y se crea el movimiento de caja. Sin turno abierto, validar → 409.
+
 Pruebas de integración de `apps/api` (opcionales, contra Postgres real):
 
 ```sh

@@ -92,6 +92,74 @@ Respuesta: `{ "data": { "id", "organizationId", "fullName", "contactEmail", "cre
 Errores: 401 sin sesión; 403 rol insuficiente o socio sobre ajeno;
 404 recurso inexistente o de otro tenant; 400 validación.
 
+## Plans (Entrega 2)
+
+| Método y ruta | Roles permitidos | Notas |
+|---|---|---|
+| `GET /api/v1/plans` | admin, recepcion, instructor | Listado de planes activos del tenant |
+| `POST /api/v1/plans` | admin | Crear plan |
+| `GET /api/v1/plans/:id` | admin, recepcion, instructor | Detalle |
+
+Request `CreatePlanRequest`: `{ "name", "priceCents", "durationDays", "coverage": "none|unlimited|limited" }`
+Dinero en **centavos CLP enteros** (sin decimales). Respuesta `201` → `PlanDetail`.
+
+## Memberships (Entrega 2)
+
+| Método y ruta | Roles permitidos | Notas |
+|---|---|---|
+| `POST /api/v1/memberships` | admin, recepcion | Asigna un plan a un socio (membresía) |
+| `GET /api/v1/memberships` | admin, recepcion, instructor | Listado con estado derivado |
+| `GET /api/v1/memberships/mine` | socio | Solo las propias |
+| `GET /api/v1/memberships/:id` | admin, recepcion, instructor, socio | Socio solo la propia (otras → 404) |
+
+Request `CreateMembershipRequest`: `{ "memberId", "planId" }`.
+La membresía nace **sin ventana de vigencia** (`state: "pending_payment"`); la ventana se
+abre con el **primer pago validado**. El `state` es **derivado** de los pagos validados en
+cada lectura: `pending_payment` (sin ventana) · `active` (vigente hoy) · `expired` (fin pasado).
+La renovación extiende desde el fin previo (sin huecos).
+
+## Payments (Entrega 2 — REQ-2)
+
+| Método y ruta | Roles permitidos | Notas |
+|---|---|---|
+| `POST /api/v1/payments` | admin, recepcion | Registra un pago **provisional** |
+| `GET /api/v1/payments?state=` | admin, recepcion | Listado; `state` = provisional\|validated\|rejected |
+| `GET /api/v1/payments/:id` | admin, recepcion | Detalle |
+| `POST /api/v1/payments/:id/validate` | **admin** | Valida: otorga derechos + crea movimiento de caja |
+| `POST /api/v1/payments/:id/reject` | **admin** | Rechaza (requiere `reason`) |
+
+Request `POST /payments`: `{ "membershipId", "amountCents", "method": "cash|transfer", "reference"? }`.
+Una `transfer` **exige** `reference` (400 si falta).
+
+Invariantes verificadas (backend autoridad):
+- El pago registrado es **provisional y NO otorga cobertura** hasta validación humana (SPEC:PAY-01).
+- **Separación de funciones (SPEC:PAY-02):** solo `admin` decide, y **nunca** un pago que él
+  mismo registró (403).
+- El pago **validado es inmutable** y el estado es **terminal**: re-validar o validar un
+  rechazado → 409.
+- La validación crea el **movimiento de caja una sola vez**, en la **misma transacción** que el
+  cambio de estado y la auditoría (unique `cash_movements.payment_id` = clave de idempotencia).
+- **Dinero validado solo cae en turno abierto**: sin turno, validar → 409 (sin dinero huérfano).
+- Toda mutación financiera escribe su **auditoría en la misma transacción** (rollback revierte ambas).
+
+## Cash (Entrega 2 — REQ-3)
+
+| Método y ruta | Roles permitidos | Notas |
+|---|---|---|
+| `POST /api/v1/cash/sessions` | admin, recepcion | Abre turno (un solo turno abierto por org) |
+| `GET /api/v1/cash/sessions/current` | admin, recepcion | Turno abierto (badge de topbar) |
+| `POST /api/v1/cash/sessions/:id/close` | admin, recepcion | Cierra (idempotente bajo concurrencia) |
+| `GET /api/v1/cash/sessions/:id` | admin, recepcion | Turno + movimientos |
+| `GET /api/v1/cash/consolidation?date=` | admin, recepcion | Consolidado del día por método |
+
+Request `POST /sessions`: `{ "openingCents" }`. Request `POST .../close`: `{ "declaredClosingCents" }`.
+
+- **Cierre idempotente (TX-05):** `FOR UPDATE` + `WHERE state='open'` dentro de la transacción →
+  dos cierres simultáneos del mismo turno dan **un 200 y un 409**.
+- **Conciliación:** `expectedClosing = apertura + Σ movimientos validados`; la discrepancia
+  `declarado − esperado` se registra, nunca bloquea el cierre.
+- **Sin API de movimiento manual:** los movimientos solo los crea la validación de un pago.
+
 ## Matriz de permisos (resumen)
 
 | Ruta | admin | recepción | instructor | socio |
