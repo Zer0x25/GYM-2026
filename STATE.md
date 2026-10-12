@@ -15,7 +15,9 @@
 
 ## Unidad activa
 
-- 002 · Auth, tenant y roles + socios y permisos (specs/002-auth-tenant-socios.md, Tier 1) — **en curso**: sesiones con Better Auth sobre Drizzle, verificación `tenant+actor+rol+recurso`, CRUD de socios con aislamiento, portal «mi perfil».
+- 002 · Auth, tenant y roles + socios y permisos (specs/002-auth-tenant-socios.md, Tier 1) — **implementada y verificada; pendiente de revisión humana del usuario antes de cerrar**. Gate completo en verde (lint, typecheck, build, 22 tests: 14 unit + 8 integración contra Postgres real). Commit local `edfc8fa` sin push.
+- Verificado por CA: CA-1/CA-2 (sesión con org+role desde datos almacenados; cross-tenant 404 sin fuga), CA-3 (listado/búsqueda filtrados por tenant; organizationId del body ignorado), CA-4 (socio edita solo su contacto; ajeno → FORBIDDEN), CA-8 (`grep -ri sauna` en código: 0).
+- Pendiente de esta unidad: rutas HTTP (POST /api/v1/members, GET /api/v1/members, /auth/session) y pantallas de login/panel/portal en apps/web — el servicio, sesión y reglas de permiso están hechos y probados; el cableado fino de rutas+UI es el remanente.
 - Siguiente paso (Entrega 2): planes/períodos/beneficios + pagos manuales/validación + caja/QR.
 
 ## Pendientes críticos (resolver antes del piloto real G2)
