@@ -9,7 +9,16 @@
  *   every table carries organization_id and every query filters by it.
  * - Table names and cardinality are initial; refined per module in later units.
  */
-import { pgTable, text, timestamp, uuid, integer, boolean, index } from "drizzle-orm/pg-core";
+import {
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+  integer,
+  boolean,
+  index,
+  unique,
+} from "drizzle-orm/pg-core";
 
 /** Organization (tenant). One venue per organization in v1.0. */
 export const organizations = pgTable("organizations", {
@@ -152,9 +161,179 @@ export const plans = pgTable(
     priceCents: integer("price_cents").notNull(),
     durationDays: integer("duration_days").notNull(),
     coverage: text("coverage", { enum: ["none", "unlimited", "limited"] }).notNull(),
+    active: boolean("active").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("plans_org_idx").on(t.organizationId)],
+);
+
+/**
+ * Membership (membresía): binds a member to a plan with a validity window.
+ *
+ * Rights are DERIVED from payments, never stored as an editable flag:
+ * active when a validated payment covers the window [start, start + duration);
+ * pending_payment when no validated payment yet; expired when the window ended.
+ * Renewal = a new validated payment extends the window (no coverage gaps).
+ */
+export const memberships = pgTable(
+  "memberships",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id),
+    memberId: uuid("member_id")
+      .notNull()
+      .references(() => members.id),
+    planId: uuid("plan_id")
+      .notNull()
+      .references(() => plans.id),
+    /** Start of the current validity window (set at first validated payment). */
+    startAt: timestamp("start_at", { withTimezone: true }),
+    /** End of the current validity window (start + plan.durationDays). */
+    endAt: timestamp("end_at", { withTimezone: true }),
+    /** Last payment that extended the window (denormalized for audit reads). */
+    lastPaymentId: uuid("last_payment_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("memberships_org_idx").on(t.organizationId),
+    index("memberships_member_idx").on(t.memberId),
+  ],
+);
+
+/**
+ * Manual payment (cobro manual, REQ-2).
+ *
+ * State machine (terminal states, TX-03): provisional -> validated | rejected.
+ * A validated payment is IMMUTABLE (D-03/B): corrections only via an audited
+ * adjustment, never an UPDATE. A provisional payment grants NO rights.
+ */
+export const payments = pgTable(
+  "payments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id),
+    memberId: uuid("member_id")
+      .notNull()
+      .references(() => members.id),
+    membershipId: uuid("membership_id")
+      .notNull()
+      .references(() => memberships.id),
+    planId: uuid("plan_id")
+      .notNull()
+      .references(() => plans.id),
+    /** Amount in CLP cents (integer). Must match plan.priceCents (warn on diff). */
+    amountCents: integer("amount_cents").notNull(),
+    method: text("method", { enum: ["cash", "transfer"] }).notNull(),
+    /** Bank transfer reference (REQUIRED for method=transfer). */
+    reference: text("reference"),
+    state: text("state", { enum: ["provisional", "validated", "rejected"] })
+      .notNull()
+      .default("provisional"),
+    /** Staff account that REGISTERED the payment (separation of functions). */
+    registeredBy: text("registered_by")
+      .notNull()
+      .references(() => authUsers.id),
+    /** Staff account that VALIDATED/REJECTED (must differ from registeredBy). */
+    decidedBy: text("decided_by").references(() => authUsers.id),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    /** Mandatory auditable reason for rejections. */
+    reason: text("reason"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("payments_org_idx").on(t.organizationId),
+    index("payments_state_idx").on(t.organizationId, t.state),
+    index("payments_member_idx").on(t.memberId),
+  ],
+);
+
+/**
+ * Cash session (turno de caja, REQ-3): one open/closed shift per user.
+ * Closing is IDEMPOTENT under concurrency (TX-05): two simultaneous closes
+ * of the same session -> one 200, one 409. Sessions are never deleted.
+ */
+export const cashSessions = pgTable(
+  "cash_sessions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id),
+    openedBy: text("opened_by")
+      .notNull()
+      .references(() => authUsers.id),
+    closedBy: text("closed_by").references(() => authUsers.id),
+    state: text("state", { enum: ["open", "closed"] }).notNull().default("open"),
+    openingCents: integer("opening_cents").notNull(),
+    /** Declared closing amount (staff count). */
+    declaredClosingCents: integer("declared_closing_cents"),
+    /** Expected closing = opening + validated movements of the session. */
+    expectedClosingCents: integer("expected_closing_cents"),
+    /** Difference declared - expected (audited, never blocking). */
+    discrepancyCents: integer("discrepancy_cents"),
+    openedAt: timestamp("opened_at", { withTimezone: true }).notNull().defaultNow(),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+  },
+  (t) => [index("cash_sessions_org_idx").on(t.organizationId, t.state)],
+);
+
+/**
+ * Cash movement (movimiento de caja): created ONLY when a payment is
+ * validated (money never enters the cash until validated). IMMUTABLE once
+ * created — no updates, no deletes (D-03/B).
+ */
+export const cashMovements = pgTable(
+  "cash_movements",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id),
+    sessionId: uuid("session_id")
+      .notNull()
+      .references(() => cashSessions.id),
+    paymentId: uuid("payment_id")
+      .notNull()
+      .references(() => payments.id),
+    type: text("type", { enum: ["income"] }).notNull(),
+    method: text("method", { enum: ["cash", "transfer"] }).notNull(),
+    amountCents: integer("amount_cents").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("cash_movements_session_idx").on(t.sessionId),
+    // One movement per payment: the uniqueness guard is the real idempotency
+    // key (a payment can never produce two cash entries).
+    unique("cash_movements_payment_unique").on(t.paymentId),
+  ],
+);
+
+/**
+ * Audit log (auditoría): every financial mutation writes one row in the SAME
+ * transaction as the mutation itself (actor, action, entity, metadata).
+ */
+export const auditLog = pgTable(
+  "audit_log",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id),
+    actorId: text("actor_id")
+      .notNull()
+      .references(() => authUsers.id),
+    actorRole: text("actor_role").notNull(),
+    action: text("action").notNull(),
+    entity: text("entity").notNull(),
+    entityId: text("entity_id").notNull(),
+    metadata: text("metadata"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("audit_log_org_idx").on(t.organizationId, t.createdAt)],
 );
 
 export const schema = {
@@ -167,4 +346,9 @@ export const schema = {
   staffAssignments,
   members,
   plans,
+  memberships,
+  payments,
+  cashSessions,
+  cashMovements,
+  auditLog,
 };

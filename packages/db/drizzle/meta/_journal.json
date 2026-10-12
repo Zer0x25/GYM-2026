@@ -36,6 +36,13 @@
       "when": 1791781096266,
       "tag": "0004_identity_accounts_text_id",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1791826487539,
+      "tag": "0005_entrega2_planes_pagos_caja",
+      "breakpoints": true
     }
   ]
 }

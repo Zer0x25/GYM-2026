@@ -13,6 +13,11 @@ export {
   staffAssignments,
   members,
   plans,
+  memberships,
+  payments,
+  cashSessions,
+  cashMovements,
+  auditLog,
 } from "./schema.js";
 
 /**

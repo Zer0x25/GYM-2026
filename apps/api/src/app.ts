@@ -11,7 +11,17 @@ import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
 import { eq } from "drizzle-orm";
 import { organizations } from "@gym/db";
 import type { Database } from "@gym/db";
-import { CreateMemberRequest, CreateOrganizationRequest, SessionResponse } from "@gym/contracts";
+import {
+  CloseCashSessionRequest,
+  CreateMemberRequest,
+  CreateOrganizationRequest,
+  CreatePlanRequest,
+  CreateMembershipRequest,
+  DecidePaymentRequest,
+  OpenCashSessionRequest,
+  RegisterPaymentRequest,
+  SessionResponse,
+} from "@gym/contracts";
 import { toErrorResponse, AppError, validationError } from "./errors.js";
 import { assertTenantContext, type TenantContext } from "./tenant.js";
 import { requireRole } from "./roles.js";
@@ -19,6 +29,10 @@ import type { Auth } from "./auth.js";
 import { resolveSession } from "./resolve-session.js";
 import { MembersService } from "./services/members.js";
 import { ProvisioningService } from "./services/provisioning.js";
+import { PlansService } from "./services/plans.js";
+import { MembershipsService } from "./services/memberships.js";
+import { PaymentsService } from "./services/payments.js";
+import { CashService } from "./services/cash.js";
 import type { SessionContext } from "./session.js";
 
 declare module "fastify" {
@@ -274,6 +288,218 @@ export async function buildServer(opts: AppOptions) {
       return reply.send({ data: row });
     },
   );
+
+  // --- Plans (admin: CRUD; staff: lectura) -----------------------------------
+  const plansService = new PlansService(opts.db);
+
+  app.get("/api/v1/plans", async (req: FastifyRequest, reply: FastifyReply) => {
+    requireRole(req.session, ["admin", "recepcion", "instructor"]);
+    assertTenantContext(req.session);
+    const rows = await plansService.list(req.session.organizationId);
+    return reply.send({ data: rows });
+  });
+
+  app.post("/api/v1/plans", async (req: FastifyRequest, reply: FastifyReply) => {
+    requireRole(req.session, ["admin"]);
+    assertTenantContext(req.session);
+    const parsed = CreatePlanRequest.safeParse(req.body);
+    if (!parsed.success) throw validationError({ issues: parsed.error.issues });
+    const row = await plansService.create(req.session.organizationId, parsed.data);
+    return reply.status(201).send({ data: row });
+  });
+
+  app.get<{ Params: { id: string } }>("/api/v1/plans/:id", async (req, reply) => {
+    requireRole(req.session, ["admin", "recepcion", "instructor"]);
+    assertTenantContext(req.session);
+    const row = await plansService.getById(req.session.organizationId, req.params.id);
+    return reply.send({ data: row });
+  });
+
+  // --- Memberships (admin/recepción asignan; socio lee las propias) -----------
+  const membershipsService = new MembershipsService(opts.db);
+
+  app.post("/api/v1/memberships", async (req: FastifyRequest, reply: FastifyReply) => {
+    requireRole(req.session, ["admin", "recepcion"]);
+    assertTenantContext(req.session);
+    const parsed = CreateMembershipRequest.safeParse(req.body);
+    if (!parsed.success) throw validationError({ issues: parsed.error.issues });
+    const row = await membershipsService.assign(
+      req.session.organizationId,
+      parsed.data.memberId,
+      parsed.data.planId,
+    );
+    return reply.status(201).send({ data: row });
+  });
+
+  app.get("/api/v1/memberships", async (req: FastifyRequest, reply: FastifyReply) => {
+    requireRole(req.session, ["admin", "recepcion", "instructor"]);
+    assertTenantContext(req.session);
+    const rows = await membershipsService.list(req.session.organizationId);
+    // State is derived per membership (SPEC rights rule): compute on read.
+    const withState = await Promise.all(
+      rows.map(async (row) => ({
+        ...row,
+        state: await paymentsService.membershipState(req.session!.organizationId, row.id),
+      })),
+    );
+    return reply.send({ data: withState });
+  });
+
+  app.get("/api/v1/memberships/mine", async (req: FastifyRequest, reply: FastifyReply) => {
+    requireRole(req.session, ["socio"]);
+    assertTenantContext(req.session);
+    if (!req.session.memberId) throw new AppError("FORBIDDEN", "Sesión sin socio vinculado");
+    const rows = await membershipsService.listByMember(
+      req.session.organizationId,
+      req.session.memberId,
+    );
+    return reply.send({ data: rows });
+  });
+
+  app.get<{ Params: { id: string } }>("/api/v1/memberships/:id", async (req, reply) => {
+    requireRole(req.session, ["admin", "recepcion", "instructor", "socio"]);
+    assertTenantContext(req.session);
+    const row = await membershipsService.getById(req.session.organizationId, req.params.id);
+    // A socio may only read their own membership.
+    if (req.session.role === "socio" && row.memberId !== req.session.memberId) {
+      throw new AppError("NOT_FOUND", "Membresía no encontrada");
+    }
+    const state = await paymentsService.membershipState(req.session.organizationId, row.id);
+    return reply.send({ data: { ...row, state } });
+  });
+
+  // --- Payments (REQ-2) -------------------------------------------------------
+  const paymentsService = new PaymentsService(opts.db);
+
+  app.post("/api/v1/payments", async (req: FastifyRequest, reply: FastifyReply) => {
+    requireRole(req.session, ["admin", "recepcion"]);
+    assertTenantContext(req.session);
+    const parsed = RegisterPaymentRequest.safeParse(req.body);
+    if (!parsed.success) throw validationError({ issues: parsed.error.issues });
+    const row = await paymentsService.register(
+      {
+        organizationId: req.session.organizationId,
+        accountId: req.session.accountId,
+        role: req.session.role,
+      },
+      parsed.data,
+    );
+    return reply.status(201).send({ data: row });
+  });
+
+  app.get("/api/v1/payments", async (req: FastifyRequest, reply: FastifyReply) => {
+    requireRole(req.session, ["admin", "recepcion"]);
+    assertTenantContext(req.session);
+    const query = (req.query as { state?: string }).state;
+    const rows = await paymentsService.list(
+      req.session.organizationId,
+      query === "provisional" || query === "validated" || query === "rejected"
+        ? query
+        : undefined,
+    );
+    return reply.send({ data: rows });
+  });
+
+  app.get<{ Params: { id: string } }>("/api/v1/payments/:id", async (req, reply) => {
+    requireRole(req.session, ["admin", "recepcion"]);
+    assertTenantContext(req.session);
+    const row = await paymentsService.getById(req.session.organizationId, req.params.id);
+    return reply.send({ data: row });
+  });
+
+  // Validación/rechazo: SOLO admin, y nunca sobre registro propio (SPEC:PAY-02).
+  app.post<{ Params: { id: string } }>("/api/v1/payments/:id/validate", async (req, reply) => {
+    requireRole(req.session, ["admin"]);
+    assertTenantContext(req.session);
+    const row = await paymentsService.validate(
+      {
+        organizationId: req.session.organizationId,
+        accountId: req.session.accountId,
+        role: req.session.role,
+      },
+      req.params.id,
+    );
+    return reply.send({ data: row });
+  });
+
+  app.post<{ Params: { id: string } }>("/api/v1/payments/:id/reject", async (req, reply) => {
+    requireRole(req.session, ["admin"]);
+    assertTenantContext(req.session);
+    const parsed = DecidePaymentRequest.safeParse(req.body ?? {});
+    if (!parsed.success || !parsed.data.reason) {
+      throw validationError({ issues: [{ path: ["reason"], message: "Motivo obligatorio" }] });
+    }
+    const row = await paymentsService.reject(
+      {
+        organizationId: req.session.organizationId,
+        accountId: req.session.accountId,
+        role: req.session.role,
+      },
+      req.params.id,
+      parsed.data.reason,
+    );
+    return reply.send({ data: row });
+  });
+
+  // --- Cash (REQ-3) ------------------------------------------------------------
+  const cashService = new CashService(opts.db);
+
+  app.post("/api/v1/cash/sessions", async (req: FastifyRequest, reply: FastifyReply) => {
+    requireRole(req.session, ["admin", "recepcion"]);
+    assertTenantContext(req.session);
+    const parsed = OpenCashSessionRequest.safeParse(req.body);
+    if (!parsed.success) throw validationError({ issues: parsed.error.issues });
+    const row = await cashService.open(
+      {
+        organizationId: req.session.organizationId,
+        accountId: req.session.accountId,
+        role: req.session.role,
+      },
+      parsed.data.openingCents,
+    );
+    return reply.status(201).send({ data: row });
+  });
+
+  app.get("/api/v1/cash/sessions/current", async (req: FastifyRequest, reply: FastifyReply) => {
+    requireRole(req.session, ["admin", "recepcion"]);
+    assertTenantContext(req.session);
+    const row = await cashService.findOpenSession(req.session.organizationId);
+    return reply.send({ data: row ?? null });
+  });
+
+  app.post<{ Params: { id: string } }>("/api/v1/cash/sessions/:id/close", async (req, reply) => {
+    requireRole(req.session, ["admin", "recepcion"]);
+    assertTenantContext(req.session);
+    const parsed = CloseCashSessionRequest.safeParse(req.body);
+    if (!parsed.success) throw validationError({ issues: parsed.error.issues });
+    const row = await cashService.close(
+      {
+        organizationId: req.session.organizationId,
+        accountId: req.session.accountId,
+        role: req.session.role,
+      },
+      req.params.id,
+      parsed.data.declaredClosingCents,
+    );
+    return reply.send({ data: row });
+  });
+
+  app.get<{ Params: { id: string } }>("/api/v1/cash/sessions/:id", async (req, reply) => {
+    requireRole(req.session, ["admin", "recepcion"]);
+    assertTenantContext(req.session);
+    const session = await cashService.getById(req.session.organizationId, req.params.id);
+    const movements = await cashService.movements(req.session.organizationId, req.params.id);
+    return reply.send({ data: { session, movements } });
+  });
+
+  app.get("/api/v1/cash/consolidation", async (req: FastifyRequest, reply: FastifyReply) => {
+    requireRole(req.session, ["admin", "recepcion"]);
+    assertTenantContext(req.session);
+    const query = (req.query as { date?: string }).date;
+    const day = query ? new Date(query) : new Date();
+    const data = await cashService.consolidateDay(req.session.organizationId, day);
+    return reply.send({ data });
+  });
 
   return app;
 }

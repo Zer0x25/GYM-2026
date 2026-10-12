@@ -95,6 +95,121 @@ export const CreatePlanRequest = z.object({
 });
 export type CreatePlanRequest = z.infer<typeof CreatePlanRequest>;
 
+// ---------------------------------------------------------------------------
+// Entrega 2 — memberships, payments, cash (spec 003).
+// Money is integer CLP cents everywhere. A provisional payment NEVER grants
+// rights; only a validated payment does (SPEC:PAY-01). Validated/rejected
+// are terminal states; validated is immutable (D-03/B).
+// ---------------------------------------------------------------------------
+
+export const PlanDetail = PlanRef.extend({
+  active: z.boolean(),
+  createdAt: z.string(),
+});
+export type PlanDetail = z.infer<typeof PlanDetail>;
+
+export const CreateMembershipRequest = z.object({
+  memberId: z.string().uuid(),
+  planId: z.string().uuid(),
+});
+export type CreateMembershipRequest = z.infer<typeof CreateMembershipRequest>;
+
+export const MembershipRef = z.object({
+  id: z.string().uuid(),
+  organizationId: z.string().uuid(),
+  memberId: z.string().uuid(),
+  planId: z.string().uuid(),
+  /** Derived state — computed from payments, never stored editable. */
+  state: z.enum(["pending_payment", "active", "expired"]),
+  startAt: z.string().nullable(),
+  endAt: z.string().nullable(),
+});
+export type MembershipRef = z.infer<typeof MembershipRef>;
+
+export const RegisterPaymentRequest = z.object({
+  membershipId: z.string().uuid(),
+  amountCents: z.number().int().nonnegative(),
+  method: z.enum(["cash", "transfer"]),
+  /** Mandatory when method === "transfer" (REQ-2). */
+  reference: z.string().min(1).optional(),
+});
+export type RegisterPaymentRequest = z.infer<typeof RegisterPaymentRequest>;
+
+export const PaymentRef = z.object({
+  id: z.string().uuid(),
+  organizationId: z.string().uuid(),
+  memberId: z.string().uuid(),
+  membershipId: z.string().uuid(),
+  planId: z.string().uuid(),
+  amountCents: z.number().int(),
+  method: z.enum(["cash", "transfer"]),
+  reference: z.string().nullable(),
+  state: z.enum(["provisional", "validated", "rejected"]),
+  registeredBy: z.string(),
+  decidedBy: z.string().nullable(),
+  reason: z.string().nullable(),
+  createdAt: z.string(),
+});
+export type PaymentRef = z.infer<typeof PaymentRef>;
+
+export const DecidePaymentRequest = z.object({
+  /** Mandatory for rejections (auditable reason, D-03/B). */
+  reason: z.string().min(1).optional(),
+});
+export type DecidePaymentRequest = z.infer<typeof DecidePaymentRequest>;
+
+export const OpenCashSessionRequest = z.object({
+  openingCents: z.number().int().nonnegative(),
+});
+export type OpenCashSessionRequest = z.infer<typeof OpenCashSessionRequest>;
+
+export const CloseCashSessionRequest = z.object({
+  /** Declared count by the staff member (audited against expected). */
+  declaredClosingCents: z.number().int().nonnegative(),
+});
+export type CloseCashSessionRequest = z.infer<typeof CloseCashSessionRequest>;
+
+export const CashSessionRef = z.object({
+  id: z.string().uuid(),
+  organizationId: z.string().uuid(),
+  openedBy: z.string(),
+  closedBy: z.string().nullable(),
+  state: z.enum(["open", "closed"]),
+  openingCents: z.number().int(),
+  declaredClosingCents: z.number().int().nullable(),
+  expectedClosingCents: z.number().int().nullable(),
+  discrepancyCents: z.number().int().nullable(),
+  openedAt: z.string(),
+  closedAt: z.string().nullable(),
+});
+export type CashSessionRef = z.infer<typeof CashSessionRef>;
+
+export const CashMovementRef = z.object({
+  id: z.string().uuid(),
+  organizationId: z.string().uuid(),
+  sessionId: z.string().uuid(),
+  paymentId: z.string().uuid(),
+  type: z.enum(["income"]),
+  method: z.enum(["cash", "transfer"]),
+  amountCents: z.number().int(),
+  createdAt: z.string(),
+});
+export type CashMovementRef = z.infer<typeof CashMovementRef>;
+
+export const CashConsolidation = z.object({
+  sessionId: z.string().uuid(),
+  date: z.string(),
+  openingCents: z.number().int(),
+  /** Sum of validated movements of the day (all methods). */
+  totalCents: z.number().int(),
+  byMethod: z.object({
+    cash: z.number().int(),
+    transfer: z.number().int(),
+  }),
+  movementCount: z.number().int(),
+});
+export type CashConsolidation = z.infer<typeof CashConsolidation>;
+
 export const ApiOk = <T extends z.ZodTypeAny>(data: T) =>
   z.object({ data });
 export type ApiOk<T> = { data: T };
