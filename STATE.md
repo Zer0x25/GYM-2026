@@ -1,6 +1,6 @@
-# Estado del Proyecto: App GYM (GYM-2026) — Hito 0 sellado, unidad 001 verificada
+# Estado del Proyecto: App GYM (GYM-2026) — Hito 0 completado; Hito 1 activo
 
-- Fase: `initializing`; PRD, ADR-0002, prompt maestro y especificación de andamiaje aprobados; unidad 001 (andamiaje del monorepo) implementada y verificada con gate completo en verde; **pendiente de revisión humana Tier 1 y de sellado a `phase=project`** (Fase 4 del bootstrap).
+- Fase: `project`; Hito 0 completado y sellado (bootstrap archivado como `.agents/bootstrap.md.done`). Gate de proyecto en verde tras el sellado.
 - Modo de arranque: A (enriquecido desde Notion), 2026-10-11. Base de decisiones Notion: https://app.notion.com/p/3f529b8ebe2981fab0c2fa583efcdf15 (database 88e343f849ce4e4eae888d205b7dcc7b, 55 decisiones trasladadas).
 
 ## Última unidad — 001 · Andamiaje del monorepo (specs/001-andamiaje-monorepo.md, Tier 1)
