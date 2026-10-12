@@ -21,10 +21,12 @@
   - **Auditoría:** toda mutación de reserva/cancelación/asistencia en `audit_log`, en la misma transacción.
   - **API REST con contratos Zod** en `packages/contracts`; servicios en `apps/api/src/services/`; tests de integración contra Postgres real.
 - **Excluye:** reserva de sauna (MVP-SAUNA-01/B, fuera de v1.0); reserva firme offline (v1.1, P-09.3); pagos por clase suelta (dinero ya cubierto por Entrega 2; aquí solo se compromete beneficio de membresía); notificaciones SMS/WhatsApp; listas de espera con orden garantizado (v1.1 salvo que el piloto lo pida); apps nativas; QR de ingreso físico (Entrega 5).
-- **Pendientes críticos / supuestos aceptados:**
-  - Supuesto: el "beneficio" es un crédito derivado de la membresía activa (no un contador de sesiones compradas) — la cobertura del plan (`coverage` ya existe en Entrega 2) define qué puede reservar. Si el piloto requiere paquetes de sesiones (p. ej. 10 clases), es una extensión que se documenta.
-  - Supuesto: ventana de reserva y horas de cancelación configurables por plantilla de clase.
-  - Pendiente: política exacta de "ausencia" (¿cuántas ausencias consecutivas bloquean la reserva?) — queda parametrizable, no decidido aquí.
+- **Decisiones fundamentadas en el PRD (repo = fuente de verdad):**
+  - **Modalidad personalizada "Ambas"** (P-RES-02, PRD §C y REQ-6): sesiones fijas publicadas + citas por agenda individual de instructor. Decidido.
+  - **Beneficio comprometido una sola vez** (REQ-4) y **crédito movido exactamente una vez** (TX-04): invariantes con test. Decidido.
+  - **Ventana de reserva y cancelación configurables** por plantilla (PRD §C). Decidido.
+  - **Beneficio = acceso derivado de la membresía activa** (PRD: "beneficios confirmados", "revalidación de cobertura"): la membresía activa es lo que habilita reservar; el campo `coverage` del plan (Entrega 2) define qué clases cubre. Decisión de implementación: en v1.0 el beneficio es el acceso que otorga la membresía vigente — **no** se modelan paquetes de "N clases" compradas (no existen en el PRD ni en la Entrega 2; si el piloto los pide, es extensión documentada, no un supuesto).
+  - **Política de ausencia (v1.0):** la ausencia retiene el beneficio consumido y queda registrada; el sistema **no** acumula strikes ni bloquea reservas por ausencias (el PRD menciona "ausencia" como tipo de cancelación, no define penalización acumulada). Decisión de implementación conservadora: registrar y retener; cualquier acumulación de sanciones es evolución futura.
 
 ## 2. Contratos e invariantes
 
