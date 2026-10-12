@@ -13,7 +13,10 @@
     "typecheck": "pnpm -r typecheck",
     "build": "pnpm -r build",
     "test": "pnpm -r test",
-    "verify": "./scripts/verify.sh"
+    "verify": "./scripts/verify.sh",
+    "seed:dev": "pnpm --filter @gym/api seed:dev",
+    "db:generate": "pnpm --filter @gym/db db:generate",
+    "db:migrate": "pnpm --filter @gym/db db:migrate"
   },
   "devDependencies": {
     "@eslint/js": "^9.13.0",

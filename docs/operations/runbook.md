@@ -18,13 +18,22 @@ pnpm install
 docker run -d --name gym-dev-pg \
   -e POSTGRES_USER=gym -e POSTGRES_PASSWORD=gym-local-dev -e POSTGRES_DB=gym \
   -p 5432:5432 postgres:16-alpine
-cp .env.example .env        # editar valores ficticios; NUNCA secretos reales en el repo
-# AUTH_SECRET: openssl rand -base64 32  (fuera del repo)
-pnpm --filter @gym/db db:generate    # genera migraciones desde packages/db/src/schema.ts
-pnpm --filter @gym/db db:migrate     # aplica migraciones
-pnpm -r dev                          # web (5173) + api (3000)
+cp apps/api/.env.example apps/api/.env    # editar; NUNCA secretos reales en el repo
+# AUTH_SECRET: openssl rand -base64 32   (≥32 chars, fuera del repo)
+pnpm db:migrate          # aplica migraciones (packages/db)
+pnpm seed:dev            # org + admin/socio de prueba (idempotente)
+pnpm -r dev              # web (5173) + api (3000)
 ./scripts/verify.sh
 ```
+
+Credenciales de desarrollo sembradas (ficticias, NO producción):
+
+| Rol | Email | Password |
+|---|---|---|
+| admin | `admin@pilot.cl` | `SuperSecret123!` |
+| socio | `socio@pilot.cl` | `SuperSecret123!` |
+
+Además crea la organización «Gimnasio Piloto» y un miembro sin cuenta.
 
 Pruebas de integración de `apps/api` (opcionales, contra Postgres real):
 
