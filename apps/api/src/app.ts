@@ -124,9 +124,17 @@ export async function buildServer(opts: AppOptions) {
       const res = await opts.auth!.handler(nativeReq);
 
       reply.status(res.status);
+      // Set-Cookie MUST be forwarded as multiple headers. reply.header()
+      // overwrites on repeat; use raw.setHeader with the array from
+      // getSetCookie() so both session_token and session_data survive.
+      const setCookies = res.headers.getSetCookie();
+      if (setCookies.length > 0) {
+        reply.raw.setHeader("set-cookie", setCookies);
+      }
       res.headers.forEach((value, key) => {
+        const lower = key.toLowerCase();
         // Skip hop-by-hop / encoding headers Fastify owns.
-        if (key.toLowerCase() === "content-encoding") return;
+        if (lower === "content-encoding" || lower === "set-cookie") return;
         void reply.header(key, value);
       });
       const text = await res.text();
