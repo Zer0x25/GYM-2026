@@ -21,6 +21,9 @@ export {
   sessions,
   bookings,
   bookingCancellations,
+  devices,
+  offlineEvents,
+  membershipSnapshots,
   auditLog,
 } from "./schema.js";
 

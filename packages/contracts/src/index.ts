@@ -334,3 +334,91 @@ export const AgendaEntry = z.object({
   templateName: z.string().nullable(),
 });
 export type AgendaEntry = z.infer<typeof AgendaEntry>;
+
+// --- Entrega 4: offline controlado (spec 005) --------------------------------
+
+/** Device lifecycle: habilitado emits; revocado is kept for audit but inert. */
+export const DeviceState = z.enum(["habilitado", "revocado"]);
+export type DeviceState = z.infer<typeof DeviceState>;
+
+export const DeviceType = z.enum(["cobro_provisional", "ingreso_contingencia", "excepcion"]);
+export type DeviceType = z.infer<typeof DeviceType>;
+
+export const OfflineEventState = z.enum([
+  "pendiente",
+  "sincronizado",
+  "rechazado",
+  "duplicado_negocio",
+]);
+export type OfflineEventState = z.infer<typeof OfflineEventState>;
+
+/** Register a pre-authorized device (admin). One org + one operator. */
+export const RegisterDeviceRequest = z.object({
+  accountId: z.string().min(1),
+  label: z.string().min(1),
+  publicKey: z.string().min(1).optional(),
+});
+export type RegisterDeviceRequest = z.infer<typeof RegisterDeviceRequest>;
+
+/**
+ * A single offline event as emitted by the device (sync batch entry).
+ * eventId is device-generated (the idempotency key); folioExterno is the
+ * operator's own reference (business-duplicate fingerprint).
+ */
+export const OfflineEventInput = z.object({
+  eventId: z.string().uuid(),
+  type: DeviceType,
+  folioExterno: z.string().min(1),
+  cashSessionId: z.string().uuid().optional(),
+  memberId: z.string().uuid().optional(),
+  capturedAt: z.string(),
+  amountCents: z.number().int().optional(),
+  method: z.enum(["cash", "transfer"]).optional(),
+  payload: z.string().optional(),
+});
+export type OfflineEventInput = z.infer<typeof OfflineEventInput>;
+
+/** Sync batch: many events, each acknowledged independently (idempotent). */
+export const SyncEventsRequest = z.object({
+  deviceId: z.string().uuid(),
+  events: z.array(OfflineEventInput).min(1),
+});
+export type SyncEventsRequest = z.infer<typeof SyncEventsRequest>;
+
+/** Per-event acknowledgment: sincronizado | duplicado | rechazado. */
+export const SyncResultEntry = z.object({
+  eventId: z.string().uuid(),
+  status: z.enum(["sincronizado", "duplicado", "rechazado"]),
+  reason: z.string().optional(),
+  /** Payment id when a provisional cobro was applied (Entrega 2 link). */
+  paymentId: z.string().uuid().optional(),
+});
+export type SyncResultEntry = z.infer<typeof SyncResultEntry>;
+
+export const SyncEventsResponse = z.object({
+  results: z.array(SyncResultEntry),
+});
+export type SyncEventsResponse = z.infer<typeof SyncEventsResponse>;
+
+/** Contingency ingress: uses a membership snapshot with freshness control. */
+export const IngressContingenciaRequest = z.object({
+  deviceId: z.string().uuid(),
+  memberId: z.string().uuid(),
+  /** Snapshot captured by the device; checked against org freshness limit. */
+  snapshotCapturedAt: z.string(),
+  coverage: z.enum(["none", "unlimited", "limited"]),
+});
+export type IngressContingenciaRequest = z.infer<typeof IngressContingenciaRequest>;
+
+/** Auditable reconstruction of a tenant/device event chain (SPEC:OFF-RECON). */
+export const ReconstructRequest = z.object({
+  deviceId: z.string().uuid().optional(),
+});
+export type ReconstructRequest = z.infer<typeof ReconstructRequest>;
+
+export const ReconstructResponse = z.object({
+  eventsChecked: z.number().int(),
+  chainIntact: z.boolean(),
+  brokenAt: z.string().uuid().nullable(),
+});
+export type ReconstructResponse = z.infer<typeof ReconstructResponse>;

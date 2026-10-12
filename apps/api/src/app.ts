@@ -22,10 +22,14 @@ import {
   CreatePlanRequest,
   CreateSessionRequest,
   DecidePaymentRequest,
+  IngressContingenciaRequest,
   MarkAttendanceRequest,
   OpenCashSessionRequest,
+  RegisterDeviceRequest,
   RegisterPaymentRequest,
+  ReconstructRequest,
   SessionResponse,
+  SyncEventsRequest,
 } from "@gym/contracts";
 import { toErrorResponse, AppError, validationError } from "./errors.js";
 import { assertTenantContext, type TenantContext } from "./tenant.js";
@@ -40,6 +44,7 @@ import { PaymentsService } from "./services/payments.js";
 import { CashService } from "./services/cash.js";
 import { SessionsService } from "./services/sessions.js";
 import { BookingsService } from "./services/bookings.js";
+import { OfflineService } from "./services/offline.js";
 import type { SessionContext } from "./session.js";
 
 declare module "fastify" {
@@ -662,6 +667,82 @@ export async function buildServer(opts: AppOptions) {
       parsed.data.outcome,
     );
     return reply.send({ data: row });
+  });
+
+  // --- Offline controlado (Entrega 4, spec 005, REQ-9) ------------------------
+  const offlineService = new OfflineService(opts.db);
+
+  app.post("/api/v1/devices", async (req: FastifyRequest, reply: FastifyReply) => {
+    requireRole(req.session, ["admin"]);
+    assertTenantContext(req.session);
+    const parsed = RegisterDeviceRequest.safeParse(req.body);
+    if (!parsed.success) throw validationError({ issues: parsed.error.issues });
+    const row = await offlineService.registerDevice(
+      { organizationId: req.session.organizationId, accountId: req.session.accountId, role: req.session.role },
+      parsed.data,
+    );
+    return reply.status(201).send({ data: row });
+  });
+
+  app.get("/api/v1/devices", async (req: FastifyRequest, reply: FastifyReply) => {
+    requireRole(req.session, ["admin"]);
+    assertTenantContext(req.session);
+    const rows = await offlineService.listDevices(req.session.organizationId);
+    return reply.send({ data: rows });
+  });
+
+  app.post<{ Params: { id: string } }>("/api/v1/devices/:id/revoke", async (req, reply) => {
+    requireRole(req.session, ["admin"]);
+    assertTenantContext(req.session);
+    const row = await offlineService.revokeDevice(
+      { organizationId: req.session.organizationId, accountId: req.session.accountId, role: req.session.role },
+      req.params.id,
+    );
+    return reply.send({ data: row });
+  });
+
+  // Idempotent sync of the device outbox (TX-06): per-event acknowledgment.
+  app.post("/api/v1/offline/sync", async (req: FastifyRequest, reply: FastifyReply) => {
+    requireRole(req.session, ["admin", "recepcion", "instructor"]);
+    assertTenantContext(req.session);
+    const parsed = SyncEventsRequest.safeParse(req.body);
+    if (!parsed.success) throw validationError({ issues: parsed.error.issues });
+    const result = await offlineService.sync(
+      { organizationId: req.session.organizationId, accountId: req.session.accountId, role: req.session.role },
+      parsed.data,
+    );
+    return reply.send({ data: result });
+  });
+
+  app.get("/api/v1/offline/events", async (req: FastifyRequest, reply: FastifyReply) => {
+    requireRole(req.session, ["admin", "recepcion"]);
+    assertTenantContext(req.session);
+    const query = req.query as { deviceId?: string };
+    const rows = await offlineService.listEvents(req.session.organizationId, query.deviceId);
+    return reply.send({ data: rows });
+  });
+
+  // Contingency ingress with snapshot freshness control (SPEC:OFF-FRESH).
+  app.post("/api/v1/offline/ingreso", async (req: FastifyRequest, reply: FastifyReply) => {
+    requireRole(req.session, ["admin", "recepcion", "instructor"]);
+    assertTenantContext(req.session);
+    const parsed = IngressContingenciaRequest.safeParse(req.body);
+    if (!parsed.success) throw validationError({ issues: parsed.error.issues });
+    const result = await offlineService.ingressContingencia(
+      { organizationId: req.session.organizationId, accountId: req.session.accountId, role: req.session.role },
+      parsed.data,
+    );
+    return reply.send({ data: result });
+  });
+
+  // Auditable reconstruction + hash-chain verification (SPEC:OFF-RECON).
+  app.post("/api/v1/offline/reconstruct", async (req: FastifyRequest, reply: FastifyReply) => {
+    requireRole(req.session, ["admin"]);
+    assertTenantContext(req.session);
+    const parsed = ReconstructRequest.safeParse(req.body ?? {});
+    if (!parsed.success) throw validationError({ issues: parsed.error.issues });
+    const result = await offlineService.reconstruct(req.session.organizationId, parsed.data.deviceId);
+    return reply.send({ data: result });
   });
 
   return app;

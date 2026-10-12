@@ -207,6 +207,35 @@ Invariantes (verificadas con tests de integración contra Postgres real, `apps/a
   devuelve **404** (sin fuga de existencia).
 - **REQ-7 (propio):** un socio solo reserva/cancela para sí (`memberId` de la sesión, nunca del cliente).
 
+## Entrega 4 · Offline controlado (spec 005, REQ-9)
+
+Contratos (esquemas Zod en `@gym/contracts`, fuente única):
+
+- `DeviceState` = `habilitado | revocado`; `OfflineEventState` = `pendiente | sincronizado | rechazado | duplicado_negocio`
+- `RegisterDeviceRequest`, `SyncEventsRequest`/`SyncEventsResponse`, `OfflineEventInput`, `SyncResultEntry`, `IngressContingenciaRequest`, `ReconstructRequest`/`ReconstructResponse`
+
+Rutas v1:
+
+| Ruta | Roles | Notas |
+|---|:--:|---|
+| `POST /api/v1/devices` | admin | Registra dispositivo prehabilitado (org + operador) |
+| `GET /api/v1/devices` | admin | Listado por tenant |
+| `POST /api/v1/devices/:id/revoke` | admin | Revoca (eventos futuros inertes, conservados) |
+| `POST /api/v1/offline/sync` | admin, recepcion, instructor | Ingesta idempotente del outbox (TX-06) |
+| `GET /api/v1/offline/events?deviceId=` | admin, recepcion | Eventos sincronizados |
+| `POST /api/v1/offline/ingreso` | admin, recepcion, instructor | Ingreso de contingencia con control de frescura |
+| `POST /api/v1/offline/reconstruct` | admin | Reconstrucción auditable + verificación de hashes |
+
+Invariantes (verificadas con tests de integración contra Postgres real, `apps/api/scripts/test-integration.sh`):
+
+- **TX-06 idempotencia:** el mismo `event_id` reenviado → efecto una vez. El evento con unique `(organization_id, event_id)` se inserta PRIMERO como barrera; el perdedor de una carrera concurrente reproduce el resultado almacenado y NO crea un segundo pago.
+- **TX-06 duplicado de negocio (REQ-9):** dos `event_id` distintos con la misma huella `(org, folio_externo, tipo, monto)` → ambos conservados; el segundo marcado `duplicado_negocio` (nunca se descarta: es evidencia).
+- **Prohibición ADR-0002 §3:** el `cobro_provisional` offline crea un pago **provisional** (Entrega 2) SIN movimiento de caja ni cobertura; requiere validación humana.
+- **SPEC:OFF-FRESH:** `ingreso_contingencia` con instantánea más vieja que `organizations.offline_freshness_hours` (default 72h = valor de trabajo, configurable) → 409.
+- **Dispositivo revocado:** eventos conservados y marcados `rechazado`, sin efectos.
+- **SPEC:OFF-RECON:** `reconstruct` reproduce la cadena y verifica hashes encadenados por evento.
+- **TX-07:** dispositivo/evento de otro tenant → 404.
+
 ## Matriz de permisos (resumen)
 
 | Ruta | admin | recepción | instructor | socio |

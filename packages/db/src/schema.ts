@@ -24,6 +24,13 @@ import {
 export const organizations = pgTable("organizations", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull(),
+  /** Offline permission per org (P-09.3). Enabled per organization, default off
+   *  until the offline parameters are resolved (ADR-0002 §2.5). */
+  offlineEnabled: boolean("offline_enabled").notNull().default(false),
+  /** Snapshot freshness limit in hours for contingency ingress (SPEC:OFF-FRESH).
+   *  72h is a WORKING VALUE, not approved (P-09.3.1b) — injected by config,
+   *  replaceable per organization without code changes. */
+  offlineFreshnessHours: integer("offline_freshness_hours").notNull().default(72),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -443,6 +450,121 @@ export const bookingCancellations = pgTable(
 );
 
 /**
+ * Offline device (Entrega 4, REQ-9): a pre-authorized operator device bound to
+ * one organization and one account (operator). Revocable (D-06 groundwork).
+ * The device emits provisional offline events; the server stays authority.
+ */
+export const devices = pgTable(
+  "devices",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id),
+    accountId: text("account_id")
+      .notNull()
+      .references(() => authUsers.id),
+    label: text("label").notNull(),
+    state: text("state", { enum: ["habilitado", "revocado"] }).notNull().default("habilitado"),
+    /** Public key of the device identity (opaque; crypto details resolved
+     *  before G2 with the offline parameters P-09.3.1b). */
+    publicKey: text("public_key"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("devices_org_idx").on(t.organizationId),
+    index("devices_account_idx").on(t.accountId),
+  ],
+);
+
+/**
+ * Offline event outbox (Entrega 4, REQ-9, TX-06). Every provisional action a
+ * device performs while disconnected lands here with a device-generated
+ * event_id, the operator's own external folio, and a chained hash for
+ * integrity. Idempotency: unique (organizationId, eventId) — re-sending the
+ * same event never re-applies its effect. Two distinct event_ids with the
+ * same business fingerprint are BOTH kept and the second marked
+ * duplicado_negocio (never silently dropped — it is evidence).
+ */
+export const offlineEvents = pgTable(
+  "offline_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id),
+    /** Device-generated id (UUID) — the idempotency key. */
+    eventId: uuid("event_id").notNull(),
+    deviceId: uuid("device_id")
+      .notNull()
+      .references(() => devices.id),
+    type: text("type", {
+      enum: ["cobro_provisional", "ingreso_contingencia", "excepcion"],
+    }).notNull(),
+    /** Operator's own reference, independent of event_id — used to detect
+     *  business duplicates (REQ-9). */
+    folioExterno: text("folio_externo").notNull(),
+    actorId: text("actor_id")
+      .notNull()
+      .references(() => authUsers.id),
+    /** Cash session (turno) when the event relates to money; may be null offline. */
+    cashSessionId: uuid("cash_session_id").references(() => cashSessions.id),
+    memberId: uuid("member_id").references(() => members.id),
+    /** Timestamp declared by the device (may be stale — freshness checked on ingress). */
+    capturedAt: timestamp("captured_at", { withTimezone: true }).notNull(),
+    amountCents: integer("amount_cents"),
+    method: text("method", { enum: ["cash", "transfer"] }),
+    payload: text("payload"),
+    state: text("state", {
+      enum: ["pendiente", "sincronizado", "rechazado", "duplicado_negocio"],
+    })
+      .notNull()
+      .default("pendiente"),
+    /** Hash chain for auditable reconstruction (SPEC:OFF-RECON). */
+    prevHash: text("prev_hash"),
+    hash: text("hash"),
+    /** Payment created when a provisional cobro is synced (Entrega 2 link). */
+    paymentId: uuid("payment_id").references(() => payments.id),
+    rejectReason: text("reject_reason"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // Idempotency key (TX-06): re-sending the same event is a no-op.
+    unique("offline_events_event_unique").on(t.organizationId, t.eventId),
+    // Business-duplicate detection fingerprint (marked, never blocked).
+    index("offline_events_business_idx").on(t.organizationId, t.folioExterno, t.type, t.amountCents),
+    index("offline_events_device_idx").on(t.organizationId, t.deviceId, t.createdAt),
+  ],
+);
+
+/**
+ * Membership snapshot (Entrega 4, SPEC:OFF-FRESH): the membership coverage a
+ * device captured for contingency ingress. Freshness is checked at sync time
+ * against organizations.offline_freshness_hours (72h working default).
+ */
+export const membershipSnapshots = pgTable(
+  "membership_snapshots",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id),
+    memberId: uuid("member_id")
+      .notNull()
+      .references(() => members.id),
+    coverage: text("coverage", { enum: ["none", "unlimited", "limited"] }).notNull(),
+    /** When the device captured this snapshot. */
+    capturedAt: timestamp("captured_at", { withTimezone: true }).notNull(),
+    deviceId: uuid("device_id").references(() => devices.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("membership_snapshots_member_idx").on(t.organizationId, t.memberId, t.capturedAt),
+  ],
+);
+
+/**
  * Audit log (auditoría): every financial mutation writes one row in the SAME
  * transaction as the mutation itself (actor, action, entity, metadata).
  */
@@ -484,5 +606,8 @@ export const schema = {
   sessions,
   bookings,
   bookingCancellations,
+  devices,
+  offlineEvents,
+  membershipSnapshots,
   auditLog,
 };

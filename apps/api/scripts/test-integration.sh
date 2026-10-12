@@ -22,4 +22,5 @@ run_suite() {
 run_suite "payments.integration.test.ts"  "gym_test_payments"
 run_suite "cash.integration.test.ts"      "gym_test_cash"
 run_suite "bookings.integration.test.ts"  "gym_test_clases"
+run_suite "offline.integration.test.ts"   "gym_test_offline"
 echo "── all integration suites passed"
