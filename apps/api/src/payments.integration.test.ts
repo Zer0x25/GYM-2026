@@ -30,7 +30,7 @@ const DATABASE_URL =
   process.env.TEST_DATABASE_URL ?? "postgres://gym:gymtestpass@localhost:55432/gym_test_payments";
 const SECRET = "integration-test-secret-not-for-production-000000";
 
-describe.skipIf(!DATABASE_URL)("payments integration (spec 003, REQ-2)", () => {
+describe.skipIf(!process.env.TEST_DATABASE_URL)("payments integration (spec 003, REQ-2)", () => {
   let db: Database;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Fastify instance
   let app: any;

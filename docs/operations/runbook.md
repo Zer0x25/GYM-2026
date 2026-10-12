@@ -101,6 +101,40 @@ TEST_DATABASE_URL=postgres://gym:gym-local-dev@localhost:55432/gym_test \
   (REQ-11). Procedimiento exacto se documenta al implementar la unidad de
   operación; el gate no lo cubre todavía.
 
+## Entrega 3 · clases y reservas (receta curl, spec 004)
+
+Con cookie de admin (`$A`), un instructor (`inst-1`) y un socio con membresía activa:
+
+```bash
+# 1) Plantilla de clase (admin)
+TPL=$(curl -s -X POST localhost:3000/api/v1/class-templates -b "$A" -H 'content-type: application/json' \
+  -d '{"name":"Spinning AM","type":"grupal","capacity":4,"cancellationWindowHours":24}' | jq -r .data.id)
+
+# 2) Sesión grupal de esa plantilla (mañana 10:00–11:00)
+SID=$(curl -s -X POST localhost:3000/api/v1/sessions -b "$A" -H 'content-type: application/json' -d '{
+  "templateId":"'$TPL'","type":"grupal","instructorId":"inst-1",
+  "startsAt":"2026-10-13T13:00:00Z","endsAt":"2026-10-13T14:00:00Z","capacity":4}' | jq -r .data.id)
+
+# 3) Solape del mismo instructor → 409 (TX-02)
+curl -s -o /dev/null -w '%{http_code}\n' -X POST localhost:3000/api/v1/sessions -b "$A" \
+  -H 'content-type: application/json' -d '{
+  "type":"fija","instructorId":"inst-1","startsAt":"2026-10-13T13:30:00Z",
+  "endsAt":"2026-10-13T14:30:00Z","capacity":1}'   # → 409
+
+# 4) Reservar (socio o recepción). Cupo 4: 4 reservas pasan, la 5ª → 409 (TX-01).
+curl -s -X POST localhost:3000/api/v1/bookings -b "$A" -H 'content-type: application/json' \
+  -d '{"sessionId":"'$SID'","memberId":"'$MEMBER'"}'
+
+# 5) Cancelar temprana (>24h) devuelve crédito; tardía lo retiene. Doble cancel → 409 (TX-04).
+curl -s -X POST localhost:3000/api/v1/bookings/$BID/cancel -b "$A" -H 'content-type: application/json' \
+  -d '{"type":"temprana"}'
+
+# 6) Agenda unificada del instructor
+curl -s 'localhost:3000/api/v1/agenda?instructorId=inst-1' -b "$A"
+```
+
+Para correr los tests de integración (cada uno contra su BD aislada): `apps/api/scripts/test-integration.sh`.
+
 ## Pendientes (ver STATE.md)
 
 - Elección del VPS concreto, región y recursos.

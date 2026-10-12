@@ -313,6 +313,136 @@ export const cashMovements = pgTable(
 );
 
 /**
+ * Class template (plantilla de clase): defines a group or fixed class with
+ * its capacity, reservation window, cancellation window and required
+ * coverage. Configurable per tenant (admin). The template is the recipe;
+ * concrete occurrences are `sessions`.
+ */
+export const classTemplates = pgTable(
+  "class_templates",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id),
+    name: text("name").notNull(),
+    type: text("type", { enum: ["grupal", "fija"] }).notNull(),
+    /** Max concurrent bookings a session of this template accepts. */
+    capacity: integer("capacity").notNull(),
+    /** Hours before the session that reservation opens (0 = always open). */
+    reservationWindowHours: integer("reservation_window_hours").notNull().default(0),
+    /** Hours before the session that a cancellation is still "temprana". */
+    cancellationWindowHours: integer("cancellation_window_hours").notNull().default(24),
+    /** Plan coverage required to book (ties to plans.coverage). */
+    coverageRequired: text("coverage_required", { enum: ["none", "unlimited", "limited"] })
+      .notNull()
+      .default("unlimited"),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("class_templates_org_idx").on(t.organizationId)],
+);
+
+/**
+ * Session (sesión): a concrete occurrence of a class — grupal, fija (fixed
+ * published), cita (individual appointment) or bloqueo (instructor block).
+ * All instructor commitments live here so the agenda can be unified and
+ * checked for overlaps (TX-02). capacity snapshots the template at creation.
+ */
+export const sessions = pgTable(
+  "sessions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id),
+    templateId: uuid("template_id").references(() => classTemplates.id),
+    type: text("type", { enum: ["grupal", "fija", "cita", "bloqueo"] }).notNull(),
+    /** Instructor (staff account) that owns this slot. */
+    instructorId: text("instructor_id").notNull(),
+    startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
+    endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
+    /** Capacity for bookable sessions (grupal/fija/cita); bloqueo is ignored. */
+    capacity: integer("capacity").notNull().default(1),
+    state: text("state", { enum: ["programada", "cancelada", "completada"] })
+      .notNull()
+      .default("programada"),
+    createdBy: text("created_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("sessions_org_idx").on(t.organizationId),
+    index("sessions_instructor_idx").on(t.instructorId, t.startsAt),
+  ],
+);
+
+/**
+ * Booking (reserva): a member's firm hold on a session. One per (session,
+ * member) — the unique constraint is the real guard against double-booking
+ * the same member (REQ-4). beneficioComprometido marks that the member's
+ * access has been committed for this booking (set once, never re-consumed).
+ */
+export const bookings = pgTable(
+  "bookings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id),
+    sessionId: uuid("session_id")
+      .notNull()
+      .references(() => sessions.id),
+    memberId: uuid("member_id")
+      .notNull()
+      .references(() => members.id),
+    state: text("state", { enum: ["confirmada", "cancelada", "ausente"] })
+      .notNull()
+      .default("confirmada"),
+    /** True once the member's benefit is committed for this booking (REQ-4). */
+    beneficioComprometido: boolean("beneficio_comprometido").notNull().default(false),
+    createdBy: text("created_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("bookings_org_idx").on(t.organizationId),
+    index("bookings_session_idx").on(t.sessionId),
+    // One booking per member per session — no double-booking the same slot.
+    unique("bookings_session_member_unique").on(t.sessionId, t.memberId),
+  ],
+);
+
+/**
+ * Booking cancellation (cancelación): one row per booking cancellation,
+ * recording the policy type (temprana/tardia/gimnasio/ausencia) and whether
+ * the credit was returned. One-per-booking by design (unique on bookingId)
+ * so the credit is moved exactly once (TX-04) even under concurrency.
+ */
+export const bookingCancellations = pgTable(
+  "booking_cancellations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id),
+    bookingId: uuid("booking_id")
+      .notNull()
+      .references(() => bookings.id),
+    type: text("type", { enum: ["temprana", "tardia", "gimnasio", "ausencia"] }).notNull(),
+    /** Whether the member's benefit/credit was returned (temprana/gimnasio). */
+    creditReturned: boolean("credit_returned").notNull().default(false),
+    reason: text("reason"),
+    actorId: text("actor_id").notNull(),
+    actorRole: text("actor_role").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("booking_cancellations_org_idx").on(t.organizationId),
+    // One cancellation per booking: the idempotency key for the credit move.
+    unique("booking_cancellations_booking_unique").on(t.bookingId),
+  ],
+);
+
+/**
  * Audit log (auditoría): every financial mutation writes one row in the SAME
  * transaction as the mutation itself (actor, action, entity, metadata).
  */
@@ -350,5 +480,9 @@ export const schema = {
   payments,
   cashSessions,
   cashMovements,
+  classTemplates,
+  sessions,
+  bookings,
+  bookingCancellations,
   auditLog,
 };

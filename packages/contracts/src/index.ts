@@ -213,3 +213,124 @@ export type CashConsolidation = z.infer<typeof CashConsolidation>;
 export const ApiOk = <T extends z.ZodTypeAny>(data: T) =>
   z.object({ data });
 export type ApiOk<T> = { data: T };
+
+// --- Entrega 3: clases, sesiones, agenda y reservas ---------------------------
+
+export const ClassType = z.enum(["grupal", "fija"]);
+export type ClassType = z.infer<typeof ClassType>;
+
+export const SessionType = z.enum(["grupal", "fija", "cita", "bloqueo"]);
+export type SessionType = z.infer<typeof SessionType>;
+
+export const SessionState = z.enum(["programada", "cancelada", "completada"]);
+export type SessionState = z.infer<typeof SessionState>;
+
+export const BookingState = z.enum(["confirmada", "cancelada", "ausente"]);
+export type BookingState = z.infer<typeof BookingState>;
+
+export const CancellationType = z.enum(["temprana", "tardia", "gimnasio", "ausencia"]);
+export type CancellationType = z.infer<typeof CancellationType>;
+
+export const CreateClassTemplateRequest = z.object({
+  name: z.string().min(1),
+  type: ClassType,
+  capacity: z.number().int().positive(),
+  reservationWindowHours: z.number().int().nonnegative().default(0),
+  cancellationWindowHours: z.number().int().nonnegative().default(24),
+  coverageRequired: z.enum(["none", "unlimited", "limited"]).default("unlimited"),
+});
+export type CreateClassTemplateRequest = z.infer<typeof CreateClassTemplateRequest>;
+
+export const ClassTemplateDetail = z.object({
+  id: z.string().uuid(),
+  organizationId: z.string().uuid(),
+  name: z.string(),
+  type: ClassType,
+  capacity: z.number().int(),
+  reservationWindowHours: z.number().int(),
+  cancellationWindowHours: z.number().int(),
+  coverageRequired: z.enum(["none", "unlimited", "limited"]),
+  active: z.boolean(),
+  createdAt: z.string(),
+});
+export type ClassTemplateDetail = z.infer<typeof ClassTemplateDetail>;
+
+export const CreateSessionRequest = z.object({
+  templateId: z.string().uuid().optional(),
+  type: SessionType,
+  instructorId: z.string().min(1),
+  startsAt: z.string(),
+  endsAt: z.string(),
+  capacity: z.number().int().positive().default(1),
+});
+export type CreateSessionRequest = z.infer<typeof CreateSessionRequest>;
+
+export const SessionDetail = z.object({
+  id: z.string().uuid(),
+  organizationId: z.string().uuid(),
+  templateId: z.string().uuid().nullable(),
+  type: SessionType,
+  instructorId: z.string(),
+  startsAt: z.string(),
+  endsAt: z.string(),
+  capacity: z.number().int(),
+  state: SessionState,
+  /** Confirmed bookings count (derived; drives the last-slot check). */
+  confirmedCount: z.number().int(),
+  createdAt: z.string(),
+});
+export type SessionDetail = z.infer<typeof SessionDetail>;
+
+export const CreateBookingRequest = z.object({
+  sessionId: z.string().uuid(),
+});
+export type CreateBookingRequest = z.infer<typeof CreateBookingRequest>;
+
+export const BookingDetail = z.object({
+  id: z.string().uuid(),
+  organizationId: z.string().uuid(),
+  sessionId: z.string().uuid(),
+  memberId: z.string().uuid(),
+  state: BookingState,
+  beneficioComprometido: z.boolean(),
+  createdAt: z.string(),
+});
+export type BookingDetail = z.infer<typeof BookingDetail>;
+
+export const CancelBookingRequest = z.object({
+  type: CancellationType,
+  reason: z.string().optional(),
+});
+export type CancelBookingRequest = z.infer<typeof CancelBookingRequest>;
+
+export const BookingCancellationDetail = z.object({
+  id: z.string().uuid(),
+  organizationId: z.string().uuid(),
+  bookingId: z.string().uuid(),
+  type: CancellationType,
+  creditReturned: z.boolean(),
+  reason: z.string().nullable(),
+  actorId: z.string(),
+  actorRole: z.string(),
+  createdAt: z.string(),
+});
+export type BookingCancellationDetail = z.infer<typeof BookingCancellationDetail>;
+
+export const MarkAttendanceRequest = z.object({
+  /** "asistio" → confirmada attendance; "ausencia" → no-show (REQ-5). */
+  outcome: z.enum(["asistio", "ausencia"]),
+});
+export type MarkAttendanceRequest = z.infer<typeof MarkAttendanceRequest>;
+
+/** Unified instructor agenda entry (grupal/fija/cita/bloqueo merged). */
+export const AgendaEntry = z.object({
+  sessionId: z.string().uuid(),
+  type: SessionType,
+  startsAt: z.string(),
+  endsAt: z.string(),
+  capacity: z.number().int(),
+  confirmedCount: z.number().int(),
+  state: SessionState,
+  templateName: z.string().nullable(),
+});
+export type AgendaEntry = z.infer<typeof AgendaEntry>;

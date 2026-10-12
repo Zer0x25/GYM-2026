@@ -13,11 +13,16 @@ import { organizations } from "@gym/db";
 import type { Database } from "@gym/db";
 import {
   CloseCashSessionRequest,
+  CreateBookingRequest,
+  CancelBookingRequest,
+  CreateClassTemplateRequest,
   CreateMemberRequest,
+  CreateMembershipRequest,
   CreateOrganizationRequest,
   CreatePlanRequest,
-  CreateMembershipRequest,
+  CreateSessionRequest,
   DecidePaymentRequest,
+  MarkAttendanceRequest,
   OpenCashSessionRequest,
   RegisterPaymentRequest,
   SessionResponse,
@@ -33,6 +38,8 @@ import { PlansService } from "./services/plans.js";
 import { MembershipsService } from "./services/memberships.js";
 import { PaymentsService } from "./services/payments.js";
 import { CashService } from "./services/cash.js";
+import { SessionsService } from "./services/sessions.js";
+import { BookingsService } from "./services/bookings.js";
 import type { SessionContext } from "./session.js";
 
 declare module "fastify" {
@@ -499,6 +506,162 @@ export async function buildServer(opts: AppOptions) {
     const day = query ? new Date(query) : new Date();
     const data = await cashService.consolidateDay(req.session.organizationId, day);
     return reply.send({ data });
+  });
+
+  // --- Classes & sessions (Entrega 3) -----------------------------------------
+  const sessionsService = new SessionsService(opts.db);
+  const bookingsService = new BookingsService(opts.db);
+
+  app.post("/api/v1/class-templates", async (req: FastifyRequest, reply: FastifyReply) => {
+    requireRole(req.session, ["admin"]);
+    assertTenantContext(req.session);
+    const parsed = CreateClassTemplateRequest.safeParse(req.body);
+    if (!parsed.success) throw validationError({ issues: parsed.error.issues });
+    const row = await sessionsService.createTemplate(
+      { organizationId: req.session.organizationId, accountId: req.session.accountId, role: req.session.role },
+      parsed.data,
+    );
+    return reply.status(201).send({ data: row });
+  });
+
+  app.get("/api/v1/class-templates", async (req: FastifyRequest, reply: FastifyReply) => {
+    requireRole(req.session, ["admin", "recepcion", "instructor", "socio"]);
+    assertTenantContext(req.session);
+    const rows = await sessionsService.listTemplates(req.session.organizationId);
+    return reply.send({ data: rows });
+  });
+
+  app.post("/api/v1/sessions", async (req: FastifyRequest, reply: FastifyReply) => {
+    requireRole(req.session, ["admin", "recepcion", "instructor"]);
+    assertTenantContext(req.session);
+    const parsed = CreateSessionRequest.safeParse(req.body);
+    if (!parsed.success) throw validationError({ issues: parsed.error.issues });
+    const row = await sessionsService.create(
+      { organizationId: req.session.organizationId, accountId: req.session.accountId, role: req.session.role },
+      {
+        templateId: parsed.data.templateId,
+        type: parsed.data.type,
+        instructorId: parsed.data.instructorId,
+        startsAt: new Date(parsed.data.startsAt),
+        endsAt: new Date(parsed.data.endsAt),
+        capacity: parsed.data.capacity,
+      },
+    );
+    return reply.status(201).send({ data: row });
+  });
+
+  app.get("/api/v1/sessions", async (req: FastifyRequest, reply: FastifyReply) => {
+    requireRole(req.session, ["admin", "recepcion", "instructor", "socio"]);
+    assertTenantContext(req.session);
+    const query = req.query as { from?: string; to?: string };
+    const from = query.from ? new Date(query.from) : new Date(Date.now() - 7 * 24 * 3600 * 1000);
+    const to = query.to ? new Date(query.to) : new Date(Date.now() + 30 * 24 * 3600 * 1000);
+    const rows = await sessionsService.listBookable(req.session.organizationId, from, to);
+    return reply.send({ data: rows });
+  });
+
+  app.get<{ Params: { id: string } }>("/api/v1/sessions/:id", async (req, reply) => {
+    requireRole(req.session, ["admin", "recepcion", "instructor", "socio"]);
+    assertTenantContext(req.session);
+    const session = await sessionsService.getById(req.session.organizationId, req.params.id);
+    return reply.send({ data: session });
+  });
+
+  app.post<{ Params: { id: string } }>("/api/v1/sessions/:id/cancel", async (req, reply) => {
+    requireRole(req.session, ["admin", "recepcion"]);
+    assertTenantContext(req.session);
+    const row = await sessionsService.cancel(
+      { organizationId: req.session.organizationId, accountId: req.session.accountId, role: req.session.role },
+      req.params.id,
+    );
+    return reply.send({ data: row });
+  });
+
+  // Unified instructor agenda (REQ-6, TX-02)
+  app.get("/api/v1/agenda", async (req: FastifyRequest, reply: FastifyReply) => {
+    requireRole(req.session, ["admin", "recepcion", "instructor"]);
+    assertTenantContext(req.session);
+    const query = req.query as { instructorId?: string; from?: string; to?: string };
+    if (!query.instructorId) throw validationError({ issues: [{ path: ["instructorId"], message: "instructorId requerido" }] });
+    const from = query.from ? new Date(query.from) : new Date(Date.now() - 7 * 24 * 3600 * 1000);
+    const to = query.to ? new Date(query.to) : new Date(Date.now() + 30 * 24 * 3600 * 1000);
+    const rows = await sessionsService.agenda(req.session.organizationId, query.instructorId, from, to);
+    return reply.send({ data: rows });
+  });
+
+  // --- Bookings (Entrega 3, REQ-4/5) -------------------------------------------
+  app.post("/api/v1/bookings", async (req: FastifyRequest, reply: FastifyReply) => {
+    requireRole(req.session, ["admin", "recepcion", "socio"]);
+    assertTenantContext(req.session);
+    const parsed = CreateBookingRequest.safeParse(req.body);
+    if (!parsed.success) throw validationError({ issues: parsed.error.issues });
+    // Socio books for themselves (memberId from the session, never the client).
+    const memberId = req.session.role === "socio" ? req.session.memberId : (req.body as { memberId?: string }).memberId;
+    if (!memberId) throw validationError({ issues: [{ path: ["memberId"], message: "memberId requerido" }] });
+    const row = await bookingsService.create(
+      {
+        organizationId: req.session.organizationId,
+        accountId: req.session.accountId,
+        role: req.session.role,
+        memberId: req.session.memberId,
+      },
+      parsed.data.sessionId,
+      memberId,
+    );
+    return reply.status(201).send({ data: row });
+  });
+
+  app.get("/api/v1/bookings/mine", async (req: FastifyRequest, reply: FastifyReply) => {
+    requireRole(req.session, ["socio"]);
+    assertTenantContext(req.session);
+    if (!req.session.memberId) throw new AppError("FORBIDDEN", "Sesión sin socio vinculado");
+    const rows = await bookingsService.listByMember(req.session.organizationId, req.session.memberId);
+    return reply.send({ data: rows });
+  });
+
+  app.get("/api/v1/bookings", async (req: FastifyRequest, reply: FastifyReply) => {
+    requireRole(req.session, ["admin", "recepcion", "instructor"]);
+    assertTenantContext(req.session);
+    const query = req.query as { sessionId?: string };
+    if (!query.sessionId) throw validationError({ issues: [{ path: ["sessionId"], message: "sessionId requerido" }] });
+    const rows = await bookingsService.listBySession(req.session.organizationId, query.sessionId);
+    return reply.send({ data: rows });
+  });
+
+  app.post<{ Params: { id: string } }>("/api/v1/bookings/:id/cancel", async (req, reply) => {
+    requireRole(req.session, ["admin", "recepcion", "socio"]);
+    assertTenantContext(req.session);
+    const parsed = CancelBookingRequest.safeParse(req.body ?? {});
+    if (!parsed.success) throw validationError({ issues: parsed.error.issues });
+    const result = await bookingsService.cancel(
+      {
+        organizationId: req.session.organizationId,
+        accountId: req.session.accountId,
+        role: req.session.role,
+        memberId: req.session.memberId,
+      },
+      req.params.id,
+      parsed.data,
+    );
+    return reply.send({ data: result });
+  });
+
+  app.post<{ Params: { id: string } }>("/api/v1/bookings/:id/attendance", async (req, reply) => {
+    requireRole(req.session, ["admin", "recepcion", "instructor"]);
+    assertTenantContext(req.session);
+    const parsed = MarkAttendanceRequest.safeParse(req.body);
+    if (!parsed.success) throw validationError({ issues: parsed.error.issues });
+    const row = await bookingsService.markAttendance(
+      {
+        organizationId: req.session.organizationId,
+        accountId: req.session.accountId,
+        role: req.session.role,
+        memberId: req.session.memberId,
+      },
+      req.params.id,
+      parsed.data.outcome,
+    );
+    return reply.send({ data: row });
   });
 
   return app;

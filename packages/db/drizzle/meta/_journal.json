@@ -43,6 +43,13 @@
       "when": 1791826487539,
       "tag": "0005_entrega2_planes_pagos_caja",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791834749647,
+      "tag": "0006_entrega3_clases_reservas",
+      "breakpoints": true
     }
   ]
 }

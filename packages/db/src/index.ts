@@ -17,6 +17,10 @@ export {
   payments,
   cashSessions,
   cashMovements,
+  classTemplates,
+  sessions,
+  bookings,
+  bookingCancellations,
   auditLog,
 } from "./schema.js";
 
