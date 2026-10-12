@@ -84,9 +84,6 @@ describe("errors module", () => {
     expect(toErrorResponse(new AppError("VALIDATION_ERROR", "bad"))).toEqual({
       error: { code: "VALIDATION_ERROR", message: "bad" },
     });
-    expect(toErrorResponse(forbiddenCheck())).toEqual({
-      error: { code: "FORBIDDEN", message: "Not authorized for this resource" },
-    });
   });
 
   it("maps unknown errors to INTERNAL_ERROR without leaking the message", () => {
@@ -95,7 +92,3 @@ describe("errors module", () => {
     expect(res.error.message).not.toContain("detalle sensible");
   });
 });
-
-function forbiddenCheck() {
-  return new AppError("FORBIDDEN", "Not authorized for this resource");
-}

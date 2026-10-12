@@ -15,8 +15,8 @@
 
 ## Unidad activa
 
-- 001 · Andamiaje del monorepo — implementada y verificada; **pendiente de revisión humana (Tier 1) y de sellado**.
-- Siguiente paso (Hito 1, Entrega 1): auth/tenant/roles + socios y permisos (REQ-1, REQ-7).
+- 002 · Auth, tenant y roles + socios y permisos (specs/002-auth-tenant-socios.md, Tier 1) — **en curso**: sesiones con Better Auth sobre Drizzle, verificación `tenant+actor+rol+recurso`, CRUD de socios con aislamiento, portal «mi perfil».
+- Siguiente paso (Entrega 2): planes/períodos/beneficios + pagos manuales/validación + caja/QR.
 
 ## Pendientes críticos (resolver antes del piloto real G2)
 
