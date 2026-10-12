@@ -13,14 +13,18 @@
 - Revisión Tier 1: pendiente de revisión humana del usuario antes de sellar `phase=project`.
 - Aprendizaje: `docs/learning.md` (hallazgos del Modo A y la limitación del gate con marcadores HITO0_PENDING).
 
+## Unidad 002 · Cerrada
+
+- 002 · Auth, tenant y roles + socios y permisos (specs/002-auth-tenant-socios.md, Tier 1) — **CERRADA 2026-10-12 tras verificación humana del usuario** (login funcional en el navegador, sesión con org+rol desde datos almacenados, panel, portal del socio, aislamiento cross-tenant probado). Gate verde; 5/5 tests de integración; commits `1c09224`, `f0dee1a`, `678b0b1`, `6df3928` locales sin push.
+- CA verificados: CA-1/CA-2 (sesión con org+rol; cross-tenant 404), CA-3 (listado filtrado por tenant), CA-4 (socio edita solo su contacto), CA-6 (sign-out invalida servidor), CA-8 (sin sauna).
+- Bug de producción corregido y registrado en skill `better-auth-fastify-wiring`: Set-Cookie múltiple en el bridge WHATWG (reply.raw.setHeader con getSetCookie()).
+
 ## Unidad activa
 
-- 002 · Auth, tenant y roles + socios y permisos (specs/002-auth-tenant-socios.md, Tier 1) — **API + UI implementadas y verificadas; pendiente de revisión humana del usuario antes de cerrar**. Gate completo en verde (lint, typecheck, build; 20 unit + 8 integración contra Postgres real). Commit local `1c09224` sin push.
-- Verificado por CA: CA-1/CA-2 (sesión con org+role desde datos almacenados; cross-tenant 404 sin fuga), CA-3 (listado/búsqueda filtrados por tenant; organizationId del body ignorado), CA-4 (socio edita solo su contacto; ajeno → FORBIDDEN), CA-6 (sign-out invalida sesión en servidor → 401), CA-8 (`grep -ri sauna` en código: 0).
-- Evidencia de ejecución real: flujo end-to-end vía HTTP (login → session → listado → alta socio → logout → 401) verificado con curl contra Postgres real, tanto en el origen de la API (:3000) como vía proxy de Vite (:5173, origin confiable vía `trustedOrigins`).
-- UI en `apps/web`: login (email+password), panel de socios (listado filtrado por tenant + alta), portal «Mi perfil» (socio ve/edita solo su contacto). Cliente API con cookies httpOnly; guards de rol (UX; el API re-valida). Proxy `/api/*` → :3000 en dev.
-- Pendiente de esta unidad: revisión humana Tier 1 (definir identidad/aislamiento/permisos afecta todos los módulos siguientes).
-- Siguiente paso (Entrega 2): planes/períodos/beneficios + pagos manuales/validación + caja/QR.
+- 003 · Planes, membresías, pagos con validación y caja (specs/003-planes-pagos-caja.md, Tier 1) — **spec aprobada; en implementación**. Decisión del usuario 2026-10-12: backend primero (esquema + contratos + servicios + tests), UI después en una sola pasada con el design system (ADR-0003 pendiente del subagente de investigación de diseño).
+- Invariantes centrales: pago registrado NO concede cobertura hasta validación humana (admin, distinto actor); pago validado inmutable; movimiento de caja solo al validar; cierre de turno idempotente (TX-05); auditoría de toda mutación financiera.
+- Pendiente de esta unidad: revisión humana Tier 1 de los flujos de dinero antes de construir UI encima.
+- Siguiente paso (Entrega 3): clases grupales + personalizadas + reservas (REQ-4/5/6).
 ## Pendientes críticos (resolver antes del piloto real G2)
 
 - Parámetro de permiso offline P-09.3.1b (duración exacta y verificación; 72 h es valor de trabajo derivado, no aprobado).
