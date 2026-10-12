@@ -6,18 +6,21 @@
  */
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
-import { CalendarCheck } from "lucide-react";
-import { ApiError, api, formatCLP, type Member, type Membership, type Plan } from "../api.js";
+import { CalendarCheck, CalendarX2, CalendarPlus } from "lucide-react";
+import { ApiError, api, formatCLP, type Booking, type Member, type Membership, type Plan, type Session } from "../api.js";
 import { Button } from "../components/ui/button.js";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card.js";
 import { Input, Label } from "../components/ui/input.js";
-import { MembershipStateBadge } from "../components/ui/badge.js";
+import { MembershipStateBadge, BookingStateBadge } from "../components/ui/badge.js";
 
 export function Portal() {
   const [me, setMe] = useState<Member | null>(null);
   const [contactEmail, setContactEmail] = useState("");
   const [memberships, setMemberships] = useState<Membership[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
+  const [bookable, setBookable] = useState<Session[]>([]);
+  const [myBookings, setMyBookings] = useState<Booking[]>([]);
+  const [busyBooking, setBusyBooking] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -32,10 +35,47 @@ export function Portal() {
     }
   }, []);
 
+  const loadClasses = useCallback(async () => {
+    try {
+      const [list, mine] = await Promise.all([api.listSessions(), api.myBookings()]);
+      setBookable(list.filter((s) => s.state === "programada"));
+      setMyBookings(mine);
+    } catch {
+      // Clases are optional; a socio without coverage still sees the profile.
+    }
+  }, []);
+
   useEffect(() => {
     void load();
+    void loadClasses();
     void api.listPlans().then(setPlans).catch(() => undefined);
-  }, [load]);
+  }, [load, loadClasses]);
+
+  async function onReserve(sessionId: string) {
+    setBusyBooking(sessionId);
+    try {
+      await api.createBooking({ sessionId });
+      toast.success("Reserva confirmada");
+      await loadClasses();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "No se pudo reservar");
+    } finally {
+      setBusyBooking(null);
+    }
+  }
+
+  async function onCancelBooking(bookingId: string) {
+    setBusyBooking(bookingId);
+    try {
+      await api.cancelBooking(bookingId, { type: "temprana" });
+      toast.success("Reserva cancelada");
+      await loadClasses();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "No se pudo cancelar");
+    } finally {
+      setBusyBooking(null);
+    }
+  }
 
   async function onSave(e: FormEvent) {
     e.preventDefault();
@@ -109,6 +149,56 @@ export function Portal() {
               })}
             </ul>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <CalendarPlus className="h-5 w-5" /> Reservar clase
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {(() => {
+            const booked = new Map(myBookings.filter((b) => b.state === "confirmada").map((b) => [b.sessionId, b]));
+            if (bookable.length === 0) {
+              return <p className="py-4 text-center text-sm text-muted-foreground">No hay clases disponibles para reservar.</p>;
+            }
+            return (
+              <ul className="divide-y">
+                {bookable.map((s) => {
+                  const mine = booked.get(s.id);
+                  return (
+                    <li key={s.id} className="flex items-center justify-between py-3">
+                      <div>
+                        <p className="font-medium">{s.instructorId}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {new Date(s.startsAt).toLocaleString("es-CL", { dateStyle: "medium", timeStyle: "short" })}
+                        </p>
+                      </div>
+                      {mine ? (
+                        <div className="flex items-center gap-2">
+                          <BookingStateBadge state={mine.state} />
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={busyBooking === mine.id}
+                            onClick={() => void onCancelBooking(mine.id)}
+                          >
+                            <CalendarX2 className="h-4 w-4" /> Cancelar
+                          </Button>
+                        </div>
+                      ) : (
+                        <Button size="sm" disabled={busyBooking === s.id} onClick={() => void onReserve(s.id)}>
+                          Reservar
+                        </Button>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            );
+          })()}
         </CardContent>
       </Card>
     </section>

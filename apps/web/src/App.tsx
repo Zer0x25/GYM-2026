@@ -9,8 +9,10 @@ import { Panel } from "./pages/Panel.js";
 import { Portal } from "./pages/Portal.js";
 import { Payments } from "./pages/Payments.js";
 import { Cash } from "./pages/Cash.js";
+import { Classes } from "./pages/Classes.js";
+import { SessionDetail } from "./pages/SessionDetail.js";
 import { Toaster } from "./components/ui/toaster.js";
-import { Users, Wallet, Receipt, LogOut, Dumbbell } from "lucide-react";
+import { Users, Wallet, Receipt, LogOut, Dumbbell, CalendarDays } from "lucide-react";
 
 /**
  * App shell with session-aware routing and the reception layout (ADR-0003):
@@ -88,6 +90,9 @@ function Shell() {
           <SideLink to="/cash" icon={<Wallet className="h-4 w-4" />} open={sidebarOpen}>
             Caja
           </SideLink>
+          <SideLink to="/clases" icon={<CalendarDays className="h-4 w-4" />} open={sidebarOpen}>
+            Clases
+          </SideLink>
         </nav>
         <div className="border-t p-2">
           <button
@@ -121,6 +126,8 @@ function Shell() {
             <Route path="/panel" element={<RequireStaff><Panel /></RequireStaff>} />
             <Route path="/payments" element={<RequireStaff><Payments /></RequireStaff>} />
             <Route path="/cash" element={<RequireStaff><Cash /></RequireStaff>} />
+            <Route path="/clases" element={<RequireStaff><Classes /></RequireStaff>} />
+            <Route path="/clases/:id" element={<RequireStaff><SessionDetail /></RequireStaff>} />
             <Route path="*" element={<RequireStaff><Panel /></RequireStaff>} />
           </Routes>
         </main>

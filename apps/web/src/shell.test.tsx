@@ -44,6 +44,26 @@ const mockApi = {
   registerPayment: vi.fn().mockResolvedValue({}),
   myMemberships: vi.fn().mockResolvedValue([]),
   me: vi.fn().mockResolvedValue({ id: "m1", organizationId: "org-1", fullName: "Socio Uno", contactEmail: null, createdAt: "2026-10-01" }),
+
+  // Entrega 3: classes, sessions, bookings
+  listClassTemplates: vi.fn().mockResolvedValue([
+    { id: "t1", organizationId: "org-1", name: "Spinning", type: "grupal", capacity: 4, reservationWindowHours: 0, cancellationWindowHours: 24, coverageRequired: "unlimited", active: true, createdAt: "2026-10-01" },
+  ]),
+  createClassTemplate: vi.fn().mockResolvedValue({}),
+  listSessions: vi.fn().mockResolvedValue([
+    { id: "sess1", organizationId: "org-1", templateId: "t1", type: "grupal", instructorId: "inst-1", startsAt: "2026-10-13T13:00:00Z", endsAt: "2026-10-13T14:00:00Z", capacity: 4, state: "programada", createdBy: "admin-1", createdAt: "2026-10-12" },
+  ]),
+  getSession: vi.fn().mockResolvedValue({
+    id: "sess1", organizationId: "org-1", templateId: "t1", type: "grupal", instructorId: "inst-1", startsAt: "2026-10-13T13:00:00Z", endsAt: "2026-10-13T14:00:00Z", capacity: 4, state: "programada", createdBy: "admin-1", createdAt: "2026-10-12",
+  }),
+  listBookings: vi.fn().mockResolvedValue([]),
+  createBooking: vi.fn().mockResolvedValue({ id: "b1", state: "confirmada" }),
+  cancelBooking: vi.fn().mockResolvedValue({ booking: { id: "b1", state: "cancelada" }, cancellation: { creditReturned: true } }),
+  markAttendance: vi.fn().mockResolvedValue({ id: "b1", state: "confirmada" }),
+  myBookings: vi.fn().mockResolvedValue([]),
+  createSession: vi.fn().mockResolvedValue({}),
+  cancelSession: vi.fn().mockResolvedValue({}),
+  agenda: vi.fn().mockResolvedValue([]),
 };
 
 vi.spyOn(apiModule, "api", "get").mockReturnValue(mockApi as unknown as typeof apiModule.api);
@@ -89,5 +109,21 @@ describe("UI smoke (ADR-0003 shell + money pages)", () => {
     const validar = await screen.findByRole("button", { name: /Validar/ });
     validar.click();
     await waitFor(() => expect(mockApi.validatePayment).toHaveBeenCalledWith("pay1"));
+  });
+
+  it("renders the classes page (staff) with a new-session form and the roster", async () => {
+    renderAppAt("/clases");
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Clases y agenda" })).toBeTruthy());
+    expect(screen.getByRole("button", { name: "Crear sesión" })).toBeTruthy();
+    expect(await screen.findByText("inst-1")).toBeTruthy();
+  });
+
+  it("socio reserves a bookable session from the portal (booking flow)", async () => {
+    const socioSession = { ...adminSession, role: "socio" as const };
+    mockApi.session.mockResolvedValueOnce(socioSession);
+    renderAppAt("/portal");
+    const reservar = await screen.findByRole("button", { name: "Reservar" });
+    reservar.click();
+    await waitFor(() => expect(mockApi.createBooking).toHaveBeenCalledWith({ sessionId: "sess1" }));
   });
 });

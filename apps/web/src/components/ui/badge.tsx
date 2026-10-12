@@ -56,4 +56,32 @@ export function MembershipStateBadge({ state }: { state: string }) {
   return <Badge variant={s.variant}>{s.label}</Badge>;
 }
 
+/**
+ * Session state badge — programada = success; cancelada = destructive;
+ * completada = secondary.
+ */
+export function SessionStateBadge({ state }: { state: string }) {
+  const map: Record<string, { variant: BadgeProps["variant"]; label: string }> = {
+    programada: { variant: "success", label: "Programada" },
+    cancelada: { variant: "destructive", label: "Cancelada" },
+    completada: { variant: "secondary", label: "Completada" },
+  };
+  const s = map[state] ?? { variant: "secondary" as const, label: state };
+  return <Badge variant={s.variant}>{s.label}</Badge>;
+}
+
+/**
+ * Booking state badge — confirmada = success; cancelada = destructive;
+ * ausente = warning.
+ */
+export function BookingStateBadge({ state }: { state: string }) {
+  const map: Record<string, { variant: BadgeProps["variant"]; label: string }> = {
+    confirmada: { variant: "success", label: "Confirmada" },
+    cancelada: { variant: "destructive", label: "Cancelada" },
+    ausente: { variant: "warning", label: "Ausente" },
+  };
+  const s = map[state] ?? { variant: "secondary" as const, label: state };
+  return <Badge variant={s.variant}>{s.label}</Badge>;
+}
+
 export { Badge, badgeVariants };

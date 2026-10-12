@@ -147,6 +147,82 @@ export function formatCLP(cents: number): string {
   return `$${cents.toLocaleString("es-CL")}`;
 }
 
+// --- Entrega 3: classes, sessions, bookings (spec 004) ----------------------
+
+export type ClassType = "grupal" | "fija";
+export type SessionType = "grupal" | "fija" | "cita" | "bloqueo";
+export type SessionState = "programada" | "cancelada" | "completada";
+export type BookingState = "confirmada" | "cancelada" | "ausente";
+export type CancellationType = "temprana" | "tardia" | "gimnasio" | "ausencia";
+
+export interface ClassTemplate {
+  id: string;
+  organizationId: string;
+  name: string;
+  type: ClassType;
+  capacity: number;
+  reservationWindowHours: number;
+  cancellationWindowHours: number;
+  coverageRequired: "none" | "unlimited" | "limited";
+  active: boolean;
+  createdAt: string;
+}
+
+export interface CreateClassTemplateInput {
+  name: string;
+  type: ClassType;
+  capacity: number;
+  reservationWindowHours?: number;
+  cancellationWindowHours?: number;
+  coverageRequired?: "none" | "unlimited" | "limited";
+}
+
+export interface Session {
+  id: string;
+  organizationId: string;
+  templateId: string | null;
+  type: SessionType;
+  instructorId: string;
+  startsAt: string;
+  endsAt: string;
+  capacity: number;
+  state: SessionState;
+  createdBy: string;
+  createdAt: string;
+}
+
+export interface CreateSessionInput {
+  templateId?: string;
+  type: SessionType;
+  instructorId: string;
+  startsAt: string;
+  endsAt: string;
+  capacity: number;
+}
+
+export interface Booking {
+  id: string;
+  organizationId: string;
+  sessionId: string;
+  memberId: string;
+  state: BookingState;
+  beneficioComprometido: boolean;
+  createdBy: string;
+  createdAt: string;
+}
+
+export interface BookingCancellation {
+  id: string;
+  organizationId: string;
+  bookingId: string;
+  type: CancellationType;
+  creditReturned: boolean;
+  reason: string | null;
+  actorId: string;
+  actorRole: string;
+  createdAt: string;
+}
+
 export const api = {
   session: () => request<SessionData>("GET", "/auth/session"),
   signIn: (email: string, password: string) =>
@@ -221,4 +297,27 @@ export const api = {
     request<{ session: CashSession; movements: CashMovement[] }>("GET", `/cash/sessions/${id}`),
   consolidation: (date?: string) =>
     request<Consolidation>("GET", `/cash/consolidation${date ? `?date=${date}` : ""}`),
+
+  // --- Entrega 3: classes, sessions, bookings (spec 004) ----------------------
+  listClassTemplates: () => request<ClassTemplate[]>("GET", "/class-templates"),
+  createClassTemplate: (input: CreateClassTemplateInput) =>
+    request<ClassTemplate>("POST", "/class-templates", input),
+
+  listSessions: (from?: string, to?: string) =>
+    request<Session[]>("GET", `/sessions${from || to ? `?${from ? `from=${from}` : ""}${to ? `${from ? "&" : ""}to=${to}` : ""}` : ""}`),
+  getSession: (id: string) => request<Session>("GET", `/sessions/${id}`),
+  createSession: (input: CreateSessionInput) => request<Session>("POST", "/sessions", input),
+  cancelSession: (id: string) => request<Session>("POST", `/sessions/${id}/cancel`),
+
+  agenda: (instructorId: string, from?: string, to?: string) =>
+    request<Session[]>("GET", `/agenda?instructorId=${instructorId}${from ? `&from=${from}` : ""}${to ? `&to=${to}` : ""}`),
+
+  createBooking: (input: { sessionId: string; memberId?: string }) =>
+    request<Booking>("POST", "/bookings", input),
+  myBookings: () => request<Booking[]>("GET", "/bookings/mine"),
+  listBookings: (sessionId: string) => request<Booking[]>("GET", `/bookings?sessionId=${sessionId}`),
+  cancelBooking: (id: string, input: { type: CancellationType; reason?: string }) =>
+    request<{ booking: Booking; cancellation: BookingCancellation }>("POST", `/bookings/${id}/cancel`, input),
+  markAttendance: (id: string, outcome: "asistio" | "ausencia") =>
+    request<Booking>("POST", `/bookings/${id}/attendance`, { outcome }),
 };
