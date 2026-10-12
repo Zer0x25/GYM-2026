@@ -52,7 +52,7 @@ export type CreateOrganizationRequest = z.infer<typeof CreateOrganizationRequest
 /** Authenticated session context returned by /auth/session. */
 export const SessionResponse = z.object({
   user: z.object({
-    id: z.string().uuid(),
+    id: z.string(),
     email: z.string().email(),
     name: z.string(),
   }),

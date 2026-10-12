@@ -14,7 +14,7 @@ import type { TenantContext } from "./tenant.js";
 export interface SessionContext extends TenantContext {
   accountId: string;
   email: string;
-  memberId?: string;
+  memberId?: string | undefined;
 }
 
 /** Builds a SessionContext filling actorId from accountId (they are the same

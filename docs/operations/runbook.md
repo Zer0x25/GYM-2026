@@ -15,12 +15,27 @@ de infraestructura; el VPS concreto y su región quedan pendientes en STATE.
 ```sh
 corepack enable
 pnpm install
-docker compose up -d postgres
+docker run -d --name gym-dev-pg \
+  -e POSTGRES_USER=gym -e POSTGRES_PASSWORD=gym-local-dev -e POSTGRES_DB=gym \
+  -p 5432:5432 postgres:16-alpine
 cp .env.example .env        # editar valores ficticios; NUNCA secretos reales en el repo
-pnpm -r db:generate         # genera migraciones desde packages/db/src/schema.ts
-pnpm -r db:migrate          # aplica migraciones
-pnpm -r dev                 # web (5173) + api (3000)
+# AUTH_SECRET: openssl rand -base64 32  (fuera del repo)
+pnpm --filter @gym/db db:generate    # genera migraciones desde packages/db/src/schema.ts
+pnpm --filter @gym/db db:migrate     # aplica migraciones
+pnpm -r dev                          # web (5173) + api (3000)
 ./scripts/verify.sh
+```
+
+Pruebas de integración de `apps/api` (opcionales, contra Postgres real):
+
+```sh
+docker run -d --name gym-test-pg \
+  -e POSTGRES_USER=gym -e POSTGRES_PASSWORD=gym-local-dev -e POSTGRES_DB=gym_test \
+  -p 55432:5432 postgres:16-alpine
+DATABASE_URL=postgres://gym:gym-local-dev@localhost:55432/gym_test \
+  pnpm --filter @gym/db db:migrate
+TEST_DATABASE_URL=postgres://gym:gym-local-dev@localhost:55432/gym_test \
+  pnpm --filter @gym/api test
 ```
 
 ## Staging / piloto en VPS

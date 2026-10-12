@@ -18,12 +18,85 @@ export const organizations = pgTable("organizations", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-/** Identity account (staff or member login). Better Auth accounts live here
- *  alongside the profile; roles are per-organization via staff_assignments. */
+// ---------------------------------------------------------------------------
+// Better Auth core tables (self-hosted identity, ADR-0002 §2.2).
+// Managed by the drizzleAdapter; we declare them here so a single migration
+// owns the whole schema. Ids are text (Better Auth generates its own ids).
+// ---------------------------------------------------------------------------
+
+export const authUsers = pgTable("user", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  fullName: text("full_name"),
+  email: text("email").notNull().unique(),
+  emailVerified: boolean("email_verified").notNull().default(false),
+  image: text("image"),
+  // Admin plugin fields (Better Auth).
+  role: text("role").notNull().default("user"),
+  banned: boolean("banned"),
+  banReason: text("ban_reason"),
+  banExpires: timestamp("ban_expires", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const authSessions = pgTable(
+  "session",
+  {
+    id: text("id").primaryKey(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    token: text("token").notNull().unique(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    ipAddress: text("ip_address"),
+    userAgent: text("user_agent"),
+    // Admin plugin field (Better Auth).
+    impersonatedBy: text("impersonated_by"),
+    userId: text("user_id")
+      .notNull()
+      .references(() => authUsers.id, { onDelete: "cascade" }),
+  },
+  (t) => [index("session_user_id_idx").on(t.userId)],
+);
+
+export const authAccounts = pgTable(
+  "account",
+  {
+    id: text("id").primaryKey(),
+    accountId: text("account_id").notNull(),
+    providerId: text("provider_id").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => authUsers.id, { onDelete: "cascade" }),
+    accessToken: text("access_token"),
+    refreshToken: text("refresh_token"),
+    idToken: text("id_token"),
+    accessTokenExpiresAt: timestamp("access_token_expires_at", { withTimezone: true }),
+    refreshTokenExpiresAt: timestamp("refresh_token_expires_at", { withTimezone: true }),
+    scope: text("scope"),
+    password: text("password"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("account_user_id_idx").on(t.userId)],
+);
+
+export const authVerifications = pgTable("verification", {
+  id: text("id").primaryKey(),
+  identifier: text("identifier").notNull(),
+  value: text("value").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Identity account (staff or member login). The id is the Better Auth user
+ *  id (a text id), so this table uses text ids and links to auth users by id.
+ *  Roles are per-organization via staff_assignments. */
 export const identityAccounts = pgTable(
   "identity_accounts",
   {
-    id: uuid("id").primaryKey().defaultRandom(),
+    id: text("id").primaryKey(),
     email: text("email").notNull().unique(),
     passwordHash: text("password_hash").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -32,7 +105,8 @@ export const identityAccounts = pgTable(
 );
 
 /** Staff assignment: binds a user to exactly one organization with one role
- *  (D-02/C: one operational affiliation per staff member in the first launch). */
+ *  (D-02/C: one operational affiliation per staff member in the first launch).
+ *  accountId references the Better Auth user id (text). */
 export const staffAssignments = pgTable(
   "staff_assignments",
   {
@@ -40,9 +114,9 @@ export const staffAssignments = pgTable(
     organizationId: uuid("organization_id")
       .notNull()
       .references(() => organizations.id),
-    accountId: uuid("account_id")
+    accountId: text("account_id")
       .notNull()
-      .references(() => identityAccounts.id),
+      .references(() => authUsers.id),
     role: text("role", { enum: ["admin", "recepcion", "instructor"] }).notNull(),
     active: boolean("active").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -85,6 +159,10 @@ export const plans = pgTable(
 
 export const schema = {
   organizations,
+  authUsers,
+  authSessions,
+  authAccounts,
+  authVerifications,
   identityAccounts,
   staffAssignments,
   members,

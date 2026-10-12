@@ -8,6 +8,34 @@
       "when": 1791779234959,
       "tag": "0000_init_schema",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1791780254195,
+      "tag": "0001_auth_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791780728278,
+      "tag": "0002_user_fullname",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791781059426,
+      "tag": "0003_admin_plugin_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791781096266,
+      "tag": "0004_identity_accounts_text_id",
+      "breakpoints": true
     }
   ]
 }

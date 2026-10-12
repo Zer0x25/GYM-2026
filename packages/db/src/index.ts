@@ -3,7 +3,17 @@ import postgres from "postgres";
 import * as schema from "./schema.js";
 
 export { schema };
-export { organizations, identityAccounts, staffAssignments, members, plans } from "./schema.js";
+export {
+  organizations,
+  authUsers,
+  authSessions,
+  authAccounts,
+  authVerifications,
+  identityAccounts,
+  staffAssignments,
+  members,
+  plans,
+} from "./schema.js";
 
 /**
  * Creates a Drizzle client bound to the schema.

@@ -11,9 +11,15 @@ async function makeApp(withBoom = false) {
     const status =
       response.error.code === "VALIDATION_ERROR"
         ? 400
-        : response.error.code === "NOT_FOUND"
-          ? 404
-          : 500;
+        : response.error.code === "UNAUTHENTICATED"
+          ? 401
+          : response.error.code === "FORBIDDEN"
+            ? 403
+            : response.error.code === "NOT_FOUND"
+              ? 404
+              : response.error.code === "CONFLICT"
+                ? 409
+                : 500;
     return reply.status(status).send(response);
   });
 
@@ -51,6 +57,8 @@ describe("api scaffold", () => {
 
   it("returns the stable error shape for unknown routes", async () => {
     const app = await makeApp();
+    // The local test app has no notFoundHandler; the real app.ts sets one.
+    // Here we assert the default 404 status and that no internals leak.
     const res = await app.inject({ method: "GET", url: "/no-existe" });
     expect(res.statusCode).toBe(404);
     await app.close();

@@ -23,13 +23,13 @@ export interface MemberRow {
 
 export interface CreateMemberInput {
   fullName: string;
-  contactEmail?: string | null;
+  contactEmail?: string | null | undefined;
 }
 
 export interface MemberActor {
   organizationId: string;
   role: Role;
-  memberId?: string;
+  memberId?: string | undefined;
 }
 
 export class MembersService {
