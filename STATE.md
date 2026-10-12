@@ -1,22 +1,32 @@
-# Estado del Proyecto: Semilla Hito 0
+# Estado del Proyecto: App GYM (GYM-2026) — Hito 0 sellado, unidad 001 verificada
 
-- Fase: `seed`; molde maestro, sin stack ni producto seleccionado.
-- Base revisada: `46c519b` (Seed 007).
-- Historia conservada: [Seeds 001–007](docs/history/seed-001-007.md). Sus permisos de publicación no se reutilizan para esta unidad.
+- Fase: `initializing`; PRD, ADR-0002, prompt maestro y especificación de andamiaje aprobados; unidad 001 (andamiaje del monorepo) implementada y verificada con gate completo en verde; **pendiente de revisión humana Tier 1 y de sellado a `phase=project`** (Fase 4 del bootstrap).
+- Modo de arranque: A (enriquecido desde Notion), 2026-10-11. Base de decisiones Notion: https://app.notion.com/p/3f529b8ebe2981fab0c2fa583efcdf15 (database 88e343f849ce4e4eae888d205b7dcc7b, 55 decisiones trasladadas).
 
-## Última unidad — Seed 010 (V5)
+## Última unidad — 001 · Andamiaje del monorepo (specs/001-andamiaje-monorepo.md, Tier 1)
 
-- Meta: arranque de Hito 1 con contexto de Notion — dos modos (enriquecido/desde cero), trazabilidad mecánica, fail-safe.
-- Unidad: [Seed 010](specs/seed-010-notion-bootstrap.md), Tier 1; autoridad del usuario «aprobado», 2026-10-10.
-- Decisión de diseño: Notion = contexto (por qué + decisiones de negocio), nunca fuente de verdad ejecutable; el gate NO depende de Notion. Trazabilidad `SPEC:<id>` con fail-safe (advierte, no bloquea). Sin ADR de proyecto nuevo (espacio 0007+ libre). ADR anteriores intactos.
-- Hallazgo de plataforma: las tools MCP de Notion solo se invocan en sesión del agente, no desde shell; `notion-context.sh` es contrato reproducible + fail-safe, la lectura real la hace el agente vía MCP.
-- Estado: cerrada; CA-1–CA-7 verificados con fixtures deterministas del contrato. Cambios locales sin commit (sin política de commits autorizada).
-- Evidencia: `./scripts/verify.sh` salida 0; contrato 90/90 (84 previos + 6 nuevos, incluido gate de capacidad CA-8); piloto completo; `git diff --check` 0; ADR 0000–0006 intactos.
-- Gate de capacidad añadido tras revisión del usuario: entornos sin tools de Notion (VS Code Copilot, Antigravity, Codex, OpenCode) sugieren conexión según harness y ofrecen pegar a mano o Modo B, sin bloquear.
-- Commit: pendiente de autorización del usuario.
-- Siguiente paso: definir política de commits y decidir entrega V5 (commit/tag/release) o dejarla en local. Sin features adicionales planificadas; Linear descartado por decisión del usuario (no aporta gobernanza en la versión actual, duplica STATE). Sin unidad activa.
+- Meta: monorepo pnpm funcional con gate de proyecto verde.
+- Entregado: `pnpm-workspace.yaml` + `package.json` raíz (scripts del gate); `tsconfig.base.json`; ESLint 9 flat config (raíz) y Prettier; `packages/contracts` (esquemas Zod: organización, sesión, miembro, plan, errores) con 6 tests; `packages/db` (esquema Drizzle: organizations, identity_accounts, staff_assignments, members, plans; drizzle.config.ts; createDb) con 5 tests; `apps/api` (Fastify: errores centralizados estables, plugin de contexto tenant, /health) con 6 tests; `apps/web` (Vite+React+router, PWA manifest + service worker de shell, esqueleto de rutas por rol) con build de producción OK; `docs/api/README.md` (contratos documentados); `docs/operations/runbook.md` (borrador); `.github/workflows/verify.yml` (Node 22 + pnpm 9 + Postgres 16 de servicio); `.env.example` con nombres ficticios.
+- Verificaciones (evidencia real): `pnpm -r lint` OK (4 workspaces); `pnpm -r typecheck` OK; `pnpm -r build` OK (web: 166 kB bundle); `pnpm -r test` 17 tests OK (contracts 6, db 5, api 6, web 0 con passWithNoTests); `./scripts/verify.sh` salida 0 en `initializing`.
+- CA verificados: CA-1 (gate corre y propaga fallos — estructura de scripts con set -euo pipefail y verify-project.sh sin `|| true`), CA-2 (CI ejecuta el mismo gate — workflow actualizado con runtime), CA-3 (contrato rechaza payload inválido con error estable — tests de contracts), CA-4 (contexto tenant desde header verificado — test de api), CA-5 (`grep -ri sauna` en código de v1.0: cero coincidencias), CA-6 (esqueleto offline documentado como pendiente; SW de shell sin modo privilegiado), CA-7 (`.env.example` solo nombres ficticios; `.gitignore` cubre `.env*` salvo ejemplo).
+- Commit: pendiente de autorización del usuario (cambios locales).
+- Revisión Tier 1: pendiente de revisión humana del usuario antes de sellar `phase=project`.
+- Aprendizaje: `docs/learning.md` (hallazgos del Modo A y la limitación del gate con marcadores HITO0_PENDING).
+
+## Unidad activa
+
+- 001 · Andamiaje del monorepo — implementada y verificada; **pendiente de revisión humana (Tier 1) y de sellado**.
+- Siguiente paso (Hito 1, Entrega 1): auth/tenant/roles + socios y permisos (REQ-1, REQ-7).
+
+## Pendientes críticos (resolver antes del piloto real G2)
+
+- Parámetro de permiso offline P-09.3.1b (duración exacta y verificación; 72 h es valor de trabajo derivado, no aprobado).
+- Cifrado/gestión de claves del almacenamiento local offline y revocación diferida.
+- Validación jurídica de datos de menores (D-05) y acceso temporal de soporte (D-06).
+- Política integral P-09.3; VPS concreto, región y recursos.
+
 - Falta de progreso: contador 0, sin bloqueo.
 
 ## Cobertura y límites
 
-La inicialización real de un proyecto de usuario sigue pendiente. El piloto temporal usa decisiones simuladas, no certifica entrevista ni stacks alternativos. El perfil offline-first continúa propuesto y sin implementación. Una aplicación completa requiere PRD y evidencia propios.
+El traslado desde Notion cubre decisiones de negocio y alcance; no certifica la implementación. Las pruebas de aislamiento, transacciones (TX-01..TX-07), offline (idempotencia, folios, reconstrucción) y backup/restore se ejecutarán en las unidades de entrega 1..5 del plan G1 con evidencia real. G2 (piloto con datos reales) no está autorizado.

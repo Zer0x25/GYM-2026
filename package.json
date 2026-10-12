@@ -1,0 +1,26 @@
+{
+  "name": "gym-2026",
+  "private": true,
+  "version": "0.1.0",
+  "description": "App GYM — plataforma web multi-organización para gimnasios independientes (MVP v1.0)",
+  "type": "module",
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "verify": "./scripts/verify.sh"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.13.0",
+    "@types/node": "^22.9.0",
+    "eslint": "^9.13.0",
+    "prettier": "^3.3.3",
+    "typescript": "^5.6.3",
+    "typescript-eslint": "^8.12.0"
+  }
+}

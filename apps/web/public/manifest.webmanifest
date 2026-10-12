@@ -1,0 +1,17 @@
+{
+  "name": "App GYM",
+  "short_name": "App GYM",
+  "description": "Plataforma de gestión para gimnasios independientes (MVP v1.0)",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
