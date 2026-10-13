@@ -1,6 +1,7 @@
 # Spec: Concurrencia de la operación diaria (REQ-8)
 
-> Estado: Aprobada por el usuario 2026-10-12 (arrancar tras sellar 007)
+> Estado: **Cerrada** — sellada por el usuario 2026-10-12 (OK explícito: "sella el req-8")
+> Aceptación: usuario 2026-10-12; commit `5c4d8d4` (prueba de concurrencia), evidencia 5/5 BDD contra Postgres real (BD aislada `gym_test_concur`).
 > Nivel: Tier 2 — Estándar; justificación: no introduce contratos ni cambia invariantes; verifica con evidencia medible que las invariantes ya probadas (TX-01, TX-05, idempotencia offline, cobertura de check-in) sostienen bajo N operadores simultáneos sin doble operación financiera ni bloqueos artificiales.
 > Requisitos: REQ-8 (2 admins + 3 recepcionistas online simultáneos sin bloqueos artificiales ni doble operación financiera)
 > ADR aplicables: docs/adr/0002-arquitectura-base.md (concurrencia)
@@ -73,9 +74,15 @@ Escenario BDD-5: Check-in concurrente coherente (SPEC:CONCUR-LATENCY)
 
 ## 6. Criterios de aceptación
 
-- CA-1 (SPEC:CONCUR-CASH): 5 cierres simultáneos del mismo turno → 1 éxito, 4× 409; una sola fila de cierre.
-- CA-2 (SPEC:CONCUR-CASH): pagos validados concurrentemente → un movimiento por pago; Σ = validados.
-- CA-3 (SPEC:CONCUR-PLACE): última plaza con N reservas concurrentes → 1 confirmada, resto 409; cupo no excedido.
-- CA-4 (SPEC:CONCUR-LATENCY): todas las peticiones responden; p50/p95/max registrados.
-- CA-5: check-in concurrente coherente, sin respuestas cruzadas.
-- CA-6 (MVP-SAUNA-01/B): cero tablas/servicios/rutas de sauna.
+- CA-1 (SPEC:CONCUR-CASH): 5 cierres simultáneos del mismo turno → 1 éxito, 4× 409; una sola fila de cierre. ✅
+- CA-2 (SPEC:CONCUR-CASH): pagos validados concurrentemente → un movimiento por pago; Σ = validados. ✅
+- CA-3 (SPEC:CONCUR-PLACE): última plaza con N reservas concurrentes → 1 confirmada, resto 409; cupo no excedido. ✅
+- CA-4 (SPEC:CONCUR-LATENCY): todas las peticiones responden; p50/p95/max registrados. ✅ (p50=60ms, p95=91ms, max=93ms)
+- CA-5: check-in concurrente coherente, sin respuestas cruzadas. ✅
+- CA-6 (MVP-SAUNA-01/B): cero tablas/servicios/rutas de sauna. ✅
+
+## Cierre (2026-10-12)
+
+- Verificado: `concurrency.integration.test.ts` 5/5 sobre Postgres real (`gym_test_concur`), stack completo vía `app.inject`, sin dependencias nuevas (k6/autocannon descartados por regla de dependencias del PROMPT-MAESTRO).
+- Suite integración completa 46/46 verdes; gate del proyecto verde (reintentos por transitorio de recursos del gate paralelo, no bug de código).
+- Documentado en STATE.md, docs/api/README.md (tabla de invariantes bajo concurrencia) y docs/operations/runbook.md (receta de corrida).
