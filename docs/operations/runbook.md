@@ -195,6 +195,24 @@ curl -s 'localhost:3000/api/v1/agenda?instructorId=inst-1' -b "$A"
 
 Para correr los tests de integración (cada uno contra su BD aislada): `apps/api/scripts/test-integration.sh`.
 
+## Prueba de concurrencia (REQ-8, spec 008)
+
+Verifica que la operación diaria con 2 admins + 3 recepcionistas simultáneos no
+produce doble operación financiera ni bloqueos, sobre el stack real
+(`app.inject`: HTTP→auth→servicio→Postgres; sin k6/autocannon).
+
+```sh
+cd apps/api
+TEST_DATABASE_URL="postgres://gym:gymtestpass@localhost:55432/gym_test_concur" \
+  pnpm exec vitest run src/concurrency.integration.test.ts
+```
+
+Evidencia de la última corrida (2026-10-12): 5/5 escenarios verdes —
+TX-05 cierre concurrente de turno (1 ok + 4× 409, una sola fila cerrada);
+movimiento único (5 pagos validados en paralelo → 5 movimientos, uno por pago);
+TX-01 última plaza (5 reservas concurrentes → 1 confirmada, cupo no excedido);
+check-in QR concurrente coherente; latencia p50=60ms, p95=91ms, max=93ms.
+
 ## Pendientes (ver STATE.md)
 
 - Elección del VPS concreto, región y recursos.

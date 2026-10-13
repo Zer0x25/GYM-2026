@@ -142,6 +142,23 @@ Invariantes verificadas (backend autoridad):
 - **Dinero validado solo cae en turno abierto**: sin turno, validar → 409 (sin dinero huérfano).
 - Toda mutación financiera escribe su **auditoría en la misma transacción** (rollback revierte ambas).
 
+## Concurrencia (REQ-8, spec 008)
+
+No agrega endpoints: ejercita los ya definidos con 2 admins + 3 recepcionistas
+concurrentes sobre el stack real y verifica que las invariantes de dinero y cupo
+sostienen bajo concurrencia (prueba en `apps/api/src/concurrency.integration.test.ts`).
+
+| Invariante | Evidencia bajo 5 operadores concurrentes |
+|---|---|
+| TX-05 cierre de turno idempotente | 5 cierres del mismo turno → 1 ok + 4× 409; una sola fila `closed` |
+| Movimiento de caja único por pago | 5 pagos validados en paralelo → exactamente 5 movimientos |
+| TX-01 cupo no excedido | 5 reservas de la última plaza → 1 confirmada; `confirmed_count` nunca > capacidad |
+| Check-in coherente | 6 socios QR en paralelo → respuestas coherentes |
+
+Latencia medida (30 requests): p50=60ms, p95=91ms, max=93ms, sin bloqueos
+artificiales. La prueba usa `app.inject` con cookie real — no se agregan
+dependencias de carga (k6/autocannon).
+
 ## Cash (Entrega 2 — REQ-3)
 
 | Método y ruta | Roles permitidos | Notas |
