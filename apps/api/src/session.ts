@@ -15,6 +15,10 @@ export interface SessionContext extends TenantContext {
   accountId: string;
   email: string;
   memberId?: string | undefined;
+  /** Better Auth session row id — the session making THIS request. Used by
+   *  self-revocation ("close my other sessions") so it never logs the actor
+   *  out of the device in use (spec 006, SPEC:REVOKE). */
+  sessionId?: string | undefined;
 }
 
 /** Builds a SessionContext filling actorId from accountId (they are the same

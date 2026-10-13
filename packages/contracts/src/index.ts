@@ -422,3 +422,36 @@ export const ReconstructResponse = z.object({
   brokenAt: z.string().uuid().nullable(),
 });
 export type ReconstructResponse = z.infer<typeof ReconstructResponse>;
+
+// ── Entrega 5 · Revocación de sesión (spec 006, REQ-11) ─────────────────────
+
+/** Active session metadata for an account (no tokens exposed) (SPEC:REVOKE). */
+export const SessionInfo = z.object({
+  id: z.string(),
+  createdAt: z.string(),
+  expiresAt: z.string(),
+  ipAddress: z.string().nullable(),
+  userAgent: z.string().nullable(),
+});
+export type SessionInfo = z.infer<typeof SessionInfo>;
+
+export const ListSessionsQuery = z.object({
+  accountId: z.string().min(1),
+});
+export type ListSessionsQuery = z.infer<typeof ListSessionsQuery>;
+
+export const RevokeSessionRequest = z.object({
+  accountId: z.string().min(1),
+  sessionId: z.string().min(1),
+});
+export type RevokeSessionRequest = z.infer<typeof RevokeSessionRequest>;
+
+export const RevokeAllSessionsRequest = z.object({
+  accountId: z.string().min(1),
+});
+export type RevokeAllSessionsRequest = z.infer<typeof RevokeAllSessionsRequest>;
+
+export const RevokeResult = z.object({
+  revoked: z.number().int(),
+});
+export type RevokeResult = z.infer<typeof RevokeResult>;

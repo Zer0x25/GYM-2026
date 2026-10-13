@@ -94,12 +94,72 @@ TEST_DATABASE_URL=postgres://gym:gym-local-dev@localhost:55432/gym_test \
    `apps/web/dist` tras el proxy.
 7. Health check: `curl https://<host>/api/v1/health` → `{"status":"ok"}`.
 
-## Backup y restore
+## Backup y restore (REQ-11, SPEC:BACKUP)
 
-- Backup diario de PostgreSQL (`pg_dump`) a almacenamiento externo.
-- Restore probado en staging antes de cualquier piloto con datos reales
-  (REQ-11). Procedimiento exacto se documenta al implementar la unidad de
-  operación; el gate no lo cubre todavía.
+Backup completo de PostgreSQL y restore probado antes de cualquier piloto con
+datos reales (G2). Ejecutado y verificado sobre el contenedor de dev
+(`gym-dev-pg`, BD `gym`) el 2026-10-12 — evidencia real adjunta más abajo.
+
+### 1. Backup
+
+```bash
+# Dump en formato custom (comprimido, permite pg_restore selectivo).
+docker exec gym-dev-pg pg_dump -U gym -d gym -Fc -f /tmp/gym_backup.dump
+docker cp gym-dev-pg:/tmp/gym_backup.dump ./gym_backup.dump
+# Copiar ./gym_backup.dump al almacenamiento externo/off-box del VPS.
+```
+
+### 2. Restore en una BD de staging limpia
+
+```bash
+# BD de staging limpia.
+docker exec gym-dev-pg psql -U gym -d postgres -c "DROP DATABASE IF EXISTS gym_restore_check"
+docker exec gym-dev-pg psql -U gym -d postgres -c "CREATE DATABASE gym_restore_check"
+docker cp ./gym_backup.dump gym-dev-pg:/tmp/gym_backup.dump
+docker exec gym-dev-pg pg_restore -U gym -d gym_restore_check --no-owner /tmp/gym_backup.dump
+```
+
+### 3. Verificación post-restore (integridad)
+
+Conteos que deben coincidir entre origen y restaurado:
+
+```bash
+docker exec gym-dev-pg psql -U gym -d gym_restore_check -tAc "
+SELECT 'organizations', count(*) FROM organizations
+UNION ALL SELECT 'members', count(*) FROM members
+UNION ALL SELECT 'payments', count(*) FROM payments
+UNION ALL SELECT 'sessions', count(*) FROM sessions
+UNION ALL SELECT 'users', count(*) FROM \"user\";"
+```
+
+Query de humo por dominio (join socios + pagos):
+
+```bash
+docker exec gym-dev-pg psql -U gym -d gym_restore_check -tAc "
+SELECT m.full_name, count(p.id) AS pagos
+FROM members m LEFT JOIN payments p ON p.member_id = m.id
+GROUP BY m.full_name ORDER BY m.full_name;"
+```
+
+### 4. Periodicidad y retención (propuesta, a confirmar con el VPS)
+
+- Backup diario automático (cron/systemd timer en el VPS) a almacenamiento
+  externo al propio host.
+- Retención: 7 diarios + 4 semanales (rotación; ajustable).
+
+### Evidencia de la ejecución real (2026-10-12, `gym-dev-pg`)
+
+- Backup: `pg_dump -Fc` → 61K.
+- Restore en BD limpia `gym_restore_check` → sin errores.
+- Conteos idénticos origen vs restaurado: `organizations 1, members 2,
+  payments 4, sessions 0, users 3`.
+- Query de humo OK en la BD restaurada: `Miembro Sin Cuenta → 2 pagos`,
+  `Socio Piloto → 2 pagos`.
+- La BD de staging de la verificación se eliminó tras la comprobación.
+
+> Nota: el destino concreto del backup (VPS y región) queda pendiente de
+> elección del usuario; el procedimiento es el mismo, solo cambia la ruta de
+> almacenamiento externo.
 
 ## Entrega 3 · clases y reservas (receta curl, spec 004)
 

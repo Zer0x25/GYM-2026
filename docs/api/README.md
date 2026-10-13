@@ -236,6 +236,26 @@ Invariantes (verificadas con tests de integración contra Postgres real, `apps/a
 - **SPEC:OFF-RECON:** `reconstruct` reproduce la cadena y verifica hashes encadenados por evento.
 - **TX-07:** dispositivo/evento de otro tenant → 404.
 
+## Entrega 5 · Revocación de sesión (spec 006, REQ-11)
+
+Rutas v1:
+
+| Ruta | Roles | Notas |
+|---|:--:|---|
+| `GET /api/v1/admin/sessions?accountId=` | admin | Sesiones activas de una cuenta del tenant |
+| `POST /api/v1/admin/sessions/revoke` | admin | Revoca una sesión (`{accountId, sessionId}`) |
+| `POST /api/v1/admin/sessions/revoke-all` | admin | Revoca todas las sesiones de la cuenta |
+| `POST /api/v1/me/sessions/revoke-others` | todos | Cierra MIS otras sesiones; conserva la actual |
+
+Invariantes (verificadas con tests de integración contra Postgres real):
+
+- **SPEC:REVOKE:** la revocación borra la fila de `session` → el token deja de resolver de inmediato (server-side, no depende del cliente).
+- **Pertenencia al tenant (REQ-1, TX-07):** la cuenta objetivo pertenece al org si tiene `staff_assignments` activa en ese org o su email coincide con un `members.contact_email` del org; si no → 404 (anti-enumeración).
+- **Separación de funciones:** solo `admin` revoca sesiones ajenas; cualquier cuenta auto-revoca las suyas salvo la actual; recepcion/instructor revocando ajenas → 403.
+- **Auditoría:** cada revocación escribe `session.revoke`/`session.revoke_all` en la misma transacción (actor, objetivo, org, IP).
+
+Backup/restore (SPEC:BACKUP): runbook reproducible + verificación real sobre Docker en `docs/operations/runbook.md` (backup `pg_dump -Fc`, restore en BD limpia, conteos idénticos + query de humo por dominio).
+
 ## Matriz de permisos (resumen)
 
 | Ruta | admin | recepción | instructor | socio |

@@ -30,7 +30,10 @@ export interface GymAuth {
     getSession(opts: {
       headers: Headers;
       query?: { disableCookieCache?: boolean };
-    }): Promise<{ user: { id: string; email: string } } | null>;
+    }): Promise<{
+      session: { id: string; userId: string; expiresAt: Date } | null;
+      user: { id: string; email: string } | null;
+    } | null>;
     signInEmail(opts: { body: { email: string; password: string } }): Promise<{
       headers: Headers;
       user: { id: string; email: string };

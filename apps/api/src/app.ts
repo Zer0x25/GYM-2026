@@ -28,6 +28,9 @@ import {
   RegisterDeviceRequest,
   RegisterPaymentRequest,
   ReconstructRequest,
+  ListSessionsQuery,
+  RevokeSessionRequest,
+  RevokeAllSessionsRequest,
   SessionResponse,
   SyncEventsRequest,
 } from "@gym/contracts";
@@ -45,6 +48,7 @@ import { CashService } from "./services/cash.js";
 import { SessionsService } from "./services/sessions.js";
 import { BookingsService } from "./services/bookings.js";
 import { OfflineService } from "./services/offline.js";
+import { SessionRevocationService } from "./services/session-revocation.js";
 import type { SessionContext } from "./session.js";
 
 declare module "fastify" {
@@ -106,6 +110,9 @@ export async function buildServer(opts: AppOptions) {
       email: authSession.user.email,
     });
     if (ctx) {
+      // The authoritative session row id lets self-revocation exclude the
+      // session currently in use (SPEC:REVOKE).
+      ctx.sessionId = authSession.session?.id;
       req.session = ctx;
       req.tenant = ctx;
     }
@@ -743,6 +750,63 @@ export async function buildServer(opts: AppOptions) {
     if (!parsed.success) throw validationError({ issues: parsed.error.issues });
     const result = await offlineService.reconstruct(req.session.organizationId, parsed.data.deviceId);
     return reply.send({ data: result });
+  });
+
+  // --- Revocación de sesión (Entrega 5, spec 006, REQ-11) -------------------
+  const sessionRevocation = new SessionRevocationService(opts.db);
+
+  // List active sessions of an account in the admin's tenant (admin only).
+  app.get("/api/v1/admin/sessions", async (req: FastifyRequest, reply: FastifyReply) => {
+    requireRole(req.session, ["admin"]);
+    assertTenantContext(req.session);
+    const parsed = ListSessionsQuery.safeParse(req.query);
+    if (!parsed.success) throw validationError({ issues: parsed.error.issues });
+    const rows = await sessionRevocation.listSessions(req.session, parsed.data.accountId);
+    return reply.send({ data: rows });
+  });
+
+  // Revoke one session of an account in the admin's tenant (admin only).
+  app.post("/api/v1/admin/sessions/revoke", async (req: FastifyRequest, reply: FastifyReply) => {
+    requireRole(req.session, ["admin"]);
+    assertTenantContext(req.session);
+    const parsed = RevokeSessionRequest.safeParse(req.body);
+    if (!parsed.success) throw validationError({ issues: parsed.error.issues });
+    await sessionRevocation.revokeSession(
+      req.session,
+      parsed.data.accountId,
+      parsed.data.sessionId,
+      req.ip,
+    );
+    return reply.send({ data: { revoked: 1 } });
+  });
+
+  // Revoke all sessions of an account in the admin's tenant (admin only).
+  app.post("/api/v1/admin/sessions/revoke-all", async (req: FastifyRequest, reply: FastifyReply) => {
+    requireRole(req.session, ["admin"]);
+    assertTenantContext(req.session);
+    const parsed = RevokeAllSessionsRequest.safeParse(req.body);
+    if (!parsed.success) throw validationError({ issues: parsed.error.issues });
+    const revoked = await sessionRevocation.revokeAllSessions(
+      req.session,
+      parsed.data.accountId,
+      req.ip,
+    );
+    return reply.send({ data: { revoked } });
+  });
+
+  // Close my OTHER sessions, keep the one in use (any authenticated role).
+  app.post("/api/v1/me/sessions/revoke-others", async (req: FastifyRequest, reply: FastifyReply) => {
+    requireRole(req.session, ["admin", "recepcion", "instructor", "socio"]);
+    assertTenantContext(req.session);
+    if (!req.session.sessionId) {
+      throw new AppError("INTERNAL_ERROR", "No se pudo resolver la sesión actual");
+    }
+    const revoked = await sessionRevocation.revokeOthers(
+      req.session,
+      req.session.sessionId,
+      req.ip,
+    );
+    return reply.send({ data: { revoked } });
   });
 
   return app;
