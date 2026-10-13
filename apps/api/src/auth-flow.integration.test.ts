@@ -108,6 +108,12 @@ describe.skipIf(!DATABASE_URL)("auth-flow integration (spec 002)", () => {
     const rows = await db.select().from(members);
     const own = rows.find((m) => m.contactEmail === "socio.a1@test.cl")!;
     const other = rows.find((m) => m.contactEmail !== "socio.a1@test.cl" && m.organizationId === orgAId)!;
+    // GET /members/:id accepts all 4 roles, but a socio reading ANOTHER socio
+    // must get 404 (anti-existence-leak), never the row. Closes the RBAC gap:
+    // the role check passes; ownership is enforced in the service.
+    expect((await asSocio("GET", `/api/v1/members/${other.id}`)).statusCode).toBe(404);
+    // ...while reading its own profile through :id is allowed (200).
+    expect((await asSocio("GET", `/api/v1/members/${own.id}`)).statusCode).toBe(200);
     expect((await asSocio("PATCH", `/api/v1/members/${other.id}/contact`, { contactEmail: "x@y.cl" })).statusCode).toBeGreaterThanOrEqual(403);
     const ok = await asSocio("PATCH", `/api/v1/members/${own.id}/contact`, { contactEmail: "socio.a1.nuevo@test.cl" });
     expect(ok.statusCode).toBe(200);

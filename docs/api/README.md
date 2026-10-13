@@ -293,14 +293,82 @@ Invariantes (verificadas con tests de integración contra Postgres real):
 - **Autorización, no efecto (decisión usuario "solo cobertura"):** el check-in no cuenta ingresos ni bloquea re-ingreso; es idempotente por naturaleza. Cada check-in audita `checkin.ok`/`checkin.denied` (socio, cobertura, motivo) en la misma transacción.
 - **REQ-8:** dos recepcionistas escaneando el mismo QR en paralelo → respuestas coherentes (verificado).
 
-## Matriz de permisos (resumen)
+## Matriz RBAC (estado real del código)
 
-| Ruta | admin | recepción | instructor | socio |
+Autoridad: `requireRole(session, [roles])` antes de todo acceso a datos
+(`apps/api/src/roles.ts`; orden de autoridad admin > recepcion > instructor > socio).
+El rol socio se restringe además por **propiedad** (el `memberId` sale de la sesión,
+nunca del cliente) y el cross-tenant es **404** (no 403: sin fuga de existencia).
+"✓" = permitido · "—" = prohibido (403) · "propio" = solo su propio recurso (ajeno → 404).
+
+| Recurso / ruta | admin | recepción | instructor | socio |
 |---|:--:|:--:|:--:|:--:|
 | POST /organizations | solo bootstrap | — | — | — |
 | POST /staff | ✓ | — | — | — |
 | POST /socios | ✓ | ✓ | — | — |
-| GET/POST /members | ✓ | ✓ | GET ✓ | — |
-| GET /members/:id | ✓ | ✓ | ✓ | solo propio |
-| GET /members/me | — | — | — | ✓ |
-| PATCH /members/:id/contact | ✓ | ✓ | — | solo propio |
+| GET /members | ✓ | ✓ | ✓ | — |
+| POST /members | ✓ | ✓ | — | — |
+| GET /members/:id | ✓ | ✓ | ✓ | propio |
+| GET /members/me | — | — | — | propio |
+| PATCH /members/:id/contact | ✓ | ✓ | — | propio |
+| POST /members/:id/qr/reissue | ✓ | — | — | — |
+| POST /members/:id/qr/revoke | ✓ | — | — | — |
+| GET /plans | ✓ | ✓ | ✓ | — |
+| POST /plans | ✓ | — | — | — |
+| GET /plans/:id | ✓ | ✓ | ✓ | — |
+| POST /memberships | ✓ | ✓ | — | — |
+| GET /memberships | ✓ | ✓ | ✓ | — |
+| GET /memberships/mine | — | — | — | propio |
+| GET /memberships/:id | ✓ | ✓ | ✓ | propio |
+| POST /payments | ✓ | ✓ | — | — |
+| GET /payments | ✓ | ✓ | — | — |
+| GET /payments/:id | ✓ | ✓ | — | — |
+| POST /payments/:id/validate | ✓ | — | — | — |
+| POST /payments/:id/reject | ✓ | — | — | — |
+| POST /cash/sessions | ✓ | ✓ | — | — |
+| GET /cash/sessions/current | ✓ | ✓ | — | — |
+| POST /cash/sessions/:id/close | ✓ | ✓ | — | — |
+| GET /cash/sessions/:id | ✓ | ✓ | — | — |
+| GET /cash/consolidation | ✓ | ✓ | — | — |
+| POST /class-templates | ✓ | — | — | — |
+| GET /class-templates | ✓ | ✓ | ✓ | ✓ |
+| POST /sessions | ✓ | ✓ | ✓ | — |
+| GET /sessions | ✓ | ✓ | ✓ | ✓ |
+| GET /sessions/:id | ✓ | ✓ | ✓ | ✓ |
+| POST /sessions/:id/cancel | ✓ | ✓ | — | — |
+| GET /agenda | ✓ | ✓ | ✓ | — |
+| POST /bookings | ✓ | ✓ | — | propio |
+| GET /bookings/mine | — | — | — | propio |
+| GET /bookings | ✓ | ✓ | ✓ | — |
+| POST /bookings/:id/cancel | ✓ | ✓ | — | propio |
+| POST /bookings/:id/attendance | ✓ | ✓ | ✓ | — |
+| POST /checkin | ✓ | ✓ | — | — |
+| GET /checkins/recent | ✓ | ✓ | — | — |
+| GET /me/qr | — | — | — | propio |
+| POST /me/qr/rotate | — | — | — | propio |
+| POST /devices | ✓ | — | — | — |
+| GET /devices | ✓ | — | — | — |
+| POST /devices/:id/revoke | ✓ | — | — | — |
+| POST /offline/sync | ✓ | ✓ | ✓ | — |
+| GET /offline/events | ✓ | ✓ | — | — |
+| POST /offline/ingreso | ✓ | ✓ | ✓ | — |
+| POST /offline/reconstruct | ✓ | — | — | — |
+| GET /admin/sessions | ✓ | — | — | — |
+| POST /admin/sessions/revoke | ✓ | — | — | — |
+| POST /admin/sessions/revoke-all | ✓ | — | — | — |
+| POST /me/sessions/revoke-others | ✓ | ✓ | ✓ | propio |
+
+### Reglas transversales del modelo
+
+- **Separación de funciones (dinero):** recepción registra pagos/membresías/caja, pero
+  **solo admin valida o rechaza** (SPEC:PAY-02) y nunca un pago que él mismo registró.
+- **Propiedad del socio (REQ-7):** `/me/*` y los `memberId` salen de la sesión; un socio
+  sobre un recurso ajeno recibe **404** (no 403), verificado con test
+  (`auth-flow.integration.test.ts` CA-4/REQ-7: GET y PATCH de otro socio).
+- **Cross-tenant (TX-07):** todo filtra por `organization_id`; recurso de otro tenant → 404.
+- **Solo-admin por diseño:** staff, planes, dispositivos offline, validación/rechazo de
+  pagos, re-emisión/revocación de QR de terceros, reconstrucción offline y revocación de
+  sesiones ajenas quedan fuera del alcance de recepción/instructor/socio.
+- **Instructor = solo lectura de agenda/reservas + marca asistencia:** no toca dinero ni
+  configuración; puede crear sesiones y marcar asistencia (REQ-6/REQ-5).
+- **Revoke-others propio:** cualquier rol cierra SUS otras sesiones conservando la actual.
