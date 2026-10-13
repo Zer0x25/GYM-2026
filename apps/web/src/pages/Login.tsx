@@ -8,11 +8,29 @@
  */
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { Dumbbell } from "lucide-react";
+import { Dumbbell, Shield, ScanLine, UserCog, User } from "lucide-react";
 import { ApiError } from "../api.js";
 import { useSession } from "../session.js";
 import { Button } from "../components/ui/button.js";
 import { Input } from "../components/ui/input.js";
+
+/**
+ * Dev-only quick-login: one button per role, wired to the seed accounts.
+ * Never rendered in a production build (import.meta.env.DEV is false there),
+ * so no credentials ship to prod even though they are plain here.
+ */
+const DEV_PASSWORD = "SuperSecret123!";
+const DEV_ROLES: {
+  key: string;
+  label: string;
+  email: string;
+  icon: typeof Shield;
+}[] = [
+  { key: "admin", label: "Admin", email: "admin@pilot.cl", icon: Shield },
+  { key: "recepcion", label: "Recepción", email: "recepcion@pilot.cl", icon: ScanLine },
+  { key: "instructor", label: "Instructor", email: "instructor@pilot.cl", icon: UserCog },
+  { key: "socio", label: "Cliente", email: "socio@pilot.cl", icon: User },
+];
 
 export function Login() {
   const { signIn } = useSession();
@@ -28,6 +46,26 @@ export function Login() {
     setBusy(true);
     try {
       await signIn(email, password);
+      navigate("/", { replace: true });
+    } catch (e) {
+      const msg =
+        e instanceof ApiError
+          ? e.status === 401
+            ? "Credenciales inválidas."
+            : e.message
+          : "No se pudo contactar al servidor.";
+      setError(msg);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Dev quick-login: sign in as a seed account with one tap.
+  async function quickLogin(devEmail: string) {
+    setError(null);
+    setBusy(true);
+    try {
+      await signIn(devEmail, DEV_PASSWORD);
       navigate("/", { replace: true });
     } catch (e) {
       const msg =
@@ -100,6 +138,29 @@ export function Login() {
             {busy ? "Ingresando…" : "Ingresar"}
           </Button>
         </form>
+
+        {import.meta.env.DEV ? (
+          <div className="mt-6 border-t pt-5">
+            <p className="mb-3 text-center text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Acceso rápido (dev)
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              {DEV_ROLES.map(({ key, label, email, icon: Icon }) => (
+                <Button
+                  key={key}
+                  type="button"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => quickLogin(email)}
+                  className="justify-start gap-2"
+                >
+                  <Icon className="h-4 w-4" aria-hidden />
+                  {label}
+                </Button>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </section>
     </div>
   );

@@ -50,8 +50,14 @@ if (!SECRET || SECRET.length < 32) {
 }
 
 const ORG_NAME = "Gimnasio Piloto";
-const DEV_ADMIN = { email: "admin@pilot.cl", password: "SuperSecret123!", name: "Admin Piloto" };
-const DEV_SOCIO = { email: "socio@pilot.cl", password: "SuperSecret123!", name: "Socio Piloto" };
+const DEV_PASSWORD = "SuperSecret123!";
+const DEV_ADMIN = { email: "admin@pilot.cl", password: DEV_PASSWORD, name: "Admin Piloto" };
+const DEV_SOCIO = { email: "socio@pilot.cl", password: DEV_PASSWORD, name: "Socio Piloto" };
+// Extra staff so the dev login quick-role buttons have a home to land on.
+const DEV_STAFF: { email: string; name: string; role: "admin" | "recepcion" | "instructor" }[] = [
+  { email: "recepcion@pilot.cl", name: "Recepción Piloto", role: "recepcion" },
+  { email: "instructor@pilot.cl", name: "Instructor Piloto", role: "instructor" },
+];
 
 const db = createDb(DB_URL);
 const auth = createAuth({ db, secret: SECRET, baseURL: process.env.AUTH_URL ?? "http://localhost:3000" });
@@ -92,6 +98,19 @@ async function main() {
     log(`  rol admin asignado en ${ORG_NAME}`);
   }
 
+  // --- Extra staff (recepcion / instructor) for dev quick-login --------------
+  for (const staff of DEV_STAFF) {
+    const staffId = await ensureAccount(staff.email, DEV_PASSWORD, staff.name);
+    const [existing] = await db
+      .select()
+      .from(staffAssignments)
+      .where(and(eq(staffAssignments.accountId, staffId), eq(staffAssignments.organizationId, org.id)));
+    if (!existing) {
+      await db.insert(staffAssignments).values({ organizationId: org.id, accountId: staffId, role: staff.role });
+      log(`  rol ${staff.role} asignado: ${staff.email}`);
+    }
+  }
+
   // --- Socio (account + member) ---------------------------------------------
   await ensureAccount(DEV_SOCIO.email, DEV_SOCIO.password, DEV_SOCIO.name);
   const [socioMember] = await db
@@ -120,9 +139,11 @@ async function main() {
   await seedEntrega2(org.id, adminId);
 
   log("\nSeed listo. Credenciales de desarrollo (NO produccion):");
-  log(`  org:   ${ORG_NAME}`);
-  log(`  admin: ${DEV_ADMIN.email} / ${DEV_ADMIN.password}`);
-  log(`  socio: ${DEV_SOCIO.email} / ${DEV_SOCIO.password}`);
+  log(`  org:         ${ORG_NAME}`);
+  log(`  admin:       ${DEV_ADMIN.email} / ${DEV_PASSWORD}`);
+  log(`  recepcion:   recepcion@pilot.cl / ${DEV_PASSWORD}`);
+  log(`  instructor:  instructor@pilot.cl / ${DEV_PASSWORD}`);
+  log(`  socio:       ${DEV_SOCIO.email} / ${DEV_PASSWORD}`);
   process.exit(0);
 }
 
