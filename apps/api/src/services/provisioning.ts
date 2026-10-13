@@ -9,12 +9,19 @@
  * Public sign-up is disabled; only an authenticated admin of the target
  * organization may provision (enforced at the route layer).
  */
+import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { identityAccounts, members, staffAssignments } from "@gym/db";
 import type { Database } from "@gym/db";
 import type { Auth } from "../auth.js";
 import { conflict } from "../errors.js";
 import type { Role } from "@gym/contracts";
+
+/** Opaque, globally-unique QR token (spec 007, SPEC:QR-TOKEN). Not
+ *  sequential, carries no member/tenant data; resolved against the DB. */
+export function generateQrToken(): string {
+  return randomUUID().replace(/-/g, "");
+}
 
 export interface CreateStaffInput {
   email: string;
@@ -95,6 +102,7 @@ export class ProvisioningService {
         organizationId: input.organizationId,
         fullName: input.name,
         contactEmail: input.email,
+        qrToken: generateQrToken(),
       })
       .returning();
     if (!member) throw conflict("No se pudo crear el socio");

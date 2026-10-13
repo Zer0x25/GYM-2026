@@ -151,6 +151,15 @@ export const members = pgTable(
     fullName: text("full_name").notNull(),
     contactEmail: text("contact_email"),
     adultResponsibleId: uuid("adult_responsible_id"),
+    /**
+     * Static, opaque, globally-unique QR token for supervised ingress
+     * (spec 007, SPEC:QR-TOKEN). Not sequential, carries no member/tenant
+     * data — it is resolved against the DB inside the tenant. Revocable
+     * via qrRevokedAt (kept for traceability, never deleted). Re-issuable.
+     */
+    qrToken: text("qr_token").unique(),
+    /** When the QR was revoked (shared credential / abuse). Null = active. */
+    qrRevokedAt: timestamp("qr_revoked_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("members_org_idx").on(t.organizationId)],

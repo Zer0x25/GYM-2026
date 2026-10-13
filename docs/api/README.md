@@ -256,6 +256,26 @@ Invariantes (verificadas con tests de integración contra Postgres real):
 
 Backup/restore (SPEC:BACKUP): runbook reproducible + verificación real sobre Docker en `docs/operations/runbook.md` (backup `pg_dump -Fc`, restore en BD limpia, conteos idénticos + query de humo por dominio).
 
+## Entrega 5 · QR de ingreso y check-in supervisado (spec 007, REQ-7/REQ-8)
+
+Rutas v1:
+
+| Ruta | Roles | Notas |
+|---|:--:|---|
+| `POST /api/v1/checkin` | admin, recepcion | Escaneo supervisado `{qrToken}` → cobertura activa |
+| `GET /api/v1/me/qr` | socio | Su propio QR (REQ-7) |
+| `POST /api/v1/me/qr/rotate` | socio | Rota su QR (invalida el anterior) |
+| `POST /api/v1/members/:id/qr/reissue` | admin | Re-emite el QR de un socio |
+| `POST /api/v1/members/:id/qr/revoke` | admin | Revoca el QR (anti-compartir) |
+
+Invariantes (verificadas con tests de integración contra Postgres real):
+
+- **SPEC:CHECKIN:** el check-in permite el ingreso solo con **cobertura activa** — membresía con ventana vigente (`startAt ≤ now < endAt`) y plan `coverage ≠ none`. Misma definición de "tiene derechos" que Entrega 2 y offline (un solo criterio). La denegación por cobertura es una **decisión de negocio (200 + allowed:false con motivo)**, no un error de transporte — la recepción debe ver el porqué.
+- **SPEC:QR-TOKEN:** token estático, opaco, único global, sin datos de socio/tenant encodeados; se resuelve contra la BD dentro del tenant. Revocable (`qrRevokedAt`, se conserva para trazabilidad) y re-emisible. El QR estático + revocación + supervisión humana es el control anti-compartir (decisión del usuario; sin TOTP).
+- **SPEC:CHECKIN-ISO (REQ-1/TX-07):** el token se resuelve SOLO contra socios del tenant del operador; un token válido de otro tenant → **404** (anti-enumeración, no 403).
+- **Autorización, no efecto (decisión usuario "solo cobertura"):** el check-in no cuenta ingresos ni bloquea re-ingreso; es idempotente por naturaleza. Cada check-in audita `checkin.ok`/`checkin.denied` (socio, cobertura, motivo) en la misma transacción.
+- **REQ-8:** dos recepcionistas escaneando el mismo QR en paralelo → respuestas coherentes (verificado).
+
 ## Matriz de permisos (resumen)
 
 | Ruta | admin | recepción | instructor | socio |

@@ -31,6 +31,7 @@ import {
   ListSessionsQuery,
   RevokeSessionRequest,
   RevokeAllSessionsRequest,
+  CheckinRequest,
   SessionResponse,
   SyncEventsRequest,
 } from "@gym/contracts";
@@ -49,6 +50,7 @@ import { SessionsService } from "./services/sessions.js";
 import { BookingsService } from "./services/bookings.js";
 import { OfflineService } from "./services/offline.js";
 import { SessionRevocationService } from "./services/session-revocation.js";
+import { CheckinService } from "./services/checkin.js";
 import type { SessionContext } from "./session.js";
 
 declare module "fastify" {
@@ -807,6 +809,55 @@ export async function buildServer(opts: AppOptions) {
       req.ip,
     );
     return reply.send({ data: { revoked } });
+  });
+
+  // --- QR de ingreso y check-in supervisado (Entrega 5, spec 007) ------------
+  const checkinService = new CheckinService(opts.db);
+
+  // Supervised check-in: reception scans a member's QR (admin/recepcion).
+  // Coverage denial is a BUSINESS decision (200 + allowed:false), not a
+  // transport error — the receptionist must see the reason. Cross-tenant /
+  // unknown token is a real 404 (anti-enumeration).
+  app.post("/api/v1/checkin", async (req: FastifyRequest, reply: FastifyReply) => {
+    requireRole(req.session, ["admin", "recepcion"]);
+    assertTenantContext(req.session);
+    const parsed = CheckinRequest.safeParse(req.body);
+    if (!parsed.success) throw validationError({ issues: parsed.error.issues });
+    const outcome = await checkinService.checkin(req.session, parsed.data.qrToken, req.ip);
+    return reply.send({ data: outcome });
+  });
+
+  // The socio's own QR (REQ-7): only ever their own.
+  app.get("/api/v1/me/qr", async (req: FastifyRequest, reply: FastifyReply) => {
+    requireRole(req.session, ["socio"]);
+    assertTenantContext(req.session);
+    const qrToken = await checkinService.myQr(req.session);
+    return reply.send({ data: { qrToken } });
+  });
+
+  // The socio rotates their own QR (invalidates the old one).
+  app.post("/api/v1/me/qr/rotate", async (req: FastifyRequest, reply: FastifyReply) => {
+    requireRole(req.session, ["socio"]);
+    assertTenantContext(req.session);
+    const qrToken = await checkinService.rotateMyQr(req.session);
+    return reply.send({ data: { qrToken } });
+  });
+
+  // Admin re-emits or revokes a member's QR (SPEC:QR-TOKEN).
+  app.post("/api/v1/members/:id/qr/reissue", async (req: FastifyRequest, reply: FastifyReply) => {
+    requireRole(req.session, ["admin"]);
+    assertTenantContext(req.session);
+    const { id } = req.params as { id: string };
+    const qrToken = await checkinService.reissueQr(req.session, id);
+    return reply.send({ data: { qrToken } });
+  });
+
+  app.post("/api/v1/members/:id/qr/revoke", async (req: FastifyRequest, reply: FastifyReply) => {
+    requireRole(req.session, ["admin"]);
+    assertTenantContext(req.session);
+    const { id } = req.params as { id: string };
+    await checkinService.revokeQr(req.session, id);
+    return reply.send({ data: { revoked: true } });
   });
 
   return app;

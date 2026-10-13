@@ -455,3 +455,33 @@ export const RevokeResult = z.object({
   revoked: z.number().int(),
 });
 export type RevokeResult = z.infer<typeof RevokeResult>;
+
+// ── QR de ingreso y check-in (spec 007, REQ-7/REQ-8) ────────────────────────
+
+export const CheckinRequest = z.object({
+  qrToken: z.string().min(1),
+});
+export type CheckinRequest = z.infer<typeof CheckinRequest>;
+
+export const CheckinResponse = z.object({
+  allowed: z.boolean(),
+  /** Identity for the receptionist to confirm visually (present when allowed). */
+  member: z
+    .object({
+      id: z.string().uuid(),
+      fullName: z.string(),
+    })
+    .optional(),
+  /** Active plan coverage observed at check-in time. */
+  coverage: z.enum(["unlimited", "limited"]).optional(),
+  /** When the current membership window ends (for the receptionist's info). */
+  membershipEndsAt: z.string().optional(),
+  /** Reason when allowed=false. */
+  reason: z.string().optional(),
+});
+export type CheckinResponse = z.infer<typeof CheckinResponse>;
+
+export const MyQrResponse = z.object({
+  qrToken: z.string(),
+});
+export type MyQrResponse = z.infer<typeof MyQrResponse>;
