@@ -12,11 +12,15 @@ command -v pnpm >/dev/null 2>&1 || command -v corepack >/dev/null 2>&1 || fail "
 
 run() { printf '> %s\n' "$*"; "$@"; }
 
-# Root + workspace checks
+# Root + workspace checks.
+# build BEFORE typecheck: @gym/db and @gym/contracts publish their types from
+# dist/, so apps/api typechecks against generated .d.ts. On a clean CI checkout
+# (no dist yet) typecheck-first fails with "Cannot find module '@gym/db'".
+# pnpm -r runs in topological order (packages before dependent apps).
 run pnpm install --frozen-lockfile
 run pnpm -r lint
-run pnpm -r typecheck
 run pnpm -r build
+run pnpm -r typecheck
 run pnpm -r test
 
 printf 'Gate de proyecto GYM-2026: verde (lint, typecheck, build, tests).\n'
