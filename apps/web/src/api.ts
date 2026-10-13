@@ -223,6 +223,28 @@ export interface BookingCancellation {
   createdAt: string;
 }
 
+// --- Entrega 5: QR de ingreso y check-in (spec 007) ------------------------
+
+/** Check-in outcome. allowed=false is a BUSINESS decision (coverage), not an
+ *  error — the receptionist sees the reason and can act on it. */
+export interface CheckinResult {
+  allowed: boolean;
+  member?: { id: string; fullName: string };
+  coverage?: "unlimited" | "limited";
+  membershipEndsAt?: string;
+  reason?: string;
+}
+
+/** One entry of the reception live feed (projection of the audit trail). */
+export interface CheckinFeedEntry {
+  id: string;
+  memberId: string;
+  fullName: string;
+  outcome: "ok" | "denied";
+  detail: string | null;
+  at: string;
+}
+
 export const api = {
   session: () => request<SessionData>("GET", "/auth/session"),
   signIn: (email: string, password: string) =>
@@ -320,4 +342,15 @@ export const api = {
     request<{ booking: Booking; cancellation: BookingCancellation }>("POST", `/bookings/${id}/cancel`, input),
   markAttendance: (id: string, outcome: "asistio" | "ausencia") =>
     request<Booking>("POST", `/bookings/${id}/attendance`, { outcome }),
+
+  // --- Entrega 5: QR de ingreso y check-in supervisado (spec 007) ----------
+  /** Supervised check-in: reception scans a member's QR. Coverage denial is
+   *  a business decision (200 + allowed:false), never a transport error. */
+  checkin: (qrToken: string) =>
+    request<CheckinResult>("POST", "/checkin", { qrToken }),
+  /** The socio's own QR token (REQ-7): only ever their own. */
+  myQr: () => request<{ qrToken: string }>("GET", "/me/qr"),
+  /** Live feed of the organization's recent check-ins (mostrador view). */
+  recentCheckins: (limit = 50) =>
+    request<CheckinFeedEntry[]>("GET", `/checkins/recent?limit=${limit}`),
 };

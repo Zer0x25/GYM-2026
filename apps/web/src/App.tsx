@@ -5,6 +5,7 @@ import { api, formatCLP, type CashSession } from "./api.js";
 import { SessionProvider, useSession } from "./session.js";
 import { RequireAuth, RequireStaff } from "./guards.jsx";
 import { Login } from "./pages/Login.js";
+import { Mostrador } from "./pages/Mostrador.js";
 import { Panel } from "./pages/Panel.js";
 import { Portal } from "./pages/Portal.js";
 import { Payments } from "./pages/Payments.js";
@@ -12,7 +13,7 @@ import { Cash } from "./pages/Cash.js";
 import { Classes } from "./pages/Classes.js";
 import { SessionDetail } from "./pages/SessionDetail.js";
 import { Toaster } from "./components/ui/toaster.js";
-import { Users, Wallet, Receipt, LogOut, Dumbbell, CalendarDays } from "lucide-react";
+import { Users, Wallet, Receipt, LogOut, Dumbbell, CalendarDays, ScanLine } from "lucide-react";
 
 /**
  * App shell with session-aware routing and the reception layout (ADR-0003):
@@ -81,6 +82,9 @@ function Shell() {
           {sidebarOpen && <span className="truncate font-semibold">{session.organization.name}</span>}
         </div>
         <nav className="flex-1 space-y-1 p-2" aria-label="Principal">
+          <SideLink to="/" icon={<ScanLine className="h-4 w-4" />} open={sidebarOpen}>
+            Mostrador
+          </SideLink>
           <SideLink to="/panel" icon={<Users className="h-4 w-4" />} open={sidebarOpen}>
             Socios
           </SideLink>
@@ -123,6 +127,7 @@ function Shell() {
         </header>
         <main className="container py-6">
           <Routes>
+            <Route path="/" element={<RequireStaff><Mostrador /></RequireStaff>} />
             <Route path="/panel" element={<RequireStaff><Panel /></RequireStaff>} />
             <Route path="/payments" element={<RequireStaff><Payments /></RequireStaff>} />
             <Route path="/cash" element={<RequireStaff><Cash /></RequireStaff>} />

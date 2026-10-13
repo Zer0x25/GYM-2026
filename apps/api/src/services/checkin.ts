@@ -18,9 +18,9 @@
  *  5. AUDIT: every check-in writes checkin.ok / checkin.denied in the same
  *     transaction, carrying member, coverage, membershipEndsAt and reason.
  */
-import { and, eq, gt, lt } from "drizzle-orm";
+import { and, eq, gt, lt, desc, inArray, sql } from "drizzle-orm";
 import type { Database } from "@gym/db";
-import { members, memberships, plans } from "@gym/db";
+import { members, memberships, plans, auditLog } from "@gym/db";
 import { forbidden, notFound } from "../errors.js";
 import { AuditService } from "./audit.js";
 import { generateQrToken } from "./provisioning.js";
@@ -83,6 +83,62 @@ export class CheckinService {
     return outcome.allowed
       ? { allowed: true, memberId: member.id, fullName: member.fullName, coverage: outcome.coverage, membershipEndsAt: outcome.membershipEndsAt }
       : { allowed: false, reason: outcome.reason };
+  }
+
+  /**
+   * Recent check-ins of the organization (newest first) — the receptionist's
+   * live feed. Read-only, tenant-scoped: joins the audit trail (checkin.ok /
+   * checkin.denied, written in the same transaction as the check-in) with the
+   * member name. No new write path; the feed is a projection of what already
+   * happened.
+   */
+  async recentCheckins(
+    actor: CheckinActor,
+    limit = 50,
+  ): Promise<{ id: string; memberId: string; fullName: string; outcome: "ok" | "denied"; detail: string | null; at: string }[]> {
+    if (actor.role !== "admin" && actor.role !== "recepcion") {
+      throw forbidden("Solo recepción o admin consultan los ingresos");
+    }
+    const rows = await this.db
+      .select({
+        id: auditLog.id,
+        entityId: auditLog.entityId,
+        action: auditLog.action,
+        metadata: auditLog.metadata,
+        createdAt: auditLog.createdAt,
+        fullName: members.fullName,
+      })
+      .from(auditLog)
+      .innerJoin(members, sql`${members.id}::text = ${auditLog.entityId}`)
+      .where(
+        and(
+          eq(auditLog.organizationId, actor.organizationId),
+          eq(auditLog.entity, "member"),
+          inArray(auditLog.action, ["checkin.ok", "checkin.denied"]),
+        ),
+      )
+      .orderBy(desc(auditLog.createdAt))
+      .limit(limit);
+    return rows.map((r) => {
+      const meta = r.metadata ? (JSON.parse(r.metadata) as Record<string, unknown>) : {};
+      const outcome = r.action === "checkin.ok" ? "ok" : "denied";
+      const detail =
+        typeof meta.reason === "string"
+          ? meta.reason
+          : outcome === "ok"
+            ? typeof meta.coverage === "string"
+              ? `plan ${meta.coverage}`
+              : null
+            : null;
+      return {
+        id: r.id,
+        memberId: r.entityId,
+        fullName: r.fullName,
+        outcome,
+        detail,
+        at: r.createdAt.toISOString(),
+      };
+    });
   }
 
   /** Coverage decision shared by check-in: active window + plan coverage≠none. */

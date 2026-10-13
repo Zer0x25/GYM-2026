@@ -835,6 +835,17 @@ export async function buildServer(opts: AppOptions) {
     return reply.send({ data: { qrToken } });
   });
 
+  // Reception live feed: recent check-ins of the organization (read-only,
+  // tenant-scoped projection of the audit trail). Powers the mostrador view.
+  app.get("/api/v1/checkins/recent", async (req: FastifyRequest, reply: FastifyReply) => {
+    requireRole(req.session, ["admin", "recepcion"]);
+    assertTenantContext(req.session);
+    const limitRaw = (req.query as { limit?: string }).limit;
+    const limit = limitRaw ? Math.min(Math.max(parseInt(limitRaw, 10) || 50, 1), 200) : 50;
+    const rows = await checkinService.recentCheckins(req.session, limit);
+    return reply.send({ data: rows });
+  });
+
   // The socio rotates their own QR (invalidates the old one).
   app.post("/api/v1/me/qr/rotate", async (req: FastifyRequest, reply: FastifyReply) => {
     requireRole(req.session, ["socio"]);

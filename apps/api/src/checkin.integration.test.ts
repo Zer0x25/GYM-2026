@@ -203,4 +203,45 @@ describe.skipIf(!RUN)("Entrega 5 — QR y check-in supervisado (spec 007, REQ-7/
     const audit = await db.execute(sql`SELECT COUNT(*)::int AS n FROM audit_log WHERE action = 'checkin.ok'`);
     expect(Number((audit[0] as { n: number }).n)).toBe(2);
   });
+
+  // Mostrador feed: recentCheckins returns today's check-ins, newest first,
+  // joining the audit trail with the member name (read-only projection).
+  it("feed del mostrador: recentCheckins devuelve los ingresos del tenant, más nuevo primero", async () => {
+    const { memberId, qrToken } = await makeMember(ORG_A, "Socio Feed");
+    await giveActiveMembership(ORG_A, memberId, PLAN_A);
+    await svc.checkin(recepActor, qrToken);
+    await new Promise((r) => setTimeout(r, 5));
+    const feed = await svc.recentCheckins(recepActor, 20);
+    expect(feed.length).toBeGreaterThan(0);
+    const first = feed[0]!;
+    expect(first.fullName).toBe("Socio Feed");
+    expect(first.outcome).toBe("ok");
+    expect(first.at).toBeTruthy();
+    // Newest first: timestamps are non-increasing.
+    for (let i = 1; i < feed.length; i++) {
+      expect(new Date(feed[i - 1]!.at).getTime()).toBeGreaterThanOrEqual(new Date(feed[i]!.at).getTime());
+    }
+  });
+
+  // Feed is tenant-scoped: another org's check-ins never appear.
+  it("feed del mostrador: solo ve los ingresos de su propio tenant", async () => {
+    const { memberId: mB, qrToken: tB } = await makeMember(ORG_B, "Socio Otra Org Feed");
+    await giveActiveMembership(ORG_B, mB, PLAN_A);
+    const recepB: CheckinActor = { accountId: await makeAccount("recepB-feed@test.cl"), organizationId: ORG_B, role: "recepcion" };
+    await svc.checkin(recepB, tB);
+
+    const feedA = await svc.recentCheckins(recepActor, 100);
+    expect(feedA.every((r) => r.fullName !== "Socio Otra Org Feed")).toBe(true);
+  });
+
+  // A socio cannot read the reception feed (separation of functions).
+  it("feed del mostrador: el socio no puede consultar los ingresos", async () => {
+    const socioActor: CheckinActor = {
+      accountId: await makeAccount("socio-feed@test.cl"),
+      organizationId: ORG_A,
+      role: "socio",
+      memberId: (await makeMember(ORG_A, "Socio Feed Reader")).memberId,
+    };
+    await expect(svc.recentCheckins(socioActor)).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
 });

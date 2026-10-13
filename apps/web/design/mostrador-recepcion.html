@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mostrador · Recepción — GYM</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  /* ── Tokens (ADR-0003, coherentes con apps/web/src/index.css) ───────── */
+  :root {
+    --bg: hsl(210 20% 98%);
+    --surface: hsl(0 0% 100%);
+    --surface-2: hsl(210 40% 96%);
+    --ink: hsl(222 47% 11%);
+    --ink-2: hsl(215 16% 42%);
+    --ink-3: hsl(215 16% 60%);
+    --line: hsl(214 32% 91%);
+    --line-2: hsl(214 32% 86%);
+    --primary: hsl(221 83% 53%);
+    --primary-ink: hsl(0 0% 100%);
+    --primary-soft: hsl(221 83% 96%);
+    --ok: hsl(142 71% 40%);
+    --ok-soft: hsl(142 60% 94%);
+    --warn: hsl(32 95% 44%);
+    --warn-soft: hsl(38 92% 94%);
+    --bad: hsl(0 72% 51%);
+    --bad-soft: hsl(0 72% 96%);
+    --radius: 14px;
+    --radius-sm: 9px;
+    --shadow: 0 1px 2px hsl(222 47% 11% / 0.05), 0 1px 3px hsl(222 47% 11% / 0.04);
+    --shadow-lg: 0 8px 30px hsl(222 47% 11% / 0.10);
+    --font: 'Inter', system-ui, sans-serif;
+    --mono: 'Geist Mono', ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--ink);
+    font-size: 15px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: "tnum" 1;
+  }
+  button { font-family: inherit; cursor: pointer; border: none; background: none; }
+
+  /* ── Shell: barra superior mínima + dos zonas ───────────────────────── */
+  .app { display: grid; grid-template-rows: 60px 1fr; height: 100vh; }
+  .topbar {
+    display: flex; align-items: center; gap: 20px;
+    padding: 0 22px; background: var(--surface);
+    border-bottom: 1px solid var(--line);
+  }
+  .brand { display: flex; align-items: center; gap: 9px; font-weight: 700; letter-spacing: -0.01em; }
+  .brand .mark {
+    width: 30px; height: 30px; border-radius: 8px;
+    background: var(--ink); color: #fff;
+    display: grid; place-items: center; font-size: 15px;
+  }
+  .topbar .org { color: var(--ink-2); font-size: 13px; }
+  .topbar .spacer { flex: 1; }
+
+  /* Chip de estado de caja: el “¿está todo ok?” de un vistazo */
+  .cash-chip {
+    display: inline-flex; align-items: center; gap: 9px;
+    padding: 7px 14px; border-radius: 999px;
+    background: var(--ok-soft); color: var(--ok);
+    font-size: 13px; font-weight: 600;
+  }
+  .cash-chip.closed { background: var(--surface-2); color: var(--ink-3); }
+  .cash-chip .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+  .cash-chip .amt { font-family: var(--mono); font-weight: 600; }
+
+  .avatar {
+    width: 34px; height: 34px; border-radius: 50%;
+    background: var(--surface-2); display: grid; place-items: center;
+    font-size: 13px; font-weight: 600; color: var(--ink-2);
+    border: 1px solid var(--line);
+  }
+
+  /* ── Cuerpo: mostrador (acción) + feed (vivo) ───────────────────────── */
+  .body { display: grid; grid-template-columns: 1fr 400px; min-height: 0; }
+  .main { overflow-y: auto; padding: 26px 30px 40px; }
+  .feed {
+    background: var(--surface); border-left: 1px solid var(--line);
+    display: grid; grid-template-rows: auto 1fr; min-height: 0;
+  }
+
+  /* ── ZONA DE ESCANEO — el corazón del mostrador ─────────────────────── */
+  .scanzone { max-width: 640px; margin: 0 auto; }
+  .scanzone h1 { font-size: 24px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 4px; }
+  .scanzone .sub { color: var(--ink-2); font-size: 14px; margin-bottom: 22px; }
+
+  .scanner {
+    position: relative;
+    border: 2px dashed var(--line-2);
+    border-radius: var(--radius);
+    background: var(--surface);
+    padding: 40px 24px; text-align: center;
+    transition: border-color .15s, background .15s;
+  }
+  .scanner:hover { border-color: var(--primary); background: var(--primary-soft); }
+  .scanner .qr-ico { width: 52px; height: 52px; margin: 0 auto 12px; color: var(--ink-3); }
+  .scanner:hover .qr-ico { color: var(--primary); }
+  .scanner .big { font-size: 17px; font-weight: 600; }
+  .scanner .hint { color: var(--ink-3); font-size: 13px; margin-top: 4px; }
+  .scanner .kbd {
+    display: inline-block; margin-top: 12px; padding: 3px 9px;
+    border: 1px solid var(--line-2); border-bottom-width: 2px; border-radius: 6px;
+    font-family: var(--mono); font-size: 12px; color: var(--ink-2); background: var(--surface);
+  }
+
+  /* Fallback manual: cuando el QR no funciona */
+  .manual {
+    margin-top: 14px; display: flex; gap: 8px; align-items: center;
+    justify-content: center;
+  }
+  .manual input {
+    font-family: inherit; font-size: 14px;
+    padding: 10px 14px; width: 260px;
+    border: 1px solid var(--line-2); border-radius: var(--radius-sm);
+    background: var(--surface); color: var(--ink);
+  }
+  .manual input::placeholder { color: var(--ink-3); }
+  .manual input:focus { outline: 2px solid var(--primary); outline-offset: -1px; border-color: var(--primary); }
+
+  /* Acciones rápidas: cobro en 2 toques */
+  .quick { margin-top: 26px; }
+  .quick .label { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-3); margin-bottom: 10px; }
+  .quick-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .quick-btn {
+    display: flex; align-items: center; gap: 12px; text-align: left;
+    padding: 15px 16px; border-radius: var(--radius-sm);
+    background: var(--surface); border: 1px solid var(--line);
+    box-shadow: var(--shadow); transition: border-color .12s, transform .05s;
+  }
+  .quick-btn:hover { border-color: var(--line-2); }
+  .quick-btn:active { transform: translateY(1px); }
+  .quick-btn .ic {
+    width: 38px; height: 38px; border-radius: 9px; flex-shrink: 0;
+    display: grid; place-items: center; font-size: 18px;
+  }
+  .quick-btn.cobro .ic { background: var(--primary-soft); color: var(--primary); }
+  .quick-btn.socio .ic { background: var(--ok-soft); color: var(--ok); }
+  .quick-btn.clase .ic { background: var(--warn-soft); color: var(--warn); }
+  .quick-btn .t { font-weight: 600; font-size: 14px; }
+  .quick-btn .d { font-size: 12px; color: var(--ink-3); }
+
+  /* ── FEED de ingresos en vivo ───────────────────────────────────────── */
+  .feed-head {
+    padding: 16px 20px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: baseline; justify-content: space-between;
+  }
+  .feed-head .t { font-weight: 700; font-size: 15px; }
+  .feed-head .live { font-size: 12px; color: var(--ok); font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
+  .feed-head .live .pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
+  @media (prefers-reduced-motion: reduce) { .feed-head .live .pulse { animation: none; } }
+  .feed-list { overflow-y: auto; }
+  .feed-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 13px 20px; border-bottom: 1px solid var(--line);
+  }
+  .feed-item:last-child { border-bottom: none; }
+  .feed-item .who { flex: 1; min-width: 0; }
+  .feed-item .name { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .feed-item .meta { font-size: 12px; color: var(--ink-3); font-family: var(--mono); }
+  .feed-item .time { font-size: 12px; color: var(--ink-3); font-family: var(--mono); }
+  .pill {
+    font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 999px; white-space: nowrap;
+  }
+  .pill.ok { background: var(--ok-soft); color: var(--ok); }
+  .pill.warn { background: var(--warn-soft); color: var(--warn); }
+  .pill.bad { background: var(--bad-soft); color: var(--bad); }
+  .feed-empty { padding: 40px 20px; text-align: center; color: var(--ink-3); font-size: 13px; }
+
+  /* ── RESPULTA DE ESCANEO (estado allowed/denied, full-bleed) ────────── */
+  .result {
+    position: fixed; inset: 0; z-index: 50;
+    display: none; place-items: center;
+    background: hsl(222 47% 11% / 0.4);
+    backdrop-filter: blur(3px);
+  }
+  .result.show { display: grid; }
+  .result-card {
+    width: 420px; max-width: 90vw; border-radius: 18px;
+    background: var(--surface); box-shadow: var(--shadow-lg);
+    padding: 34px 30px; text-align: center;
+    animation: pop .18s ease-out;
+  }
+  @keyframes pop { from { transform: scale(.94); opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .result-card { animation: none; } }
+  .result-card .icon {
+    width: 76px; height: 76px; border-radius: 50%; margin: 0 auto 18px;
+    display: grid; place-items: center; font-size: 38px;
+  }
+  .result-card.ok .icon { background: var(--ok-soft); color: var(--ok); }
+  .result-card.deny .icon { background: var(--bad-soft); color: var(--bad); }
+  .result-card .name { font-size: 22px; font-weight: 700; letter-spacing: -0.01em; }
+  .result-card .state { margin-top: 6px; font-size: 14px; color: var(--ink-2); }
+  .result-card .state .pill { margin-left: 4px; }
+  .result-card .plan { margin-top: 14px; font-family: var(--mono); font-size: 13px; color: var(--ink-2); background: var(--surface-2); padding: 8px 12px; border-radius: 8px; display: inline-block; }
+  .result-card .reason { margin-top: 12px; font-size: 14px; color: var(--bad); font-weight: 500; }
+  .result-card .actions { margin-top: 22px; display: flex; gap: 10px; justify-content: center; }
+  .btn {
+    padding: 11px 20px; border-radius: var(--radius-sm); font-weight: 600; font-size: 14px;
+  }
+  .btn-primary { background: var(--primary); color: var(--primary-ink); }
+  .btn-primary:hover { background: hsl(221 83% 47%); }
+  .btn-ghost { background: var(--surface-2); color: var(--ink); }
+  .btn-ghost:hover { background: var(--line); }
+
+  .hint-bottom { text-align: center; margin-top: 26px; font-size: 12px; color: var(--ink-3); }
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- Barra superior: identidad + estado de caja de un vistazo -->
+  <header class="topbar">
+    <div class="brand"><span class="mark">◆</span> PowerGym</div>
+    <span class="org">Sede Centro · Mostrador</span>
+    <div class="spacer"></div>
+    <span class="cash-chip"><span class="dot"></span> Caja abierta · <span class="amt">$130.000</span></span>
+    <div class="avatar">RC</div>
+  </header>
+
+  <div class="body">
+    <!-- ZONA DE ACCIÓN -->
+    <main class="main">
+      <div class="scanzone">
+        <h1>Ingreso y cobro</h1>
+        <p class="sub">Escaneá el QR del socio para validar su ingreso, o buscalo a mano.</p>
+
+        <button class="scanner" id="scanner" type="button">
+          <svg class="qr-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+            <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+            <rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM20 14h1M14 20h3M20 17v4"/>
+          </svg>
+          <div class="big">Escanear QR de ingreso</div>
+          <div class="hint">Apuntá la lectora al código del socio</div>
+          <span class="kbd">⌘K · buscar</span>
+        </button>
+
+        <div class="manual">
+          <input id="manualInput" type="text" placeholder="O escribí nombre / teléfono del socio…" />
+        </div>
+
+        <!-- Cobro en 2 toques -->
+        <div class="quick">
+          <div class="label">Acciones rápidas</div>
+          <div class="quick-grid">
+            <button class="quick-btn cobro" type="button">
+              <span class="ic">💳</span>
+              <span><span class="t">Cobrar</span><br><span class="d">Registrar pago manual</span></span>
+            </button>
+            <button class="quick-btn socio" type="button">
+              <span class="ic">＋</span>
+              <span><span class="t">Nuevo socio</span><br><span class="d">Alta con plan</span></span>
+            </button>
+            <button class="quick-btn clase" type="button">
+              <span class="ic">📅</span>
+              <span><span class="t">Reservar clase</span><br><span class="d">Cupo y horarios</span></span>
+            </button>
+            <button class="quick-btn" type="button" style="grid-column: 1 / -1;">
+              <span class="ic" style="background: var(--surface-2); color: var(--ink-2);">🔍</span>
+              <span><span class="t">Ver socios</span><br><span class="d">Listado, membresías y estados</span></span>
+            </button>
+          </div>
+        </div>
+
+        <p class="hint-bottom">El backend es la autoridad: la interfaz nunca autoriza por sí sola.</p>
+      </div>
+    </main>
+
+    <!-- FEED EN VIVO -->
+    <aside class="feed">
+      <div class="feed-head">
+        <span class="t">Ingresos de hoy</span>
+        <span class="live"><span class="pulse"></span>EN VIVO</span>
+      </div>
+      <div class="feed-list" id="feedList">
+        <div class="feed-item">
+          <div class="who"><div class="name">Camila Torres</div><div class="meta">plan mensual · 08:42</div></div>
+          <span class="pill ok">Ingresó</span>
+        </div>
+        <div class="feed-item">
+          <div class="who"><div class="name">Diego Morales</div><div class="meta">membresía vencida · 08:39</div></div>
+          <span class="pill bad">Denegado</span>
+        </div>
+        <div class="feed-item">
+          <div class="who"><div class="name">Fernanda Ruiz</div><div class="meta">vence en 3 días · 08:31</div></div>
+          <span class="pill warn">Aviso</span>
+        </div>
+        <div class="feed-item">
+          <div class="who"><div class="name">Matías López</div><div class="meta">plan mensual · 08:20</div></div>
+          <span class="pill ok">Ingresó</span>
+        </div>
+        <div class="feed-item">
+          <div class="who"><div class="name">Javiera Soto</div><div class="meta">plan mensual · 08:12</div></div>
+          <span class="pill ok">Ingresó</span>
+        </div>
+        <div class="feed-item">
+          <div class="who"><div class="name">Sebastián Núñez</div><div class="meta">pago pendiente · 08:05</div></div>
+          <span class="pill warn">Aviso</span>
+        </div>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<!-- Respuesta de escaneo (demo interactiva) -->
+<div class="result" id="result">
+  <div class="result-card ok" id="resultCard">
+    <div class="icon" id="resultIcon">✓</div>
+    <div class="name" id="resultName">Camila Torres</div>
+    <div class="state" id="resultState">Membresía <span class="pill ok">Activa</span></div>
+    <div class="plan" id="resultPlan">Plan Mensual · vence 12 nov 2026</div>
+    <div class="reason" id="resultReason" style="display:none"></div>
+    <div class="actions">
+      <button class="btn btn-primary" id="resultOk">Listo</button>
+      <button class="btn btn-ghost" id="resultCobro">Cobrar renovación</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const result = document.getElementById('result');
+  const card = document.getElementById('resultCard');
+  const icon = document.getElementById('resultIcon');
+  const nameEl = document.getElementById('resultName');
+  const stateEl = document.getElementById('resultState');
+  const planEl = document.getElementById('resultPlan');
+  const reasonEl = document.getElementById('resultReason');
+  const cobroBtn = document.getElementById('resultCobro');
+
+  // Demo cíclica: alterna permitido / denegado para mostrar ambos estados.
+  const demos = [
+    { ok: true,  name: 'Camila Torres',   state: 'Membresía <span class="pill ok">Activa</span>', plan: 'Plan Mensual · vence 12 nov 2026' },
+    { ok: false, name: 'Diego Morales',   reason: 'Membresía vencida el 30 sep 2026 — ofrecer renovación', state: 'Membresía <span class="pill bad">Vencida</span>', plan: 'Plan Mensual · venció 30 sep 2026' },
+  ];
+  let i = 0;
+  function showResult() {
+    const d = demos[i % demos.length]; i++;
+    card.className = 'result-card ' + (d.ok ? 'ok' : 'deny');
+    icon.textContent = d.ok ? '✓' : '✕';
+    nameEl.textContent = d.name;
+    // stateEl.innerHTML: contenido estático hardcodeado del demo (nunca input de usuario) — seguro.
+    stateEl.innerHTML = d.state;
+    planEl.textContent = d.plan;
+    if (d.reason) { reasonEl.textContent = d.reason; reasonEl.style.display = ''; } else { reasonEl.style.display = 'none'; }
+    cobroBtn.style.display = d.ok ? 'none' : '';
+    result.classList.add('show');
+  }
+  document.getElementById('scanner').addEventListener('click', showResult);
+  document.getElementById('resultOk').addEventListener('click', () => result.classList.remove('show'));
+  result.addEventListener('click', (e) => { if (e.target === result) result.classList.remove('show'); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') result.classList.remove('show'); });
+</script>
+</body>
+</html>
