@@ -22,7 +22,7 @@ export function RequireAuth({
 }) {
   const { session, loading } = useSession();
   const location = useLocation();
-  if (loading) return <p className="muted">Verificando sesión…</p>;
+  if (loading) return <p className="grid min-h-screen place-items-center text-sm text-muted-foreground">Verificando sesión…</p>;
   if (!session) return <Navigate to="/login" replace state={{ from: location }} />;
   if (roles && !roles.includes(session.role)) return <Navigate to="/" replace />;
   return <>{children}</>;
@@ -32,7 +32,7 @@ export function RequireAuth({
 export function RequireStaff({ children }: { children: ReactNode }) {
   const { session, loading } = useSession();
   const location = useLocation();
-  if (loading) return <p className="muted">Verificando sesión…</p>;
+  if (loading) return <p className="grid min-h-screen place-items-center text-sm text-muted-foreground">Verificando sesión…</p>;
   if (!session) return <Navigate to="/login" replace state={{ from: location }} />;
   if (!STAFF.includes(session.role)) return <Navigate to="/portal" replace />;
   return <>{children}</>;

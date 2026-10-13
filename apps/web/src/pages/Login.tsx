@@ -1,11 +1,18 @@
 /**
  * Login screen: email + password against Better Auth. On success the guard
  * redirects to the role's home. Errors come back as stable API codes.
+ *
+ * Design (ADR-0003): Tailwind utilities + the CSS-variable tokens from
+ * index.css (bg-card, text-foreground, border-input…). The old semantic
+ * classes (.card/.error) predate the design system and style nothing.
  */
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
+import { Dumbbell } from "lucide-react";
 import { ApiError } from "../api.js";
 import { useSession } from "../session.js";
+import { Button } from "../components/ui/button.js";
+import { Input } from "../components/ui/input.js";
 
 export function Login() {
   const { signIn } = useSession();
@@ -36,36 +43,64 @@ export function Login() {
   }
 
   return (
-    <section className="card" aria-labelledby="login-title">
-      <h1 id="login-title">Ingresar</h1>
-      <form onSubmit={onSubmit} noValidate>
-        <label htmlFor="email">Email</label>
-        <input
-          id="email"
-          type="email"
-          autoComplete="username"
-          required
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-        />
-        <label htmlFor="password">Contraseña</label>
-        <input
-          id="password"
-          type="password"
-          autoComplete="current-password"
-          required
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
-        {error ? (
-          <p role="alert" className="error">
-            {error}
-          </p>
-        ) : null}
-        <button type="submit" disabled={busy || !email || !password}>
-          {busy ? "Ingresando…" : "Ingresar"}
-        </button>
-      </form>
-    </section>
+    <div className="grid min-h-screen place-items-center bg-background p-4">
+      <section
+        aria-labelledby="login-title"
+        className="w-full max-w-sm rounded-xl border bg-card p-8 shadow-sm"
+      >
+        <div className="mb-6 flex flex-col items-center gap-2 text-center">
+          <span className="grid h-11 w-11 place-items-center rounded-lg bg-primary text-primary-foreground">
+            <Dumbbell className="h-6 w-6" aria-hidden />
+          </span>
+          <h1 id="login-title" className="text-xl font-semibold tracking-tight">
+            Ingresar
+          </h1>
+          <p className="text-sm text-muted-foreground">Panel del gimnasio</p>
+        </div>
+        <form onSubmit={onSubmit} noValidate className="space-y-4">
+          <div className="space-y-1.5">
+            <label htmlFor="email" className="text-sm font-medium">
+              Email
+            </label>
+            <Input
+              id="email"
+              type="email"
+              autoComplete="username"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label htmlFor="password" className="text-sm font-medium">
+              Contraseña
+            </label>
+            <Input
+              id="password"
+              type="password"
+              autoComplete="current-password"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </div>
+          {error ? (
+            <p
+              role="alert"
+              className="rounded-md bg-destructive/10 p-3 text-sm text-destructive"
+            >
+              {error}
+            </p>
+          ) : null}
+          <Button
+            type="submit"
+            className="w-full"
+            disabled={busy || !email || !password}
+          >
+            {busy ? "Ingresando…" : "Ingresar"}
+          </Button>
+        </form>
+      </section>
+    </div>
   );
 }
