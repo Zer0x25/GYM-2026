@@ -1,12 +1,12 @@
 # Spec: Revocación de sesión y backup/restore (Entrega 5, REQ-11)
 
-> Estado: Aprobada por el usuario 2026-10-12 (backend primero; backup/restore con evidencia real sobre Docker)
+> Estado: Cerrada — backend implementado, verificado y sellado por el usuario
 > Nivel: Tier 1 — Riesgo alto; justificación: toca seguridad y permisos (revocación de sesiones en equipos compartidos) y continuidad operativa (backup/restore probado antes del piloto); un error deja sesiones vivas tras un despido o deja al gimnasio sin respaldo recuperable.
 > Requisitos: REQ-11 (backup/restauración central probado antes del piloto; sesiones de equipo compartido, roles, revocaciones, privacidad y auditoría verificados)
 > ADR aplicables: docs/adr/0002-arquitectura-base.md (§2.2 sesiones Better Auth; §3 auditoría)
 > Contexto (Notion): PRD §REQ-11; AUTH-01 (equipos compartidos), D-06 (acceso temporal, diferido)
 > Trazabilidad: SPEC:REVOKE (revocación de sesión cross-device), SPEC:BACKUP (backup/restore verificado)
-> Aceptación: aprobada por el usuario 2026-10-12; Tier 1 → cierre pendiente de revisión humana; commits locales autorizados, sin push.
+> Aceptación: usuario, 2026-10-12, revisión humana Tier 1 (OK del usuario). Backend verificado (commit `56d3615`); SPEC:REVOKE contra Postgres real (6/6: revoke/revoke-all/auto-revoke/socio/cross-tenant/roles). SPEC:BACKUP ejecutado de verdad sobre Docker (pg_dump + restore en BD limpia, conteos idénticos + humo); evidencia en docs/operations/runbook.md. UI de administración de sesiones después, con el rediseño estructural del frente. Commits locales autorizados, sin push.
 
 ## 1. Objetivo y alcance
 

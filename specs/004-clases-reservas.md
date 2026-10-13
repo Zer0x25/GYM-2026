@@ -1,12 +1,12 @@
 # Spec: Clases grupales y personalizadas, agenda de instructor y reservas (Entrega 3)
 
-> Estado: Borrador (pendiente de aceptación del usuario)
+> Estado: Cerrada — implementada, verificada y sellada por el usuario
 > Nivel: Tier 1 — Riesgo alto; justificación: introduce concurrencia sobre un recurso escaso (última plaza) y compromiso de beneficio de socio con revalidación de cobertura; un error aquí sobre-reserva plazas, consume beneficios de más, o permite solapes de agenda que rompen la operación del gimnasio.
 > Requisitos: REQ-4 (clases grupales configurables: cupo, última plaza bajo concurrencia, beneficio comprometido una sola vez), REQ-5 (cancelaciones temprana/tardía/gimnasio, ausencia y revalidación de cobertura), REQ-6 (personalizadas fijas + citas, agenda unificada de instructor sin solapes)
 > ADR aplicables: docs/adr/0002-arquitectura-base.md
 > Contexto (Notion): https://app.notion.com/p/3f529b8ebe2981fab0c2fa583efcdf15 (PRD §C «Clases y reservas»; decisión P-RES-02/Ambas)
 > Trazabilidad: SPEC:TX-01 (última plaza bajo concurrencia), SPEC:TX-02 (sin solapes de agenda), SPEC:TX-04 (liberación de plaza y crédito exactamente una vez), SPEC:REVAL-01 (revalidación de cobertura a la fecha de sesión)
-> Aceptación: pendiente del usuario; Tier 1 → cierre pendiente de revisión humana; commits locales autorizados, sin push.
+> Aceptación: usuario, 2026-10-12, revisión humana Tier 1 (OK del usuario). Backend (`1aa5fc8`) + UI (`0db3e41`) verificados; invariantes TX-01/TX-02/TX-04/REVAL-01/TX-07 contra Postgres real. Commits locales autorizados, sin push.
 
 ## 1. Objetivo y alcance
 

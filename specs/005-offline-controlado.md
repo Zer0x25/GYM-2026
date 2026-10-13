@@ -1,12 +1,12 @@
 # Spec: Offline controlado — outbox, folios, sincronización idempotente y reconstrucción (Entrega 4)
 
-> Estado: Borrador (pendiente de aceptación del usuario)
+> Estado: Cerrada — backend implementado, verificado y sellado por el usuario
 > Nivel: Tier 1 — Riesgo alto; justificación: introduce escrituras locales sin conexión que luego se reconcilian contra un servidor autoritativo; un error aquí duplica dinero, fabrica derechos o pierde eventos. Es el requisito transversal del piloto.
 > Requisitos: REQ-9 (offline controlado: dispositivos prehabilitados, cobros provisionales offline, ingreso de contingencia ≤72h, outbox con folio, reenvío idempotente, reconstrucción auditable)
 > ADR aplicables: docs/adr/0002-arquitectura-base.md (§2.5 offline; §3 obligaciones y prohibiciones)
 > Contexto (Notion): https://app.notion.com/p/3f529b8ebe2981fab0c2fa583efcdf15 (PRD §Offline controlado; P-09.3.1/B, P-09.3.2/B, P-09.3.3)
 > Trazabilidad: SPEC:TX-06 (idempotencia offline por event_id), SPEC:OFF-FRESH (frescura ≤72h configurable), SPEC:OFF-FOLIO (folio externo independiente), SPEC:OFF-RECON (reconstrucción auditable)
-> Aceptación: pendiente del usuario; Tier 1 → cierre pendiente de revisión humana; commits locales autorizados, sin push.
+> Aceptación: usuario, 2026-10-12, revisión humana Tier 1 (OK del usuario). Backend verificado (commit `56349d0`); invariantes TX-06/SPEC:OFF-FRESH/OFF-FOLIO/OFF-RECON contra Postgres real (7/7). Parámetros offline quedan configurables por org (no aprobados: P-09.3.1b, cifrado). UI/cliente offline congelada a propósito hasta el rediseño estructural del frente. Commits locales autorizados, sin push.
 
 ## 1. Objetivo y alcance
 
