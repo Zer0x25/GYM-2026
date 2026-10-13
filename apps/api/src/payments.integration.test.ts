@@ -320,4 +320,72 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("payments integration (spec 003,
     expect(actions).toContain("payment.validate");
     expect(actions).toContain("payment.reject");
   });
+
+  // ── Caminos de error/borde (branch coverage, CAL-2) ──────────────────
+
+  it("ERR: transfer payment without a bank reference is refused (409)", async () => {
+    const mres = await injectAs(recepcionACookie, "POST", "/api/v1/memberships", {
+      memberId: memberAId,
+      planId: planAId,
+    });
+    const membershipId = mres.json().data.id;
+    const pay = await injectAs(recepcionACookie, "POST", "/api/v1/payments", {
+      membershipId,
+      amountCents: 30000,
+      method: "transfer",
+    });
+    expect(pay.statusCode).toBe(409);
+  });
+
+  it("ERR: registering a payment for a non-existent membership is not-found (404)", async () => {
+    const pay = await injectAs(recepcionACookie, "POST", "/api/v1/payments", {
+      membershipId: "11111111-1111-1111-1111-111111111111",
+      amountCents: 30000,
+      method: "cash",
+    });
+    expect(pay.statusCode).toBe(404);
+  });
+
+  it("ERR: validating / rejecting an unknown payment is not-found (404)", async () => {
+    const unknown = "11111111-1111-1111-1111-111111111111";
+    const validate = await injectAs(adminACookie, "POST", `/api/v1/payments/${unknown}/validate`);
+    expect(validate.statusCode).toBe(404);
+    const reject = await injectAs(adminACookie, "POST", `/api/v1/payments/${unknown}/reject`, {
+      reason: "x",
+    });
+    expect(reject.statusCode).toBe(404);
+  });
+
+  it("ERR: recepción cannot reject a payment (separation of functions, 403)", async () => {
+    const mres = await injectAs(recepcionACookie, "POST", "/api/v1/memberships", {
+      memberId: memberAId,
+      planId: planAId,
+    });
+    const membershipId = mres.json().data.id;
+    const pay = await injectAs(recepcionACookie, "POST", "/api/v1/payments", {
+      membershipId,
+      amountCents: 30000,
+      method: "cash",
+    });
+    const paymentId = pay.json().data.id;
+    const asRecepcion = await injectAs(
+      recepcionACookie,
+      "POST",
+      `/api/v1/payments/${paymentId}/reject`,
+      { reason: "no debería poder" },
+    );
+    expect(asRecepcion.statusCode).toBe(403);
+  });
+
+  it("ERR: listing payments filtered by state returns only that state", async () => {
+    const provisional = await injectAs(recepcionACookie, "GET", "/api/v1/payments?state=provisional");
+    expect(provisional.statusCode).toBe(200);
+    for (const row of provisional.json().data ?? []) {
+      expect(row.state).toBe("provisional");
+    }
+    const validated = await injectAs(adminACookie, "GET", "/api/v1/payments?state=validated");
+    for (const row of validated.json().data ?? []) {
+      expect(row.state).toBe("validated");
+    }
+  });
 });

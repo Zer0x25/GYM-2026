@@ -212,4 +212,41 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("cash integration (spec 003, REQ
     expect(data.movementCount).toBeGreaterThanOrEqual(3);
     expect(data.byMethod.cash + data.byMethod.transfer).toBe(data.totalCents);
   });
+
+  // ── Caminos de error/borde (branch coverage, CAL-2) ──────────────────
+
+  it("ERR: closing an unknown session is not-found (404)", async () => {
+    const res = await injectAs(adminCookie, "POST", "/api/v1/cash/sessions/11111111-1111-1111-1111-111111111111/close", {
+      declaredClosingCents: 0,
+    });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it("ERR: reading an unknown session is not-found (404)", async () => {
+    const res = await injectAs(adminCookie, "GET", "/api/v1/cash/sessions/11111111-1111-1111-1111-111111111111");
+    expect(res.statusCode).toBe(404);
+  });
+
+  it("ERR: closing an already-closed session is refused (409)", async () => {
+    // Close any session left open by a previous test (no per-test TRUNCATE),
+    // so this test can open a fresh one deterministically.
+    const current = await injectAs(adminCookie, "GET", "/api/v1/cash/sessions/current");
+    if (current.statusCode === 200 && current.json().data?.state === "open") {
+      await injectAs(adminCookie, "POST", `/api/v1/cash/sessions/${current.json().data.id}/close`, {
+        declaredClosingCents: current.json().data.openingCents ?? 0,
+      });
+    }
+    const open = await injectAs(adminCookie, "POST", "/api/v1/cash/sessions", { openingCents: 0 });
+    expect(open.statusCode).toBe(201);
+    const sessionId = open.json().data.id;
+    const first = await injectAs(adminCookie, "POST", `/api/v1/cash/sessions/${sessionId}/close`, {
+      declaredClosingCents: 0,
+    });
+    expect(first.statusCode).toBe(200);
+    // Sequential second close → the state guard refuses it.
+    const second = await injectAs(adminCookie, "POST", `/api/v1/cash/sessions/${sessionId}/close`, {
+      declaredClosingCents: 0,
+    });
+    expect(second.statusCode).toBe(409);
+  });
 });

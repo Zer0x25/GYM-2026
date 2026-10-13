@@ -49,6 +49,13 @@
 
 - Falta de progreso: contador 0, sin bloqueo.
 
+## CAL-2 — cobertura de módulos de dinero y reservas (2026-10-12)
+
+- **CAL-2 CUMPLIDO** (decisión del usuario 2026-10-12): umbral ≥80% en statements/lines sobre `payments.ts`, `cash.ts`, `bookings.ts`, `memberships.ts`, medido con `@vitest/coverage-v8` contra Postgres real.
+- Resultado: **statements/lines 96.2%** (payments 98%, cash 100%, bookings 94%, memberships 90%), **functions 97.7%**. Gate configurado con umbral 80% en statements/lines.
+- **Branch coverage 76.5%**, deliberadamente NO gated: las ramas restantes son guards defensivos bajo lock transaccional (`if(!locked)` tras `FOR UPDATE`, fallbacks `?? 24`, `rows[0]?.h`) que no se ejercitan sin mockear el driver de BD — el proyecto solo testea contra Postgres real. Decisión del usuario: documentar, no forzar.
+- Se cerró el hueco real detectado: `markAttendance` (asistio/ausencia, REQ-5), `listByMember`, `listBySession` y los caminos de error/borde de pagos/caja/reservas (transferencia sin referencia, membresía/pago/sesión inexistente 404, doble reserva, cancelar cancelada/ausente, recepción rechazando). Suite de integración pasó de 46 a **65 tests**.
+
 ## Cobertura y límites
 
 El traslado desde Notion cubre decisiones de negocio y alcance; no certifica la implementación. Las pruebas de aislamiento, transacciones (TX-01..TX-07), offline (idempotencia, folios, reconstrucción) y backup/restore se ejecutarán en las unidades de entrega 1..5 del plan G1 con evidencia real. G2 (piloto con datos reales) no está autorizado.

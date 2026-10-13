@@ -235,4 +235,163 @@ describe.skipIf(!RUN)("Entrega 3 — classes & bookings (spec 004)", () => {
     const session = await createSession(base, new Date(base.getTime() + 3600_000), 5);
     await expect(sessionsService.getById(randomUUID(), session.id)).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
+
+  // REQ-5: staff marks attendance; asistio keeps the booking confirmed.
+  it("REQ-5: marcar asistencia 'asistio' conserva la reserva confirmada", async () => {
+    const base = new Date(Date.now() + 24 * 3600_000);
+    const session = await createSession(base, new Date(base.getTime() + 3600_000), 5);
+    const memberId = await makeMember("acc-m-asistio");
+    await giveActiveMembership(memberId);
+    const booking = await bookingsService.create({ ...adminActor, role: "recepcion" }, session.id, memberId);
+    expect(booking.state).toBe("confirmada");
+
+    const row = await bookingsService.markAttendance(adminActor, booking.id, "asistio");
+    expect(row.state).toBe("confirmada");
+
+    // Attendance is audited (booking.attendance, outcome asistio).
+    const audit = await db.execute(
+      sql`SELECT COUNT(*)::int AS n FROM audit_log WHERE entity_id = ${booking.id} AND action = 'booking.attendance'`,
+    );
+    expect(Number((audit[0] as { n: number }).n)).toBe(1);
+  });
+
+  // REQ-5: ausencia marks the booking ausente and records a cancellation
+  // row with credit NOT returned (credit retained), exactly once.
+  it("REQ-5: marcar ausencia retiene el crédito y deja la reserva ausente", async () => {
+    const base = new Date(Date.now() + 24 * 3600_000);
+    const session = await createSession(base, new Date(base.getTime() + 3600_000), 5);
+    const memberId = await makeMember("acc-m-ausencia");
+    await giveActiveMembership(memberId);
+    const booking = await bookingsService.create({ ...adminActor, role: "recepcion" }, session.id, memberId);
+
+    const row = await bookingsService.markAttendance(adminActor, booking.id, "ausencia");
+    expect(row.state).toBe("ausente");
+
+    // Exactly one ausencia cancellation row, credit retained.
+    const rows = await db.execute(
+      sql`SELECT credit_returned FROM booking_cancellations WHERE booking_id = ${booking.id} AND type = 'ausencia'`,
+    );
+    expect(rows).toHaveLength(1);
+    expect((rows[0] as { credit_returned: boolean }).credit_returned).toBe(false);
+  });
+
+  // Separation of functions: a socio may never mark attendance.
+  it("REQ-5: el socio no puede marcar asistencia", async () => {
+    const base = new Date(Date.now() + 24 * 3600_000);
+    const session = await createSession(base, new Date(base.getTime() + 3600_000), 5);
+    const memberId = await makeMember("acc-m-socio-att");
+    await giveActiveMembership(memberId);
+    const booking = await bookingsService.create({ ...adminActor, role: "recepcion" }, session.id, memberId);
+
+    await expect(
+      bookingsService.markAttendance({ ...adminActor, role: "socio" }, booking.id, "asistio"),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  // Attendance is idempotent-safe: a second asistio on the same booking is
+  // fine (state unchanged), and cannot be applied to a cancelled booking.
+  it("REQ-5: no se marca asistencia sobre una reserva cancelada", async () => {
+    const base = new Date(Date.now() + 48 * 3600_000); // >24h → temprana cancel
+    const session = await createSession(base, new Date(base.getTime() + 3600_000), 5);
+    const memberId = await makeMember("acc-m-att-cancel");
+    await giveActiveMembership(memberId);
+    const booking = await bookingsService.create({ ...adminActor, role: "recepcion" }, session.id, memberId);
+    await bookingsService.cancel({ ...adminActor, role: "recepcion" }, booking.id, { type: "temprana" });
+
+    await expect(
+      bookingsService.markAttendance(adminActor, booking.id, "asistio"),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+  });
+
+  // listByMember returns the member's bookings (portal view, REQ-7).
+  it("listByMember devuelve las reservas del socio", async () => {
+    const base = new Date(Date.now() + 24 * 3600_000);
+    const session = await createSession(base, new Date(base.getTime() + 3600_000), 5);
+    const memberId = await makeMember("acc-m-list");
+    await giveActiveMembership(memberId);
+    const booking = await bookingsService.create({ ...adminActor, role: "recepcion" }, session.id, memberId);
+
+    const rows = await bookingsService.listByMember(ORG, memberId);
+    expect(rows.map((r: { id: string }) => r.id)).toContain(booking.id);
+  });
+
+  // listBySession returns the session's bookings (instructor/staff view).
+  it("listBySession devuelve las reservas de la sesión", async () => {
+    const base = new Date(Date.now() + 24 * 3600_000);
+    const session = await createSession(base, new Date(base.getTime() + 3600_000), 5);
+    const memberId = await makeMember("acc-m-listsess");
+    await giveActiveMembership(memberId);
+    const booking = await bookingsService.create({ ...adminActor, role: "recepcion" }, session.id, memberId);
+
+    const rows = await bookingsService.listBySession(ORG, session.id);
+    expect(rows.map((r: { id: string }) => r.id)).toContain(booking.id);
+  });
+
+  // ── Caminos de error/borde (branch coverage, CAL-2) ──────────────────
+
+  // REQ-7: a socio can only book for themselves.
+  it("REQ-7: el socio no puede reservar para otro socio", async () => {
+    const base = new Date(Date.now() + 24 * 3600_000);
+    const session = await createSession(base, new Date(base.getTime() + 3600_000), 5);
+    const selfId = await makeMember("acc-m-self");
+    const otherId = await makeMember("acc-m-other");
+    await giveActiveMembership(selfId);
+    await giveActiveMembership(otherId);
+
+    await expect(
+      bookingsService.create(
+        { ...adminActor, role: "socio", memberId: selfId },
+        session.id,
+        otherId,
+      ),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  // Duplicate booking: the same member cannot hold two seats in one session.
+  it("ERR: el mismo socio no puede reservar dos veces la misma sesión", async () => {
+    const base = new Date(Date.now() + 24 * 3600_000);
+    const session = await createSession(base, new Date(base.getTime() + 3600_000), 5);
+    const memberId = await makeMember("acc-m-dup");
+    await giveActiveMembership(memberId);
+    await bookingsService.create({ ...adminActor, role: "recepcion" }, session.id, memberId);
+
+    await expect(
+      bookingsService.create({ ...adminActor, role: "recepcion" }, session.id, memberId),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+  });
+
+  // Cancelling an already-cancelled booking is refused.
+  it("ERR: cancelar una reserva ya cancelada es rechazado (409)", async () => {
+    const base = new Date(Date.now() + 48 * 3600_000);
+    const session = await createSession(base, new Date(base.getTime() + 3600_000), 5);
+    const memberId = await makeMember("acc-m-cancel-twice");
+    await giveActiveMembership(memberId);
+    const booking = await bookingsService.create({ ...adminActor, role: "recepcion" }, session.id, memberId);
+    await bookingsService.cancel({ ...adminActor, role: "recepcion" }, booking.id, { type: "temprana" });
+
+    await expect(
+      bookingsService.cancel({ ...adminActor, role: "recepcion" }, booking.id, { type: "temprana" }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+  });
+
+  // Cancelling a booking already marked ausente is refused.
+  it("ERR: cancelar una reserva ya ausente es rechazado (409)", async () => {
+    const base = new Date(Date.now() + 24 * 3600_000);
+    const session = await createSession(base, new Date(base.getTime() + 3600_000), 5);
+    const memberId = await makeMember("acc-m-ausente-cancel");
+    await giveActiveMembership(memberId);
+    const booking = await bookingsService.create({ ...adminActor, role: "recepcion" }, session.id, memberId);
+    await bookingsService.markAttendance(adminActor, booking.id, "ausencia");
+
+    await expect(
+      bookingsService.cancel({ ...adminActor, role: "recepcion" }, booking.id, { type: "temprana" }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+  });
+
+  // Cancelling an unknown booking is not-found.
+  it("ERR: cancelar una reserva inexistente es not-found (404)", async () => {
+    await expect(
+      bookingsService.cancel({ ...adminActor, role: "recepcion" }, randomUUID(), { type: "temprana" }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
 });
