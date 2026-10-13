@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { NavLink, Route, Routes } from "react-router-dom";
+import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import { cn } from "./lib/cn.js";
 import { api, formatCLP, type CashSession } from "./api.js";
 import { SessionProvider, useSession } from "./session.js";
-import { RequireAuth, RequireStaff } from "./guards.jsx";
+import { RequireAuth, RequireStaff, RequireRoles } from "./guards.jsx";
 import { Login } from "./pages/Login.js";
 import { Mostrador } from "./pages/Mostrador.js";
 import { Panel } from "./pages/Panel.js";
@@ -13,6 +13,13 @@ import { Cash } from "./pages/Cash.js";
 import { Classes } from "./pages/Classes.js";
 import { SessionDetail } from "./pages/SessionDetail.js";
 import { Toaster } from "./components/ui/toaster.js";
+import {
+  canUseMostrador,
+  canUsePayments,
+  canUseCash,
+  canUseClasses,
+  canReadMembers,
+} from "./permissions.js";
 import { Users, Wallet, Receipt, LogOut, Dumbbell, CalendarDays, ScanLine } from "lucide-react";
 
 /**
@@ -82,21 +89,31 @@ function Shell() {
           {sidebarOpen && <span className="truncate font-semibold">{session.organization.name}</span>}
         </div>
         <nav className="flex-1 space-y-1 p-2" aria-label="Principal">
-          <SideLink to="/" icon={<ScanLine className="h-4 w-4" />} open={sidebarOpen}>
-            Mostrador
-          </SideLink>
-          <SideLink to="/panel" icon={<Users className="h-4 w-4" />} open={sidebarOpen}>
-            Socios
-          </SideLink>
-          <SideLink to="/payments" icon={<Receipt className="h-4 w-4" />} open={sidebarOpen}>
-            Pagos
-          </SideLink>
-          <SideLink to="/cash" icon={<Wallet className="h-4 w-4" />} open={sidebarOpen}>
-            Caja
-          </SideLink>
-          <SideLink to="/clases" icon={<CalendarDays className="h-4 w-4" />} open={sidebarOpen}>
-            Clases
-          </SideLink>
+          {canUseMostrador(session.role) ? (
+            <SideLink to="/" icon={<ScanLine className="h-4 w-4" />} open={sidebarOpen}>
+              Mostrador
+            </SideLink>
+          ) : null}
+          {canReadMembers(session.role) ? (
+            <SideLink to="/panel" icon={<Users className="h-4 w-4" />} open={sidebarOpen}>
+              Socios
+            </SideLink>
+          ) : null}
+          {canUsePayments(session.role) ? (
+            <SideLink to="/payments" icon={<Receipt className="h-4 w-4" />} open={sidebarOpen}>
+              Pagos
+            </SideLink>
+          ) : null}
+          {canUseCash(session.role) ? (
+            <SideLink to="/cash" icon={<Wallet className="h-4 w-4" />} open={sidebarOpen}>
+              Caja
+            </SideLink>
+          ) : null}
+          {canUseClasses(session.role) ? (
+            <SideLink to="/clases" icon={<CalendarDays className="h-4 w-4" />} open={sidebarOpen}>
+              Clases
+            </SideLink>
+          ) : null}
         </nav>
         <div className="border-t p-2">
           <button
@@ -127,10 +144,10 @@ function Shell() {
         </header>
         <main className="container py-6">
           <Routes>
-            <Route path="/" element={<RequireStaff><Mostrador /></RequireStaff>} />
+            <Route path="/" element={canUseMostrador(session.role) ? <RequireStaff><Mostrador /></RequireStaff> : <Navigate to="/clases" replace />} />
             <Route path="/panel" element={<RequireStaff><Panel /></RequireStaff>} />
-            <Route path="/payments" element={<RequireStaff><Payments /></RequireStaff>} />
-            <Route path="/cash" element={<RequireStaff><Cash /></RequireStaff>} />
+            <Route path="/payments" element={<RequireRoles roles={["admin", "recepcion"]}><Payments /></RequireRoles>} />
+            <Route path="/cash" element={<RequireRoles roles={["admin", "recepcion"]}><Cash /></RequireRoles>} />
             <Route path="/clases" element={<RequireStaff><Classes /></RequireStaff>} />
             <Route path="/clases/:id" element={<RequireStaff><SessionDetail /></RequireStaff>} />
             <Route path="*" element={<RequireStaff><Panel /></RequireStaff>} />

@@ -37,3 +37,22 @@ export function RequireStaff({ children }: { children: ReactNode }) {
   if (!STAFF.includes(session.role)) return <Navigate to="/portal" replace />;
   return <>{children}</>;
 }
+
+/**
+ * Guard for staff areas further restricted to specific roles (mirror of the
+ * backend matrix — see permissions.ts). UX only: the API re-validates.
+ * Unauthorized staff bounce to their landing ("/"), never to /login.
+ */
+export function RequireRoles({
+  roles,
+  children,
+}: {
+  roles: SessionData["role"][];
+  children: ReactNode;
+}) {
+  const { session, loading } = useSession();
+  if (loading) return <p className="grid min-h-screen place-items-center text-sm text-muted-foreground">Verificando sesión…</p>;
+  if (!session) return <Navigate to="/login" replace />;
+  if (!roles.includes(session.role)) return <Navigate to="/" replace />;
+  return <>{children}</>;
+}

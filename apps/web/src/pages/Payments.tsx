@@ -33,10 +33,11 @@ import {
 } from "../components/ui/dialog.js";
 import { Input, Label } from "../components/ui/input.js";
 import { Tabs, TabsList, TabsTrigger } from "../components/ui/tabs.js";
+import { canDecidePayments } from "../permissions.js";
 
 export function Payments() {
   const { session } = useSession();
-  const isAdmin = session?.role === "admin";
+  const isAdmin = canDecidePayments(session?.role);
   const [tab, setTab] = useState<"provisional" | "validated" | "rejected">("provisional");
   const [payments, setPayments] = useState<Payment[]>([]);
   const [members, setMembers] = useState<Map<string, string>>(new Map());

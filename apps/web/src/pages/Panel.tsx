@@ -22,6 +22,7 @@ import {
   TableRow,
 } from "../components/ui/table.js";
 import { QuickPay } from "../components/QuickPay.js";
+import { canManageMembers } from "../permissions.js";
 
 export function Panel() {
   const { session } = useSession();
@@ -56,7 +57,7 @@ export function Panel() {
     void load();
   }, [load]);
 
-  const canCreate = session?.role === "admin" || session?.role === "recepcion";
+  const canCreate = canManageMembers(session?.role);
 
   // Latest membership per member, for the state badge.
   const membershipByMember = new Map<string, Membership>();
