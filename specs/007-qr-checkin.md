@@ -1,12 +1,12 @@
 # Spec: QR de ingreso y check-in supervisado (Entrega 5, REQ-7/REQ-8)
 
-> Estado: Aprobada por el usuario 2026-10-12 (QR estático revocable; check-in valida solo cobertura; recepción opera; admin re-emite y socio puede rotar el suyo; backfill de token en migración)
+> Estado: Cerrada — backend implementado, verificado y sellado por el usuario
 > Nivel: Tier 1 — Riesgo alto; justificación: es control de acceso físico; un error aquí admite a alguien sin cobertura (pérdida de ingresos, acceso indebido) o rechaza a un socio legítimo. El token de identidad es además una credencial compartible.
 > Requisitos: REQ-7 (portal socio: QR propio), REQ-8 (concurrencia recepción sin doble operación), flujo PRD "reserva → asistencia/QR supervisado → cierre de caja"
 > ADR aplicables: docs/adr/0002-arquitectura-base.md (§2.2 sesiones; §3 auditoría)
 > Contexto (Notion): PRD §N "QR estático revocable para identificación e ingreso supervisado"; rol recepción "valida ingresos con QR"
 > Trazabilidad: SPEC:CHECKIN (check-in valida cobertura), SPEC:QR-TOKEN (token estático revocable), SPEC:CHECKIN-ISO (aislamiento tenant del check-in)
-> Aceptación: aprobada por el usuario 2026-10-12; Tier 1 → cierre pendiente de revisión humana; commits locales autorizados, sin push.
+> Aceptación: usuario, 2026-10-12, revisión humana Tier 1 (OK del usuario). Backend verificado (commit `bf906ce`); SPEC:CHECKIN/QR-TOKEN/CHECKIN-ISO contra Postgres real (8/8: cobertura, denegación, revocación, cross-tenant 404, QR propio, idempotencia, concurrencia recepción). QR estático revocable; check-in valida solo cobertura; recepción opera; admin re-emite y socio rota el suyo; backfill de token en migración 0008. UI (escáner + QR en portal) después, con el rediseño estructural del frente. Commits locales autorizados, sin push.
 
 ## 1. Objetivo y alcance
 
