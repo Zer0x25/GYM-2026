@@ -20,45 +20,198 @@ const mockApi = {
   session: vi.fn().mockResolvedValue(adminSession),
   signIn: vi.fn().mockResolvedValue(undefined),
   signOut: vi.fn().mockResolvedValue(undefined),
-  listMembers: vi.fn().mockResolvedValue([
-    { id: "m1", organizationId: "org-1", fullName: "Socio Uno", contactEmail: "s1@x.cl", createdAt: "2026-10-01T00:00:00Z" },
-  ]),
-  listMemberships: vi.fn().mockResolvedValue([
-    { id: "mem1", organizationId: "org-1", memberId: "m1", planId: "p1", startAt: "2026-10-01", endAt: "2026-11-01", lastPaymentId: null, createdAt: "2026-10-01", state: "active" },
-  ]),
-  listPlans: vi.fn().mockResolvedValue([
-    { id: "p1", organizationId: "org-1", name: "Mensual", priceCents: 30000, durationDays: 30, coverage: "unlimited", active: true, createdAt: "2026-10-01" },
-  ]),
-  listPayments: vi.fn().mockResolvedValue([
-    { id: "pay1", organizationId: "org-1", memberId: "m1", membershipId: "mem1", planId: "p1", amountCents: 30000, method: "transfer", reference: "TRX-1", state: "provisional", registeredBy: "admin-1", decidedBy: null, decidedAt: null, reason: null, createdAt: "2026-10-12" },
-  ]),
+  listMembers: vi
+    .fn()
+    .mockResolvedValue([
+      {
+        id: "m1",
+        organizationId: "org-1",
+        fullName: "Socio Uno",
+        contactEmail: "s1@x.cl",
+        createdAt: "2026-10-01T00:00:00Z",
+      },
+    ]),
+  listMemberships: vi
+    .fn()
+    .mockResolvedValue([
+      {
+        id: "mem1",
+        organizationId: "org-1",
+        memberId: "m1",
+        planId: "p1",
+        startAt: "2026-10-01",
+        endAt: "2026-11-01",
+        lastPaymentId: null,
+        createdAt: "2026-10-01",
+        state: "active",
+      },
+    ]),
+  listPlans: vi
+    .fn()
+    .mockResolvedValue([
+      {
+        id: "p1",
+        organizationId: "org-1",
+        name: "Mensual",
+        priceCents: 30000,
+        durationDays: 30,
+        coverage: "unlimited",
+        active: true,
+        createdAt: "2026-10-01",
+      },
+    ]),
+  listPayments: vi
+    .fn()
+    .mockResolvedValue([
+      {
+        id: "pay1",
+        organizationId: "org-1",
+        memberId: "m1",
+        membershipId: "mem1",
+        planId: "p1",
+        amountCents: 30000,
+        method: "transfer",
+        reference: "TRX-1",
+        state: "provisional",
+        registeredBy: "recep-1",
+        decidedBy: null,
+        decidedAt: null,
+        reason: null,
+        createdAt: "2026-10-12",
+      },
+    ]),
   currentCashSession: vi.fn().mockResolvedValue({
-    id: "s1", organizationId: "org-1", openedBy: "admin-1", closedBy: null, state: "open", openingCents: 20000, declaredClosingCents: null, expectedClosingCents: null, discrepancyCents: null, openedAt: "2026-10-12", closedAt: null,
+    id: "s1",
+    organizationId: "org-1",
+    openedBy: "admin-1",
+    closedBy: null,
+    state: "open",
+    openingCents: 20000,
+    declaredClosingCents: null,
+    expectedClosingCents: null,
+    discrepancyCents: null,
+    openedAt: "2026-10-12",
+    closedAt: null,
   }),
   getCashSession: vi.fn().mockResolvedValue({
-    session: { id: "s1", organizationId: "org-1", openedBy: "admin-1", closedBy: null, state: "open", openingCents: 20000, openedAt: "2026-10-12", closedAt: null },
+    session: {
+      id: "s1",
+      organizationId: "org-1",
+      openedBy: "admin-1",
+      closedBy: null,
+      state: "open",
+      openingCents: 20000,
+      openedAt: "2026-10-12",
+      closedAt: null,
+    },
     movements: [],
   }),
   validatePayment: vi.fn().mockResolvedValue({}),
   rejectPayment: vi.fn().mockResolvedValue({}),
   registerPayment: vi.fn().mockResolvedValue({}),
   myMemberships: vi.fn().mockResolvedValue([]),
-  me: vi.fn().mockResolvedValue({ id: "m1", organizationId: "org-1", fullName: "Socio Uno", contactEmail: null, createdAt: "2026-10-01" }),
+  me: vi
+    .fn()
+    .mockResolvedValue({
+      id: "m1",
+      organizationId: "org-1",
+      fullName: "Socio Uno",
+      contactEmail: null,
+      createdAt: "2026-10-01",
+    }),
+
+  instructors: vi.fn().mockResolvedValue([{ id: "inst-1", name: "Ana Instructora" }]),
+  schedule: vi
+    .fn()
+    .mockResolvedValue([
+      {
+        id: "sess1",
+        organizationId: "org-1",
+        templateId: "t1",
+        type: "grupal",
+        instructorId: "inst-1",
+        instructorName: "Ana Instructora",
+        title: "Spinning",
+        startsAt: new Date(Date.now() + 86400000).toISOString(),
+        endsAt: new Date(Date.now() + 90000000).toISOString(),
+        capacity: 4,
+        booked: 0,
+        remaining: 4,
+        state: "programada",
+        createdBy: "admin-1",
+        createdAt: "2026-10-12",
+      },
+    ]),
+  portalOverview: vi
+    .fn()
+    .mockResolvedValue({
+      member: {
+        id: "m1",
+        organizationId: "org-1",
+        fullName: "Socio Uno",
+        contactEmail: null,
+        createdAt: "2026-10-01",
+      },
+      memberships: [],
+    }),
+  myQr: vi.fn().mockResolvedValue({ qrToken: "qr-test-token" }),
 
   // Entrega 3: classes, sessions, bookings
-  listClassTemplates: vi.fn().mockResolvedValue([
-    { id: "t1", organizationId: "org-1", name: "Spinning", type: "grupal", capacity: 4, reservationWindowHours: 0, cancellationWindowHours: 24, coverageRequired: "unlimited", active: true, createdAt: "2026-10-01" },
-  ]),
+  listClassTemplates: vi
+    .fn()
+    .mockResolvedValue([
+      {
+        id: "t1",
+        organizationId: "org-1",
+        name: "Spinning",
+        type: "grupal",
+        capacity: 4,
+        reservationWindowHours: 0,
+        cancellationWindowHours: 24,
+        coverageRequired: "unlimited",
+        active: true,
+        createdAt: "2026-10-01",
+      },
+    ]),
   createClassTemplate: vi.fn().mockResolvedValue({}),
-  listSessions: vi.fn().mockResolvedValue([
-    { id: "sess1", organizationId: "org-1", templateId: "t1", type: "grupal", instructorId: "inst-1", startsAt: "2026-10-13T13:00:00Z", endsAt: "2026-10-13T14:00:00Z", capacity: 4, state: "programada", createdBy: "admin-1", createdAt: "2026-10-12" },
-  ]),
+  listSessions: vi
+    .fn()
+    .mockResolvedValue([
+      {
+        id: "sess1",
+        organizationId: "org-1",
+        templateId: "t1",
+        type: "grupal",
+        instructorId: "inst-1",
+        startsAt: "2026-10-13T13:00:00Z",
+        endsAt: "2026-10-13T14:00:00Z",
+        capacity: 4,
+        state: "programada",
+        createdBy: "admin-1",
+        createdAt: "2026-10-12",
+      },
+    ]),
   getSession: vi.fn().mockResolvedValue({
-    id: "sess1", organizationId: "org-1", templateId: "t1", type: "grupal", instructorId: "inst-1", startsAt: "2026-10-13T13:00:00Z", endsAt: "2026-10-13T14:00:00Z", capacity: 4, state: "programada", createdBy: "admin-1", createdAt: "2026-10-12",
+    id: "sess1",
+    organizationId: "org-1",
+    templateId: "t1",
+    type: "grupal",
+    instructorId: "inst-1",
+    startsAt: "2026-10-13T13:00:00Z",
+    endsAt: "2026-10-13T14:00:00Z",
+    capacity: 4,
+    state: "programada",
+    createdBy: "admin-1",
+    createdAt: "2026-10-12",
   }),
   listBookings: vi.fn().mockResolvedValue([]),
   createBooking: vi.fn().mockResolvedValue({ id: "b1", state: "confirmada" }),
-  cancelBooking: vi.fn().mockResolvedValue({ booking: { id: "b1", state: "cancelada" }, cancellation: { creditReturned: true } }),
+  cancelBooking: vi
+    .fn()
+    .mockResolvedValue({
+      booking: { id: "b1", state: "cancelada" },
+      cancellation: { creditReturned: true },
+    }),
   markAttendance: vi.fn().mockResolvedValue({ id: "b1", state: "confirmada" }),
   myBookings: vi.fn().mockResolvedValue([]),
   createSession: vi.fn().mockResolvedValue({}),
@@ -108,14 +261,21 @@ describe("UI smoke (ADR-0003 shell + money pages)", () => {
     renderAppAt("/payments");
     const validar = await screen.findByRole("button", { name: /Validar/ });
     validar.click();
+    expect(mockApi.validatePayment).not.toHaveBeenCalled();
+    (await screen.findByRole("button", { name: "Confirmar validación" })).click();
     await waitFor(() => expect(mockApi.validatePayment).toHaveBeenCalledWith("pay1"));
   });
 
   it("renders the classes page (staff) with a new-session form and the roster", async () => {
     renderAppAt("/clases");
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Clases y agenda" })).toBeTruthy());
-    expect(screen.getByRole("button", { name: "Crear sesión" })).toBeTruthy();
-    expect(await screen.findByText("inst-1")).toBeTruthy();
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: "Clases y agenda" })).toBeTruthy(),
+    );
+    (await screen.findByRole("button", { name: "Programar sesión" })).click();
+    expect(await screen.findByRole("button", { name: "Crear sesión" })).toBeTruthy();
+    expect(
+      (await screen.findAllByText("Ana Instructora", { exact: false })).length,
+    ).toBeGreaterThan(0);
   });
 
   it("socio reserves a bookable session from the portal (booking flow)", async () => {

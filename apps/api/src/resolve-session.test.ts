@@ -11,7 +11,12 @@ const MEMBER_1 = "aaaaaaaa-0000-0000-0000-000000000001";
 /** Minimal fake of the two queries resolveSession performs. */
 function fakeDb(opts: {
   assignments: { accountId: string; organizationId: string; role: string; active: boolean }[];
-  membersByEmail: { id: string; organizationId: string; contactEmail: string }[];
+  membersByAccount: {
+    id: string;
+    organizationId: string;
+    contactEmail: string;
+    accountId: string;
+  }[];
 }) {
   const state = {
     from: "" as string,
@@ -36,9 +41,7 @@ function fakeDb(opts: {
           },
           where: () => ({
             limit: async () =>
-              opts.membersByEmail
-                .filter((m) => m.contactEmail === CURRENT_EMAIL)
-                .map((m) => m),
+              opts.membersByAccount.filter((m) => m.accountId === CURRENT_ACCOUNT).map((m) => m),
           }),
         };
       },
@@ -48,17 +51,13 @@ function fakeDb(opts: {
 }
 
 let CURRENT_ACCOUNT = "";
-let CURRENT_EMAIL = "";
 
 describe("resolveSession", () => {
   it("returns staff context with organization and role from the active assignment", async () => {
     CURRENT_ACCOUNT = ACC_STAFF;
-    CURRENT_EMAIL = "admin@a.cl";
     const { db } = fakeDb({
-      assignments: [
-        { accountId: ACC_STAFF, organizationId: ORG_A, role: "admin", active: true },
-      ],
-      membersByEmail: [],
+      assignments: [{ accountId: ACC_STAFF, organizationId: ORG_A, role: "admin", active: true }],
+      membersByAccount: [],
     });
     const ctx = await resolveSession(db, { id: ACC_STAFF, email: "admin@a.cl" });
     expect(ctx).toMatchObject({
@@ -71,10 +70,16 @@ describe("resolveSession", () => {
 
   it("returns socio context with memberId scoped to the linked member", async () => {
     CURRENT_ACCOUNT = ACC_SOCIO;
-    CURRENT_EMAIL = "socio@a.cl";
     const { db } = fakeDb({
       assignments: [],
-      membersByEmail: [{ id: MEMBER_1, organizationId: ORG_A, contactEmail: "socio@a.cl" }],
+      membersByAccount: [
+        {
+          id: MEMBER_1,
+          organizationId: ORG_A,
+          contactEmail: "contacto@otro.cl",
+          accountId: ACC_SOCIO,
+        },
+      ],
     });
     const ctx = await resolveSession(db, { id: ACC_SOCIO, email: "socio@a.cl" });
     expect(ctx).toMatchObject({ role: "socio", organizationId: ORG_A, memberId: MEMBER_1 });
@@ -82,20 +87,16 @@ describe("resolveSession", () => {
 
   it("returns undefined when the account has no active binding (401, not a downgrade)", async () => {
     CURRENT_ACCOUNT = ACC_NONE;
-    CURRENT_EMAIL = "nadie@a.cl";
-    const { db } = fakeDb({ assignments: [], membersByEmail: [] });
+    const { db } = fakeDb({ assignments: [], membersByAccount: [] });
     const ctx = await resolveSession(db, { id: ACC_NONE, email: "nadie@a.cl" });
     expect(ctx).toBeUndefined();
   });
 
   it("ignores inactive staff assignments", async () => {
     CURRENT_ACCOUNT = ACC_STAFF;
-    CURRENT_EMAIL = "admin@a.cl";
     const { db } = fakeDb({
-      assignments: [
-        { accountId: ACC_STAFF, organizationId: ORG_A, role: "admin", active: false },
-      ],
-      membersByEmail: [],
+      assignments: [{ accountId: ACC_STAFF, organizationId: ORG_A, role: "admin", active: false }],
+      membersByAccount: [],
     });
     const ctx = await resolveSession(db, { id: ACC_STAFF, email: "admin@a.cl" });
     expect(ctx).toBeUndefined();

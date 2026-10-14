@@ -79,15 +79,24 @@ export function QuickPay({
     }
   }
 
-  const canSubmit = Number(amount) > 0 && (method === "cash" || reference.trim().length > 0);
+  const canSubmit =
+    Number.isSafeInteger(Number(amount)) &&
+    Number(amount) > 0 &&
+    (method === "cash" || reference.trim().length > 0);
 
   return (
-    <Dialog open={open} onOpenChange={(o) => { if (!o) reset(); onOpenChange(o); }}>
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        if (!o) reset();
+        onOpenChange(o);
+      }}
+    >
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Cobro rápido — {memberName}</DialogTitle>
           <DialogDescription>
-            Paso {step} de 2 · {step === 1 ? "elegí la membresía" : "método y monto"}. El pago
+            Paso {step} de 2 · {step === 1 ? "selecciona la membresía" : "método y monto"}. El pago
             queda provisional hasta que un admin lo valide.
           </DialogDescription>
         </DialogHeader>
@@ -96,7 +105,7 @@ export function QuickPay({
           <div className="space-y-2">
             {memberships.length === 0 ? (
               <p className="py-4 text-center text-sm text-muted-foreground">
-                Este socio no tiene membresías. Asigná un plan primero.
+                Este socio no tiene membresías. Asigna un plan primero.
               </p>
             ) : (
               memberships.map((m) => {
@@ -109,7 +118,9 @@ export function QuickPay({
                     className="flex w-full items-center justify-between rounded-md border p-3 text-left hover:bg-accent"
                   >
                     <span className="font-medium">{plan?.name ?? "Plan"}</span>
-                    <span className="text-sm text-muted-foreground">{formatCLP(plan?.priceCents ?? 0)}</span>
+                    <span className="text-sm text-muted-foreground">
+                      {formatCLP(plan?.priceCents ?? 0)}
+                    </span>
                   </button>
                 );
               })
@@ -123,7 +134,9 @@ export function QuickPay({
                 onClick={() => setMethod("cash")}
                 className={cn(
                   "flex items-center justify-center gap-2 rounded-md border p-3 text-sm font-medium",
-                  method === "cash" ? "border-primary bg-primary/10 text-primary" : "hover:bg-accent",
+                  method === "cash"
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "hover:bg-accent",
                 )}
               >
                 <Banknote className="h-4 w-4" /> Efectivo
@@ -133,7 +146,9 @@ export function QuickPay({
                 onClick={() => setMethod("transfer")}
                 className={cn(
                   "flex items-center justify-center gap-2 rounded-md border p-3 text-sm font-medium",
-                  method === "transfer" ? "border-primary bg-primary/10 text-primary" : "hover:bg-accent",
+                  method === "transfer"
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "hover:bg-accent",
                 )}
               >
                 <CreditCard className="h-4 w-4" /> Transferencia
@@ -141,12 +156,24 @@ export function QuickPay({
             </div>
             <div className="space-y-2">
               <Label htmlFor="amount">Monto (CLP)</Label>
-              <Input id="amount" type="number" value={amount} onChange={(e) => setAmount(e.target.value)} />
+              <Input
+                id="amount"
+                type="number"
+                min="1"
+                step="1"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+              />
             </div>
             {method === "transfer" ? (
               <div className="space-y-2">
                 <Label htmlFor="ref">Referencia bancaria (obligatoria)</Label>
-                <Input id="ref" value={reference} onChange={(e) => setReference(e.target.value)} placeholder="TRX-..." />
+                <Input
+                  id="ref"
+                  value={reference}
+                  onChange={(e) => setReference(e.target.value)}
+                  placeholder="TRX-..."
+                />
               </div>
             ) : null}
           </div>
@@ -154,7 +181,9 @@ export function QuickPay({
 
         <DialogFooter>
           {step === 2 ? (
-            <Button variant="outline" onClick={() => setStep(1)}>Atrás</Button>
+            <Button variant="outline" onClick={() => setStep(1)}>
+              Atrás
+            </Button>
           ) : null}
           {step === 2 ? (
             <Button disabled={busy || !canSubmit} onClick={() => void onSubmit()}>

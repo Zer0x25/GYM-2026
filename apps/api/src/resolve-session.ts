@@ -7,7 +7,7 @@
  * - staff: the active row of staff_assignments for the account (one
  *   organization per staff member, D-02/C). No active assignment → no session
  *   context (UNAUTHENTICATED), never a downgraded role.
- * - socio: the member row linked to the account via contact email; memberId
+ * - socio: the member row linked to the account by immutable accountId; memberId
  *   is set so "my profile" endpoints can scope without trusting client ids.
  *
  * The organizationId is ALWAYS derived here from stored data — a client can
@@ -57,11 +57,7 @@ export async function resolveSession(
     });
   }
 
-  const memberRows = await db
-    .select()
-    .from(members)
-    .where(eq(members.contactEmail, user.email))
-    .limit(1);
+  const memberRows = await db.select().from(members).where(eq(members.accountId, user.id)).limit(1);
 
   const member = memberRows[0];
   if (member) {

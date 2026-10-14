@@ -30,6 +30,9 @@ import {
   payments,
   plans,
   staffAssignments,
+  classTemplates,
+  sessions,
+  authUsers,
 } from "@gym/db";
 import { createAuth } from "./auth.js";
 
@@ -41,7 +44,9 @@ const DB_URL = process.env.DATABASE_URL;
 const SECRET = process.env.AUTH_SECRET;
 
 if (!DB_URL) {
-  process.stderr.write("Falta DATABASE_URL (ej: postgres://gym:gym-local-dev@localhost:5432/gym)\n");
+  process.stderr.write(
+    "Falta DATABASE_URL (ej: postgres://gym:gym-local-dev@localhost:5432/gym)\n",
+  );
   process.exit(1);
 }
 if (!SECRET || SECRET.length < 32) {
@@ -55,15 +60,23 @@ const DEV_ADMIN = { email: "admin@pilot.cl", password: DEV_PASSWORD, name: "Admi
 const DEV_SOCIO = { email: "socio@pilot.cl", password: DEV_PASSWORD, name: "Socio Piloto" };
 // Extra staff so the dev login quick-role buttons have a home to land on.
 const DEV_STAFF: { email: string; name: string; role: "admin" | "recepcion" | "instructor" }[] = [
+  { email: "admin2@pilot.cl", name: "Segundo Admin Piloto", role: "admin" },
   { email: "recepcion@pilot.cl", name: "Recepción Piloto", role: "recepcion" },
   { email: "instructor@pilot.cl", name: "Instructor Piloto", role: "instructor" },
 ];
 
 const db = createDb(DB_URL);
-const auth = createAuth({ db, secret: SECRET, baseURL: process.env.AUTH_URL ?? "http://localhost:3000" });
+const auth = createAuth({
+  db,
+  secret: SECRET,
+  baseURL: process.env.AUTH_URL ?? "http://localhost:3000",
+});
 
 async function ensureAccount(email: string, password: string, name: string): Promise<string> {
-  const [existing] = await db.select().from(identityAccounts).where(eq(identityAccounts.email, email));
+  const [existing] = await db
+    .select()
+    .from(identityAccounts)
+    .where(eq(identityAccounts.email, email));
   if (existing) {
     log(`  cuenta ya existe: ${email}`);
     return existing.id;
@@ -71,7 +84,9 @@ async function ensureAccount(email: string, password: string, name: string): Pro
   const created = await auth.api.createUser({
     body: { email, password, name, data: { emailVerified: true } },
   });
-  await db.insert(identityAccounts).values({ id: created.user.id, email, passwordHash: "better-auth" });
+  await db
+    .insert(identityAccounts)
+    .values({ id: created.user.id, email, passwordHash: "better-auth" });
   log(`  cuenta creada: ${email}`);
   return created.user.id;
 }
@@ -92,9 +107,13 @@ async function main() {
   const [adminAssignment] = await db
     .select()
     .from(staffAssignments)
-    .where(and(eq(staffAssignments.accountId, adminId), eq(staffAssignments.organizationId, org.id)));
+    .where(
+      and(eq(staffAssignments.accountId, adminId), eq(staffAssignments.organizationId, org.id)),
+    );
   if (!adminAssignment) {
-    await db.insert(staffAssignments).values({ organizationId: org.id, accountId: adminId, role: "admin" });
+    await db
+      .insert(staffAssignments)
+      .values({ organizationId: org.id, accountId: adminId, role: "admin" });
     log(`  rol admin asignado en ${ORG_NAME}`);
   }
 
@@ -104,15 +123,19 @@ async function main() {
     const [existing] = await db
       .select()
       .from(staffAssignments)
-      .where(and(eq(staffAssignments.accountId, staffId), eq(staffAssignments.organizationId, org.id)));
+      .where(
+        and(eq(staffAssignments.accountId, staffId), eq(staffAssignments.organizationId, org.id)),
+      );
     if (!existing) {
-      await db.insert(staffAssignments).values({ organizationId: org.id, accountId: staffId, role: staff.role });
+      await db
+        .insert(staffAssignments)
+        .values({ organizationId: org.id, accountId: staffId, role: staff.role });
       log(`  rol ${staff.role} asignado: ${staff.email}`);
     }
   }
 
   // --- Socio (account + member) ---------------------------------------------
-  await ensureAccount(DEV_SOCIO.email, DEV_SOCIO.password, DEV_SOCIO.name);
+  const socioAccountId = await ensureAccount(DEV_SOCIO.email, DEV_SOCIO.password, DEV_SOCIO.name);
   const [socioMember] = await db
     .select()
     .from(members)
@@ -120,27 +143,96 @@ async function main() {
   if (!socioMember) {
     await db.insert(members).values({
       organizationId: org.id,
+      accountId: socioAccountId,
+      qrToken: crypto.randomUUID().replaceAll("-", ""),
       fullName: DEV_SOCIO.name,
       contactEmail: DEV_SOCIO.email,
     });
     log(`  miembro creado: ${DEV_SOCIO.name}`);
+  } else if (!socioMember.accountId) {
+    await db
+      .update(members)
+      .set({ accountId: socioAccountId })
+      .where(eq(members.id, socioMember.id));
   }
 
   // --- Member without login --------------------------------------------------
-  const [plainMember] = await db.select().from(members).where(eq(members.fullName, "Miembro Sin Cuenta"));
+  const [plainMember] = await db
+    .select()
+    .from(members)
+    .where(eq(members.fullName, "Miembro Sin Cuenta"));
   if (!plainMember) {
     await db.insert(members).values({
       organizationId: org.id,
       fullName: "Miembro Sin Cuenta",
+      qrToken: crypto.randomUUID().replaceAll("-", ""),
     });
     log("  miembro sin cuenta creado");
   }
 
-  await seedEntrega2(org.id, adminId);
+  const [recep] = await db
+    .select()
+    .from(identityAccounts)
+    .where(eq(identityAccounts.email, "recepcion@pilot.cl"));
+  await seedEntrega2(org.id, adminId, recep!.id);
+  const [coach] = await db
+    .select()
+    .from(authUsers)
+    .where(eq(authUsers.email, "instructor@pilot.cl"));
+  let [template] = await db
+    .select()
+    .from(classTemplates)
+    .where(
+      and(
+        eq(classTemplates.organizationId, org.id),
+        eq(classTemplates.name, "Entrenamiento funcional"),
+      ),
+    );
+  if (!template) {
+    [template] = await db
+      .insert(classTemplates)
+      .values({
+        organizationId: org.id,
+        name: "Entrenamiento funcional",
+        type: "grupal",
+        capacity: 12,
+        reservationWindowHours: 0,
+        cancellationWindowHours: 24,
+        coverageRequired: "unlimited",
+      })
+      .returning();
+  }
+  const [next] = await db
+    .select()
+    .from(sessions)
+    .where(
+      and(
+        eq(sessions.organizationId, org.id),
+        eq(sessions.templateId, template!.id),
+        eq(sessions.state, "programada"),
+      ),
+    );
+  if (!next && coach) {
+    const start = new Date(Date.now() + 24 * 3600000);
+    start.setMinutes(0, 0, 0);
+    await db
+      .insert(sessions)
+      .values({
+        organizationId: org.id,
+        templateId: template!.id,
+        type: "grupal",
+        instructorId: coach.id,
+        startsAt: start,
+        endsAt: new Date(start.getTime() + 3600000),
+        capacity: 12,
+        createdBy: adminId,
+      });
+  }
 
   log("\nSeed listo. Credenciales de desarrollo (NO produccion):");
   log(`  org:         ${ORG_NAME}`);
   log(`  admin:       ${DEV_ADMIN.email} / ${DEV_PASSWORD}`);
+  log(`  admin2:      admin2@pilot.cl / ${DEV_PASSWORD}`);
   log(`  recepcion:   recepcion@pilot.cl / ${DEV_PASSWORD}`);
   log(`  instructor:  instructor@pilot.cl / ${DEV_PASSWORD}`);
   log(`  socio:       ${DEV_SOCIO.email} / ${DEV_PASSWORD}`);
@@ -152,7 +244,7 @@ async function main() {
  * session, and payments awaiting admin decision. Idempotent so re-running
  * never duplicates money.
  */
-async function seedEntrega2(orgId: string, adminId: string) {
+async function seedEntrega2(orgId: string, adminId: string, recepId: string) {
   // --- Plans (idempotent by name) -------------------------------------------
   const planDefs = [
     { name: "Mensual", priceCents: 30000, durationDays: 30, coverage: "unlimited" as const },
@@ -160,9 +252,15 @@ async function seedEntrega2(orgId: string, adminId: string) {
   ];
   const planIds: Record<string, string> = {};
   for (const p of planDefs) {
-    let [row] = await db.select().from(plans).where(and(eq(plans.organizationId, orgId), eq(plans.name, p.name)));
+    let [row] = await db
+      .select()
+      .from(plans)
+      .where(and(eq(plans.organizationId, orgId), eq(plans.name, p.name)));
     if (!row) {
-      [row] = await db.insert(plans).values({ organizationId: orgId, ...p }).returning();
+      [row] = await db
+        .insert(plans)
+        .values({ organizationId: orgId, ...p })
+        .returning();
       log(`  plan creado: ${p.name}`);
     }
     planIds[p.name] = row!.id;
@@ -248,7 +346,7 @@ async function seedEntrega2(orgId: string, adminId: string) {
         amountCents: 30000,
         method: "cash",
         state: "validated",
-        registeredBy: adminId,
+        registeredBy: recepId,
         decidedBy: adminId,
         decidedAt: now,
       })
@@ -281,7 +379,7 @@ async function seedEntrega2(orgId: string, adminId: string) {
         method: "transfer",
         reference: "TRX-DEMO-001",
         state: "provisional",
-        registeredBy: adminId,
+        registeredBy: recepId,
       },
       {
         organizationId: orgId,
@@ -291,7 +389,7 @@ async function seedEntrega2(orgId: string, adminId: string) {
         amountCents: 80000,
         method: "cash",
         state: "provisional",
-        registeredBy: adminId,
+        registeredBy: recepId,
       },
     ]);
     log("  2 pagos provisionales creados (esperan decision de admin)");

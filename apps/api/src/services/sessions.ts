@@ -9,7 +9,7 @@
  *     from another tenant behaves as not-found (no existence leak).
  *  3. Every mutation writes its audit row in the same transaction.
  */
-import { and, eq, gt, lt, or } from "drizzle-orm";
+import { and, eq, gt, lt, or, sql } from "drizzle-orm";
 import type { Database } from "@gym/db";
 import { classTemplates, sessions } from "@gym/db";
 import { conflict, forbidden, notFound, validationError } from "../errors.js";
@@ -108,6 +108,10 @@ export class SessionsService {
     }
 
     return this.db.transaction(async (tx) => {
+      // A row lock cannot protect an empty agenda. Serialize by tenant + instructor first.
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtextextended(${actor.organizationId + ":" + input.instructorId}, 0))`,
+      );
       const overlap = await tx
         .select({ id: sessions.id })
         .from(sessions)

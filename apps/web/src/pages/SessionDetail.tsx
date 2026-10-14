@@ -1,158 +1,159 @@
-/**
- * Session detail for staff — the booking roster (spec 004).
- *
- * Shows confirmed count vs capacity (the last-slot story, TX-01), the
- * member roster, and attendance marking (asistio / ausencia). The backend
- * is the authority: capacity, the credit policy (TX-04) and role checks are
- * enforced server-side; the UI only reflects them.
- */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
+import { Link, useParams } from "react-router-dom";
 import { toast } from "sonner";
-import { UserCheck, ArrowLeft } from "lucide-react";
-import { useParams, useNavigate, Link } from "react-router-dom";
-import { ApiError, api, type Booking, type Session } from "../api.js";
+import { ArrowLeft, UserCheck } from "lucide-react";
+import type { ColumnDef } from "@tanstack/react-table";
+import { api, type Booking } from "../api.js";
+import { useSession } from "../session.js";
+import { useResource } from "../hooks/use-resource.js";
+import { PageHead, ErrorNotice, Loading, Select, Stat } from "../components/ui/page.js";
+import { DataTable } from "../components/ui/data-table.js";
 import { Button } from "../components/ui/button.js";
-import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card.js";
-import { BookingStateBadge, SessionStateBadge } from "../components/ui/badge.js";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table.js";
-
-const fmtDateTime = (iso: string) =>
-  new Date(iso).toLocaleString("es-CL", { dateStyle: "short", timeStyle: "short" });
-
+import { BookingStateBadge } from "../components/ui/badge.js";
 export function SessionDetail() {
-  const { id = "" } = useParams<{ id: string }>();
-  const navigate = useNavigate();
-  const [session, setSession] = useState<Session | null>(null);
-  const [bookings, setBookings] = useState<Booking[]>([]);
-  const [members, setMembers] = useState<Map<string, string>>(new Map());
-  const [busyId, setBusyId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    try {
-      const [s, b, memberRows] = await Promise.all([
-        api.getSession(id),
-        api.listBookings(id),
-        api.listMembers(),
-      ]);
-      setSession(s);
-      setBookings(b);
-      setMembers(new Map(memberRows.map((m) => [m.id, m.fullName])));
-      setError(null);
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Error al cargar la sesión");
-    }
+  const { id = "" } = useParams(),
+    { session } = useSession();
+  const loader = useCallback(async () => {
+    const [session, bookings, members, schedule] = await Promise.all([
+      api.getSession(id),
+      api.roster(id),
+      api.listMembers(),
+      api.schedule(),
+    ]);
+    return { session, bookings, members, description: schedule.find((s) => s.id === id) };
   }, [id]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  const confirmed = bookings.filter((b) => b.state === "confirmada");
-  const remaining = session ? Math.max(0, session.capacity - confirmed.length) : 0;
-
-  async function onAttendance(bookingId: string, outcome: "asistio" | "ausencia") {
-    setBusyId(bookingId);
+  const { data, error, loading, reload } = useResource(loader);
+  const [memberId, setMemberId] = useState(""),
+    [busy, setBusy] = useState<string | null>(null);
+  async function attendance(id: string, outcome: "asistio" | "ausencia") {
+    setBusy(id);
     try {
-      await api.markAttendance(bookingId, outcome);
+      await api.markAttendance(id, outcome);
       toast.success(outcome === "asistio" ? "Asistencia registrada" : "Ausencia registrada");
-      await load();
+      await reload();
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : "No se pudo marcar asistencia");
+      toast.error(e instanceof Error ? e.message : "No se pudo marcar asistencia");
     } finally {
-      setBusyId(null);
+      setBusy(null);
     }
   }
-
-  if (!session) {
-    return (
-      <section className="space-y-4">
-        <Button variant="ghost" size="sm" onClick={() => navigate("/clases")}>
-          <ArrowLeft className="h-4 w-4" /> Volver
-        </Button>
-        <p className="text-sm text-muted-foreground">{error ?? "Cargando sesión…"}</p>
-      </section>
-    );
+  async function enroll() {
+    if (!memberId) return;
+    setBusy("enroll");
+    try {
+      await api.createBooking({ sessionId: id, memberId });
+      toast.success("Reserva confirmada");
+      setMemberId("");
+      await reload();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "No se pudo reservar");
+    } finally {
+      setBusy(null);
+    }
   }
-
+  const names = new Map(data?.members.map((m) => [m.id, m.fullName]));
+  const columns: ColumnDef<Booking>[] = [
+    { id: "name", header: "Socio", accessorFn: (b) => names.get(b.memberId) ?? "Socio" },
+    {
+      accessorKey: "state",
+      header: "Estado",
+      cell: ({ row }) => <BookingStateBadge state={row.original.state} />,
+    },
+    {
+      accessorKey: "createdAt",
+      header: "Reservada",
+      cell: ({ getValue }) => new Date(getValue() as string).toLocaleDateString("es-CL"),
+    },
+    {
+      id: "attendance",
+      header: "Asistencia",
+      cell: ({ row }) =>
+        row.original.state === "confirmada" && data?.session.state === "programada" ? (
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy !== null || row.original.attendance === "asistio"}
+              onClick={() => void attendance(row.original.id, "asistio")}
+            >
+              <UserCheck className="h-3 w-3" />
+              {row.original.attendance === "asistio" ? "Registrada" : "Asistió"}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={busy !== null}
+              onClick={() => void attendance(row.original.id, "ausencia")}
+            >
+              Ausencia
+            </Button>
+          </div>
+        ) : (
+          <span className="text-xs text-muted-foreground">—</span>
+        ),
+    },
+  ];
+  if (loading && !data) return <Loading />;
+  if (!data) return <ErrorNotice message={error} retry={() => void reload()} />;
+  const booked = data.bookings.filter((b) => b.state === "confirmada").length;
   return (
-    <section aria-labelledby="session-title" className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 id="session-title" className="text-2xl font-bold">Sesión</h1>
-          <p className="text-sm text-muted-foreground">
-            {session.instructorId} · {fmtDateTime(session.startsAt)} — {fmtDateTime(session.endsAt)}
-          </p>
-        </div>
-        <SessionStateBadge state={session.state} />
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Cupo</CardTitle>
-        </CardHeader>
-        <CardContent className="flex items-center gap-6 text-sm">
-          <span>Confirmados: <strong>{confirmed.length}</strong></span>
-          <span>Cupo: <strong>{session.capacity}</strong></span>
-          <span className={remaining === 0 ? "font-medium text-destructive" : "text-muted-foreground"}>
-            {remaining === 0 ? "Sin plazas" : `Quedan ${remaining}`}
-          </span>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader><CardTitle className="text-base">Reservas</CardTitle></CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Socio</TableHead>
-                <TableHead>Estado</TableHead>
-                <TableHead>Beneficio</TableHead>
-                <TableHead>Reservada</TableHead>
-                <TableHead className="text-right">Asistencia</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {bookings.map((b) => (
-                <TableRow key={b.id}>
-                  <TableCell className="font-medium">{members.get(b.memberId) ?? b.memberId.slice(0, 8)}</TableCell>
-                  <TableCell><BookingStateBadge state={b.state} /></TableCell>
-                  <TableCell>
-                    {b.beneficioComprometido ? (
-                      <span className="text-xs text-success">comprometido</span>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">—</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">{new Date(b.createdAt).toLocaleString("es-CL")}</TableCell>
-                  <TableCell className="text-right">
-                    {b.state === "confirmada" ? (
-                      <div className="flex justify-end gap-2">
-                        <Button size="sm" variant="success" disabled={busyId === b.id} onClick={() => void onAttendance(b.id, "asistio")}>
-                          <UserCheck className="h-4 w-4" /> Asistió
-                        </Button>
-                        <Button size="sm" variant="warning" disabled={busyId === b.id} onClick={() => void onAttendance(b.id, "ausencia")}>
-                          Ausencia
-                        </Button>
-                      </div>
-                    ) : null}
-                  </TableCell>
-                </TableRow>
-              ))}
-              {bookings.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">Sin reservas.</TableCell>
-                </TableRow>
-              ) : null}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-
-      <Link to="/clases" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:underline">
-        <ArrowLeft className="h-4 w-4" /> Volver a clases
+    <section>
+      <Link
+        to="/clases"
+        className="mb-5 inline-flex items-center gap-2 text-sm text-muted-foreground"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        Volver a la agenda
       </Link>
+      <PageHead
+        eyebrow="Sesión"
+        title={data.description?.title ?? "Detalle de sesión"}
+        description={`${data.description?.instructorName ?? "Instructor"} · ${new Date(data.session.startsAt).toLocaleString("es-CL", { dateStyle: "medium", timeStyle: "short" })}`}
+      />
+      <ErrorNotice message={error} />
+      <div className="mb-6 grid gap-4 sm:grid-cols-3">
+        <Stat label="Reservas confirmadas" value={booked} note="Incluye asistencia registrada" />
+        <Stat label="Capacidad" value={data.session.capacity} note="Cupo publicado" />
+        <Stat
+          label="Plazas disponibles"
+          value={Math.max(0, data.session.capacity - booked)}
+          note="El servidor confirma la última plaza"
+        />
+      </div>
+      {session?.role !== "instructor" &&
+        data.session.state === "programada" &&
+        data.session.type !== "bloqueo" && (
+          <div className="mb-6 flex items-end gap-3 rounded-xl border bg-card p-5">
+            <div className="flex-1">
+              <Select
+                id="enroll-member"
+                label="Reservar para un socio"
+                value={memberId}
+                onChange={(e) => setMemberId(e.target.value)}
+              >
+                <option value="">Selecciona socio</option>
+                {data.members
+                  .filter(
+                    (m) =>
+                      !data.bookings.some((b) => b.memberId === m.id && b.state === "confirmada"),
+                  )
+                  .map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.fullName}
+                    </option>
+                  ))}
+              </Select>
+            </div>
+            <Button disabled={busy !== null || !memberId} onClick={() => void enroll()}>
+              Confirmar reserva
+            </Button>
+          </div>
+        )}
+      <DataTable
+        data={data.bookings}
+        columns={columns}
+        empty="Aún no hay reservas para esta sesión."
+      />
     </section>
   );
 }

@@ -148,6 +148,9 @@ export const members = pgTable(
     organizationId: uuid("organization_id")
       .notNull()
       .references(() => organizations.id),
+    accountId: text("account_id")
+      .unique()
+      .references(() => authUsers.id),
     fullName: text("full_name").notNull(),
     contactEmail: text("contact_email"),
     adultResponsibleId: uuid("adult_responsible_id"),
@@ -283,7 +286,9 @@ export const cashSessions = pgTable(
       .notNull()
       .references(() => authUsers.id),
     closedBy: text("closed_by").references(() => authUsers.id),
-    state: text("state", { enum: ["open", "closed"] }).notNull().default("open"),
+    state: text("state", { enum: ["open", "closed"] })
+      .notNull()
+      .default("open"),
     openingCents: integer("opening_cents").notNull(),
     /** Declared closing amount (staff count). */
     declaredClosingCents: integer("declared_closing_cents"),
@@ -474,7 +479,9 @@ export const devices = pgTable(
       .notNull()
       .references(() => authUsers.id),
     label: text("label").notNull(),
-    state: text("state", { enum: ["habilitado", "revocado"] }).notNull().default("habilitado"),
+    state: text("state", { enum: ["habilitado", "revocado"] })
+      .notNull()
+      .default("habilitado"),
     /** Public key of the device identity (opaque; crypto details resolved
      *  before G2 with the offline parameters P-09.3.1b). */
     publicKey: text("public_key"),
@@ -542,7 +549,12 @@ export const offlineEvents = pgTable(
     // Idempotency key (TX-06): re-sending the same event is a no-op.
     unique("offline_events_event_unique").on(t.organizationId, t.eventId),
     // Business-duplicate detection fingerprint (marked, never blocked).
-    index("offline_events_business_idx").on(t.organizationId, t.folioExterno, t.type, t.amountCents),
+    index("offline_events_business_idx").on(
+      t.organizationId,
+      t.folioExterno,
+      t.type,
+      t.amountCents,
+    ),
     index("offline_events_device_idx").on(t.organizationId, t.deviceId, t.createdAt),
   ],
 );
@@ -568,9 +580,7 @@ export const membershipSnapshots = pgTable(
     deviceId: uuid("device_id").references(() => devices.id),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [
-    index("membership_snapshots_member_idx").on(t.organizationId, t.memberId, t.capturedAt),
-  ],
+  (t) => [index("membership_snapshots_member_idx").on(t.organizationId, t.memberId, t.capturedAt)],
 );
 
 /**

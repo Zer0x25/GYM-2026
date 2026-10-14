@@ -15,11 +15,7 @@ createRoot(root).render(
   </StrictMode>,
 );
 
-// PWA service worker (scaffold): offline shell caching only. The privileged
-// offline mode (outbox, permissions P-09.3.1b) is a later unit and stays
-// disabled until its ADR parameters are resolved (HITO0_PENDING in STATE.md).
+// Public shell caching only; sensitive contingency data uses the encrypted vault.
 if ("serviceWorker" in navigator && import.meta.env.PROD) {
-  void navigator.serviceWorker.register("/sw.js").catch(() => {
-    // Non-fatal: the app works without the service worker online.
-  });
+  void navigator.serviceWorker.register("/sw.js").catch(() => undefined);
 }

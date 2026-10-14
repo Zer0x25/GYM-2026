@@ -210,8 +210,7 @@ export const CashConsolidation = z.object({
 });
 export type CashConsolidation = z.infer<typeof CashConsolidation>;
 
-export const ApiOk = <T extends z.ZodTypeAny>(data: T) =>
-  z.object({ data });
+export const ApiOk = <T extends z.ZodTypeAny>(data: T) => z.object({ data });
 export type ApiOk<T> = { data: T };
 
 // --- Entrega 3: clases, sesiones, agenda y reservas ---------------------------
@@ -485,3 +484,45 @@ export const MyQrResponse = z.object({
   qrToken: z.string(),
 });
 export type MyQrResponse = z.infer<typeof MyQrResponse>;
+
+// SPEC 010 — operational HTTP inputs; roles/tenant are always resolved server-side.
+export const OfflineLeaseRequest = z.object({ deviceId: z.string().uuid() });
+export const OfflinePolicyUpdateRequest = z.object({ enabled: z.boolean() });
+export const DailyReportQuery = z.object({
+  date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .refine((value) => {
+      const parsed = new Date(`${value}T00:00:00Z`);
+      return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+    }, "Fecha inválida"),
+});
+export const ScheduleQuery = z.object({
+  from: z.string().datetime().optional(),
+  to: z.string().datetime().optional(),
+});
+export const InstructorInfo = z.object({ id: z.string(), name: z.string() });
+export const StaffInfo = InstructorInfo.extend({
+  email: z.string().email(),
+  role: z.enum(["admin", "recepcion", "instructor"]),
+});
+export const OfflineMemberSnapshot = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  qrToken: z.string().nullable(),
+  membershipId: z.string().uuid().nullable(),
+  coverage: z.enum(["none", "unlimited", "limited"]),
+  endAt: z.string().datetime().nullable(),
+  price: z.number().int().nonnegative(),
+  proof: z.string(),
+});
+export const OfflineLeaseResponse = z.object({
+  deviceId: z.string().uuid(),
+  organizationId: z.string().uuid(),
+  accountId: z.string(),
+  issuedAt: z.string().datetime(),
+  expiresAt: z.string().datetime(),
+  members: z.array(OfflineMemberSnapshot),
+  permit: z.string(),
+});
+export type OfflineLeaseResponse = z.infer<typeof OfflineLeaseResponse>;

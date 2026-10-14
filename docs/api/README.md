@@ -238,9 +238,9 @@ Rutas v1:
 | `POST /api/v1/devices` | admin | Registra dispositivo prehabilitado (org + operador) |
 | `GET /api/v1/devices` | admin | Listado por tenant |
 | `POST /api/v1/devices/:id/revoke` | admin | Revoca (eventos futuros inertes, conservados) |
-| `POST /api/v1/offline/sync` | admin, recepcion, instructor | Ingesta idempotente del outbox (TX-06) |
+| `POST /api/v1/offline/sync` | admin, recepcion | Ingesta idempotente con permiso e instantánea firmados (010) |
 | `GET /api/v1/offline/events?deviceId=` | admin, recepcion | Eventos sincronizados |
-| `POST /api/v1/offline/ingreso` | admin, recepcion, instructor | Ingreso de contingencia con control de frescura |
+| `POST /api/v1/offline/ingreso` | admin, recepcion | Legado: 403; usar eventos firmados en /offline/lease/sync |
 | `POST /api/v1/offline/reconstruct` | admin | Reconstrucción auditable + verificación de hashes |
 
 Invariantes (verificadas con tests de integración contra Postgres real, `apps/api/scripts/test-integration.sh`):
@@ -349,9 +349,9 @@ nunca del cliente) y el cross-tenant es **404** (no 403: sin fuga de existencia)
 | POST /devices | ✓ | — | — | — |
 | GET /devices | ✓ | — | — | — |
 | POST /devices/:id/revoke | ✓ | — | — | — |
-| POST /offline/sync | ✓ | ✓ | ✓ | — |
+| POST /offline/sync | ✓ | ✓ | — | — |
 | GET /offline/events | ✓ | ✓ | — | — |
-| POST /offline/ingreso | ✓ | ✓ | ✓ | — |
+| POST /offline/ingreso | 403 (legado) | 403 (legado) | — | — |
 | POST /offline/reconstruct | ✓ | — | — | — |
 | GET /admin/sessions | ✓ | — | — | — |
 | POST /admin/sessions/revoke | ✓ | — | — | — |
@@ -372,3 +372,35 @@ nunca del cliente) y el cross-tenant es **404** (no 403: sin fuga de existencia)
 - **Instructor = solo lectura de agenda/reservas + marca asistencia:** no toca dinero ni
   configuración; puede crear sesiones y marcar asistencia (REQ-6/REQ-5).
 - **Revoke-others propio:** cualquier rol cierra SUS otras sesiones conservando la actual.
+
+
+## Entrega operativa 010 — contratos adicionales
+
+Todos los endpoints siguientes usan cookie de sesión verificada y `{data: ...}`; errores estables `{error:{code,message}}`, 401 sin sesión, 403 por rol/permiso, 404 para recurso ajeno o ausente, 409 por estado, 400 por validación. Nunca se recibe organizationId como autoridad del cliente. El arranque de organización anónimo solo funciona en una base no inicializada; una organización existente lo cierra con 403.
+
+| Endpoint | Roles | Request / resultado |
+|---|---|---|
+| GET /api/v1/instructors | todos autenticados | Sin body → `[{id,name}]` del tenant, sin email ni datos privados |
+| GET /api/v1/staff | admin | Sin body → `[{id,name,email,role}]` del equipo activo |
+| GET /api/v1/schedule | todos autenticados | Query opcional `from/to` ISO → sesiones con `title,instructorName,booked,remaining`; no identifica a socios reservados |
+| GET /api/v1/members/:id/overview | admin, recepción | Ficha del tenant con socio público, membresías+plan+estado derivado y pagos; sin token QR ni cuenta/secretos |
+| GET /api/v1/me/overview | socio | La misma proyección de perfil/membresías propia, sin pagos administrativos |
+| POST /api/v1/members/:id/checkin | admin, recepción | Sin body → mismo contrato de checkin QR; resuelve token internamente y respeta revocación |
+| GET /api/v1/checkins/recent | admin, recepción | Query `limit=1..200`, `today=true` → feed limitado al día de Santiago cuando se solicita |
+| GET /api/v1/sessions/:id/roster | staff | Reservas scoped al tenant con `attendance:asistio/ausencia/null` derivada del último evento de auditoría |
+| GET /api/v1/reports/daily | admin, recepción | Query `date=YYYY-MM-DD` válida → `{date,timeZone,cash,transfer,income,movements,shifts}`; fecha America/Santiago, movimientos de pagos validados |
+| GET /api/v1/offline/devices | admin, recepción | Solo dispositivos asignados al operador de la sesión |
+| GET /api/v1/offline/policy | admin, recepción | `{enabled,freshnessHours}` máximo 72 horas |
+| POST /api/v1/offline/policy | admin | `{enabled:boolean}` → política y auditoría, frescura 72 horas |
+| POST /api/v1/offline/lease | admin, recepción | `{deviceId:uuid}` → `OfflineLeaseResponse` validado por schema compartido: ámbito, issuedAt/expiresAt, permiso firmado y miembros mínimos con prueba individual firmada |
+| POST /api/v1/offline/lease/sync | admin, recepción | `SyncEventsRequest`: deviceId + array no vacío de eventos; cada payload JSON contiene `{permit,proof}` → reconocimientos `sincronizado/duplicado/rechazado` con reason/paymentId si aplica |
+
+Schemas de entrada y lease viven en `packages/contracts/src/index.ts` (SPEC 010). Dinero se mantiene entero en la convención CLP existente; la interfaz no cambia su escala. Los comandos de QR, membresías, pagos, caja, reservas, personal y sesiones reutilizan los contratos de entregas anteriores.
+
+### Permisos y persistencia offline (ADR 0007)
+
+El servidor firma la captura y el ámbito de dispositivo/operador/tenant. El evento debe capturarse dentro de la vigencia de 72 horas y no en el futuro; puede liquidarse después de vencer, preservando su fecha válida. Dispositivo revocado o política deshabilitada → eventos reconocidos como rechazados, sin efectos financieros; no se borran para ocultar pérdidas. Prueba individual ligada al permiso y socio; ingreso sin cobertura o con fin de membresía superado se rechaza. Dispositivo de otro operador → 403, tenant ajeno → 404. El endpoint legado que confiaba en coverage del cliente deja de autorizar.
+
+Idempotencia `organizationId + eventId`: efecto exactamente una vez; folio externo y huella de negocio conservados para revisión. El bloqueo del dispositivo serializa la cadena de auditoría incluso con eventos diferentes concurrentes; createdAt usa clock_timestamp para ordenar después de adquirir el bloqueo. Cobro firmado se vincula a la membresía de la instantánea, sin elegir arbitrariamente otra posterior. Ningún evento valida pagos ni reserva clases.
+
+El vínculo `members.account_id` es estable: cambiar contacto no modifica titularidad ni cuenta de login. Backfill migración 0009 solo cuando la coincidencia histórica de email es única; perfiles simples con email no adquieren acceso por coincidencia. Listados públicos nunca exponen accountId, qrToken ni datos legales.

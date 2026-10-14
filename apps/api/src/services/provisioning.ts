@@ -121,6 +121,7 @@ export class ProvisioningService {
       .insert(identityAccounts)
       .values({ id: accountId, email: input.email, passwordHash: "better-auth" });
 
+    await this.db.update(members).set({ accountId }).where(eq(members.id, member.id));
     return { accountId, memberId: member.id };
   }
 }

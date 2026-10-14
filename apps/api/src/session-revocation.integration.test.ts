@@ -50,7 +50,11 @@ async function makeAccount(email: string): Promise<string> {
 }
 
 /** Binds an account as staff (active) of an org. */
-async function bindStaff(accountId: string, org: string, role: "admin" | "recepcion" | "instructor") {
+async function bindStaff(
+  accountId: string,
+  org: string,
+  role: "admin" | "recepcion" | "instructor",
+) {
   await db.execute(
     sql`INSERT INTO staff_assignments (id, organization_id, account_id, role, active)
         VALUES (${randomUUID()}, ${org}, ${accountId}, ${role}, true)`,
@@ -64,8 +68,8 @@ async function bindSocio(accountId: string, org: string, email: string) {
         ON CONFLICT (id) DO NOTHING`,
   );
   await db.execute(
-    sql`INSERT INTO members (id, organization_id, full_name, contact_email)
-        VALUES (${randomUUID()}, ${org}, ${email}, ${email})`,
+    sql`INSERT INTO members (id, organization_id, full_name, contact_email, account_id)
+        VALUES (${randomUUID()}, ${org}, ${email}, ${email}, ${accountId})`,
   );
 }
 
@@ -93,15 +97,22 @@ describe.skipIf(!RUN)("Entrega 5 — revocación de sesión (spec 006, REQ-11)",
   let otherOrgAccount: string;
 
   beforeAll(async () => {
-    const alive = await db.execute(sql`SELECT 1`).then(() => true).catch(() => false);
+    const alive = await db
+      .execute(sql`SELECT 1`)
+      .then(() => true)
+      .catch(() => false);
     if (!alive) throw new Error("Test DB not reachable: " + DATABASE_URL);
   });
 
   beforeEach(async () => {
     await truncateAll();
     // Orgs are recreated after each truncate (the FK needs them present).
-    await db.execute(sql`INSERT INTO organizations (id, name) VALUES (${ORG_A}, 'Gym A') ON CONFLICT (id) DO NOTHING`);
-    await db.execute(sql`INSERT INTO organizations (id, name) VALUES (${ORG_B}, 'Gym B') ON CONFLICT (id) DO NOTHING`);
+    await db.execute(
+      sql`INSERT INTO organizations (id, name) VALUES (${ORG_A}, 'Gym A') ON CONFLICT (id) DO NOTHING`,
+    );
+    await db.execute(
+      sql`INSERT INTO organizations (id, name) VALUES (${ORG_B}, 'Gym B') ON CONFLICT (id) DO NOTHING`,
+    );
     admin = await makeAccount("admin-revoke@test.cl");
     await bindStaff(admin, ORG_A, "admin");
     adminActor.accountId = admin;
@@ -112,7 +123,9 @@ describe.skipIf(!RUN)("Entrega 5 — revocación de sesión (spec 006, REQ-11)",
   });
 
   afterAll(async () => {
-    await db.execute(sql`DELETE FROM organizations WHERE id IN (${ORG_A}, ${ORG_B})`).catch(() => {});
+    await db
+      .execute(sql`DELETE FROM organizations WHERE id IN (${ORG_A}, ${ORG_B})`)
+      .catch(() => {});
   });
 
   // BDD-1: revoke one session → row gone, list no longer sees it.

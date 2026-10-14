@@ -11,3 +11,11 @@
 - **Hallazgo (limitación del molde):** el gate `verify-structure.sh` exige que PRD/PROMPT-MAESTRO/ADR-0002 no contengan la cadena `HITO0_PENDING`, lo que impide registrar pendientes críticos en esos tres archivos durante `initializing`/`project`; la política del bootstrap dice usar `HITO0_PENDING` para campos críticos sin resolver.
 - **Evidencia:** `scripts/verify-structure.sh` líneas 48-52; los pendientes de este proyecto se registran en STATE.md y PROMPT-MAESTRO.md redactados sin el marcador literal en los archivos gateados (PRD.md, ADR-0002), conservando el estado Pendiente en STATE.
 - **Aplicación futura:** al inicializar proyectos con pendientes críticos reales, concentrar los `HITO0_PENDING` en STATE.md y en specs, no en los archivos que el gate escanea; o actualizar el gate del molde en una seed futura para permitir marcadores de pendiente en archivos aprobados.
+
+
+## 010 — App operativa (2026-10-14)
+
+- Un email de contacto editable no es un vínculo de identidad: migración 0009 y cuenta estable mantienen login y revocación tras editar contacto, sin dar acceso por coincidencia de email. Evidencia: operations.integration.test.ts + E2E móvil con recarga y autorización denegada.
+- FOR UPDATE sobre agenda vacía no protege una publicación concurrente: fixture PostgreSQL con demora de INSERT reprodujo dos éxitos; bloqueo transaccional por tenant/instructor deja uno. Cadenas offline requieren bloquear el dispositivo antes de leer predecessor y clock_timestamp después del bloqueo. Evidencia: tests TX-02 y reconstrucción concurrente, rojos/verde documentados en spec 010.
+- Probar PWA exige build con NODE_ENV=production, shell/JS precargados antes del corte y superficie estable al recuperar sesión. La outbox sobrevivió recarga offline en dos perfiles; al reconectar se recuperó sesión, se revalidó permiso y cada folio generó un solo pago provisional. Cache Storage nunca incluye API. Evidencia: pnpm test:e2e, 7/7 (preview, PostgreSQL aislado, es-CL/Santiago).
+- Gate sin TEST_DATABASE_URL omitía integración. Ejecutarlo con BD ficticia exclusiva y un worker permite verificar las 148 pruebas reales, sin cambiar ni reducir gate. pnpm test:coverage: 96.24% statements/lines en dinero/reservas. Mantener los runners aislados para futura iteración y no construir sobre dist mientras otro runner sirve esos mismos assets.

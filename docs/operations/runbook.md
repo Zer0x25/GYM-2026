@@ -3,6 +3,27 @@
 Borrador (spec 001). Detalle de ambientes y secretos se completa con la unidad
 de infraestructura; el VPS concreto y su región quedan pendientes en STATE.
 
+## Entrega operativa 010 (2026-10-14)
+
+Arranque reproducible: `pnpm install --frozen-lockfile` seguido de `pnpm dev`. Usa Compose `gym-2026-local`, contenedor `gym-2026-local-postgres-1`, volumen `gym-2026-local_gym_local_data`, puerto local `55432`, BD `gym_dev`, API `3000` y web `5173`. Configuración de runtime en `.env.local` generada con secreto aleatorio y permisos 0600; no imprimir ni commitear su contenido. Ctrl+C detiene los grupos de procesos web/API y conserva PostgreSQL y datos. No elimina contenedores ni volúmenes de otros proyectos.
+
+`pnpm dev:prepare` aplica migraciones y seed sin iniciar servidores. El seed crea cinco cuentas ficticias (admin, segundo admin, recepción, instructor y socio), planes/membresías, caja y una clase. Es idempotente; no ejecutar en ambientes con datos reales. La migración 0009 agrega vínculo estable de cuenta al socio y backfill solo sin ambigüedades de email; revisar filas sin account_id antes de migrar datos existentes. Reversión técnica: revertir código consumidor y retirar índice/columna solo tras backup probado; no borrar socios ni cuentas para revertir.
+
+### PWA de producción local y contingencia
+
+`pnpm start` prepara los mismos datos locales e inicia API `3000` y web preview `4173`, suministrando `.env.local` sin exponer secretos. Usar este modo para probar recarga offline con el build y service worker; detener `pnpm dev` antes para liberar la API. Es producción del frontend en entorno local, no un despliegue de staging/producción. API local escucha en loopback y conserva cookies de desarrollo; staging exige TLS y NODE_ENV=production según el runbook. `scripts/e2e.mjs` usa preview con entorno efímero en puertos aislados.
+
+El service worker precarga HTML y assets versionados; nunca Cache Storage para `/api/*`. El dispositivo se habilita por administración y cada operador obtiene un permiso firmado de hasta 72 h. La outbox y snapshot se cifran en IndexedDB (ADR 0007); frase local solo en memoria. Bloquear, salir y recargar requieren desbloqueo posterior. No perder la frase ni borrar el perfil del navegador con eventos pendientes; exportar copia cifrada y conservar folios externos. La restauración no sobrescribe una copia ya existente: restaurar en otro perfil controlado. Al reconectar, revalidar sesión/dispositivo/política, sincronizar por evento y revisar rechazos/duplicados antes de dar por conciliada la jornada. Los cobros reconocidos quedan provisionales en Pagos hasta la validación separada.
+
+### Verificación aislada
+
+- `pnpm test:integration`: crea/reusa BDs `gym_test_<suite>`, migra cada una y ejecuta su archivo; no silencia fallos.
+- `pnpm test:coverage`: BD `gym_test_coverage`, suites dinero/reservas en serie; mantiene umbral CAL-2 ≥80% statements/lines.
+- `pnpm test:e2e`: resetea solo `gym_e2e`; API `3100`, web preview `5174`; Chromium con locale es-CL/timezone America/Santiago. Conserva trazas de fallos en `/tmp/gym-e2e-results`; servicios auxiliares se detienen al salir.
+- Gate raíz con integración: preparar una BD ficticia exclusiva y migrada, exportar `TEST_DATABASE_URL`, `VITEST_MAX_FORKS=1`, `VITEST_MIN_FORKS=1`, `VITEST_MAX_THREADS=1`, `VITEST_MIN_THREADS=1` y ejecutar `./scripts/verify.sh`. Un solo worker evita que fixtures que truncan tablas compartan la BD simultáneamente. Ningún test se omite y no se cambia el gate.
+
+Las instrucciones manuales históricas de las entregas backend se conservan debajo para trazabilidad; para uso actual preferir el coordinador y las bases aisladas anteriores.
+
 ## Componentes
 
 - `apps/web` — SPA/PWA React (estáticos). Se sirve tras build (`dist/`).
@@ -92,7 +113,7 @@ TEST_DATABASE_URL=postgres://gym:gym-local-dev@localhost:55432/gym_test \
 5. `pnpm -r db:migrate` contra la base de staging.
 6. Levantar `apps/api` (p. ej. systemd unit o servicio Compose) y servir
    `apps/web/dist` tras el proxy.
-7. Health check: `curl https://<host>/api/v1/health` → `{"status":"ok"}`.
+7. Health check: `curl https://<host>/health` → `{"status":"ok"}`.
 
 ## Backup y restore (REQ-11, SPEC:BACKUP)
 
@@ -219,3 +240,8 @@ check-in QR concurrente coherente; latencia p50=60ms, p95=91ms, max=93ms.
 - Proxy/TLS, monitoreo y logging.
 - Parámetros offline P-09.3.1b y cifrado local (antes de habilitar offline).
 - Validación jurídica de datos de menores (D-05) antes del piloto real (G2).
+
+
+### Evidencia de operación 010
+
+El 2026-10-14 se ejecutó `pnpm start`: /health en 3000 y web 4173 dieron 200. SIGINT detuvo ambos grupos de procesos y conservó PostgreSQL (2 socios, 3 pagos). Backup de gym_dev con pg_dump custom y restore --exit-on-error en BD nueva gym_010_restore_check con migración 0009: conteos idénticos (members 2, account_id vinculados 1, QR 2, payments 3, memberships 2, sessions 1, cash_movements 1, staff 4). Esta prueba es local y con datos ficticios; restore en staging sigue pendiente antes de G2.

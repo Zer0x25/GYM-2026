@@ -25,7 +25,7 @@
 - Invariantes centrales verificadas con tests de integración contra PostgreSQL real (no mocks): pago registrado NO concede cobertura hasta validación humana (SPEC:PAY-01); pago validado inmutable y terminal (D-03/B); validación solo por admin y NUNCA sobre pago propio (SPEC:PAY-02, separación de funciones); movimiento de caja creado UNA vez en la misma transacción que el pago validado (unique `cash_movements.payment_id` = clave de idempotencia real); dinero validado solo cae en turno abierto (sin turno, validar falla 409 — sin dinero huérfano); cierre de turno idempotente bajo concurrencia (TX-05: un 200 y un 409 con `FOR UPDATE` + `WHERE state='open'`); renovación extiende la ventana desde el fin previo (sin huecos); auditoría de toda mutación financiera en la MISMA transacción; conciliación diaria con expected = apertura + Σ movimientos y discrepancia declarada−esperada registrada sin bloquear.
 - Entregado: esquema (plans, memberships, payments, cashSessions, cashMovements, auditLog + migración 0005); contratos (CreatePlanRequest, PlanDetail, CreateMembershipRequest, MembershipRef, RegisterPaymentRequest, DecidePaymentRequest, OpenCashSessionRequest, CloseCashSessionRequest); servicios (plans, memberships, payments, cash, audit); rutas v1 completas en `app.ts`; 14 tests de integración nuevos (payments 8, cash 6) sobre BDs aisladas por archivo; UI ADR-0003 (Panel/Pagos/Caja/Portal + shell + QuickPay); docs API/runbook. Commits `db9c077`, `530697e`, `a9af0bb` locales sin push.
 
-## Unidad activa
+## Historial de unidades backend
 
 - **008 · Concurrencia de la operación diaria (REQ-8)** — **CERRADA y SELLADA por el usuario 2026-10-12** (commit `5c4d8d4`). Prueba de carga con `app.inject` (stack real, sin k6/autocannon): 2 admins + 3 recepcionistas concurrentes, 5/5 BDD verdes contra Postgres real (`gym_test_concur`) — TX-05 (1 ok + 4× 409, una sola fila cerrada), movimiento único (5 movimientos, uno por pago), TX-01 (1 confirmada, cupo no excedido), check-in concurrente coherente, latencia p50=60ms/p95=91ms/max=93ms. **No queda ninguna unidad del plan de entrega abierta: el backend del template está completo** (004, 005, 006, 007 Tier 1 selladas + 008 Tier 2 sellada).
 - **007 · QR de ingreso y check-in supervisado** (`specs/007-qr-checkin.md`, REQ-7/REQ-8, Tier 1) — **BACKEND implementado, verificado y SELLADO por el usuario 2026-10-12** (8/8). UI (escáner recepción + QR portal) después, con el rediseño estructural del frente.
@@ -48,6 +48,21 @@
 - Política integral P-09.3; VPS concreto, región y recursos.
 
 - Falta de progreso: contador 0, sin bloqueo.
+
+## Meta actual — App GYM funcional (2026-10-14)
+
+Unidad activa: 010-app-operativa
+- Tier 1; spec: specs/010-app-operativa.md. Implementación autorizada por petición actual del usuario, reemplaza la congelación del frente. Revisión humana al cierre según PROMPT-MAESTRO.
+- Objetivo: flujos completos online por rol y contingencia controlada del PRD; arranque y verificación real. Las recomendaciones previas se convierten en implementación.
+- Decisión confirmada: permiso offline máximo 72 horas con revalidación al reconectar (respuesta explícita del usuario 2026-10-14). Cifrado/gestión de claves aceptados por el usuario en ADR 0007: AES-GCM con frase local, permiso firmado y bloqueo al salir.
+- Estado: implementación verificada, preparada para commit local de la unidad 010 según la delegación confirmada. Gate raíz real pasó con 148 tests (111 API incluyendo integración, 26 web, 6 contracts, 5 db), sin suites omitidas; CAL-2 96.24% statements/lines. 7/7 E2E pasan en preview de producción, incluida recarga offline en dos dispositivos, reconexión/replay y cero API cacheadas. Revisión humana Tier 1 pendiente.
+- Diagnóstico resuelto: build de producción habilita SW y /contingencia mantiene su superficie al recuperar sesión; outbox conserva folios y snapshots firmados entre recargas. Evidencia final E2E 7/7 en /tmp/gym-010-e2e-prod.log.
+- G2, datos reales y despliegue remoto no autorizados.
+- Arranque y SIGINT comprobados: API/web 200, parada completa de ambos, PostgreSQL/datos conservados. Backup/restore 0009 en BD limpia: conteos idénticos. Diff y scope revisados (65 rutas).
+- Gate final ejecutado: salida 0, 148/148 pruebas, ninguna omitida; E2E 7/7, coverage 96.24%, diff sin errores y scope válido.
+- Commit/checkpoint: commit local de implementación de la unidad 010, identificado por su ID; no requiere otro commit para anotar su hash. Sin push.
+- Siguiente paso: revisión humana del usuario sobre la app local (pnpm start, localhost:4173), requerida para sellar Tier 1. Luego preparar staging/privacidad/piloto únicamente con autorización y decisiones propias. No reiniciar entrevista ni repetir unidades backend cerradas.
+- Falta de progreso: 0; cada fallo reciente ha reducido el problema con evidencia; sin bloqueo activo.
 
 ## CAL-2 — cobertura de módulos de dinero y reservas (2026-10-12)
 

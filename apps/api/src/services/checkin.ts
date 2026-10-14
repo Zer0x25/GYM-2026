@@ -18,7 +18,7 @@
  *  5. AUDIT: every check-in writes checkin.ok / checkin.denied in the same
  *     transaction, carrying member, coverage, membershipEndsAt and reason.
  */
-import { and, eq, gt, lt, desc, inArray, sql } from "drizzle-orm";
+import { and, eq, gt, lt, desc, inArray, gte, sql } from "drizzle-orm";
 import type { Database } from "@gym/db";
 import { members, memberships, plans, auditLog } from "@gym/db";
 import { forbidden, notFound } from "../errors.js";
@@ -34,7 +34,13 @@ export interface CheckinActor {
 }
 
 export type CheckinOutcome =
-  | { allowed: true; memberId: string; fullName: string; coverage: "unlimited" | "limited"; membershipEndsAt: string }
+  | {
+      allowed: true;
+      memberId: string;
+      fullName: string;
+      coverage: "unlimited" | "limited";
+      membershipEndsAt: string;
+    }
   | { allowed: false; reason: string };
 
 export class CheckinService {
@@ -81,8 +87,27 @@ export class CheckinService {
     });
 
     return outcome.allowed
-      ? { allowed: true, memberId: member.id, fullName: member.fullName, coverage: outcome.coverage, membershipEndsAt: outcome.membershipEndsAt }
+      ? {
+          allowed: true,
+          memberId: member.id,
+          fullName: member.fullName,
+          coverage: outcome.coverage,
+          membershipEndsAt: outcome.membershipEndsAt,
+        }
       : { allowed: false, reason: outcome.reason };
+  }
+
+  async checkinMember(actor: CheckinActor, memberId: string, ip?: string): Promise<CheckinOutcome> {
+    if (actor.role !== "admin" && actor.role !== "recepcion")
+      throw forbidden("Solo recepción o admin operan el check-in");
+    const [member] = await this.db
+      .select({ token: members.qrToken })
+      .from(members)
+      .where(and(eq(members.organizationId, actor.organizationId), eq(members.id, memberId)));
+    if (!member) throw notFound("Socio no encontrado");
+    if (!member.token)
+      return { allowed: false, reason: "QR no emitido; solicita a administración que lo emita" };
+    return this.checkin(actor, member.token, ip);
   }
 
   /**
@@ -95,7 +120,17 @@ export class CheckinService {
   async recentCheckins(
     actor: CheckinActor,
     limit = 50,
-  ): Promise<{ id: string; memberId: string; fullName: string; outcome: "ok" | "denied"; detail: string | null; at: string }[]> {
+    todayOnly = false,
+  ): Promise<
+    {
+      id: string;
+      memberId: string;
+      fullName: string;
+      outcome: "ok" | "denied";
+      detail: string | null;
+      at: string;
+    }[]
+  > {
     if (actor.role !== "admin" && actor.role !== "recepcion") {
       throw forbidden("Solo recepción o admin consultan los ingresos");
     }
@@ -115,6 +150,14 @@ export class CheckinService {
           eq(auditLog.organizationId, actor.organizationId),
           eq(auditLog.entity, "member"),
           inArray(auditLog.action, ["checkin.ok", "checkin.denied"]),
+          ...(todayOnly
+            ? [
+                gte(
+                  auditLog.createdAt,
+                  sql`date_trunc('day', now() AT TIME ZONE 'America/Santiago') AT TIME ZONE 'America/Santiago'`,
+                ),
+              ]
+            : []),
         ),
       )
       .orderBy(desc(auditLog.createdAt))
@@ -142,7 +185,10 @@ export class CheckinService {
   }
 
   /** Coverage decision shared by check-in: active window + plan coverage≠none. */
-  private async evaluateCoverage(organizationId: string, memberId: string): Promise<CheckinOutcome> {
+  private async evaluateCoverage(
+    organizationId: string,
+    memberId: string,
+  ): Promise<CheckinOutcome> {
     // Revocation first: a revoked token never grants ingress even if the
     // membership is still active (anti-sharing control).
     const [m] = await this.db

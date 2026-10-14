@@ -25,7 +25,7 @@
  *  7. AUDIT: every mutation writes its audit row in the same transaction,
  *     carrying event_id and folio_externo for device→server traceability.
  */
-import { createHash } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { and, desc, eq, sql } from "drizzle-orm";
 import type { Database } from "@gym/db";
 import {
@@ -34,6 +34,9 @@ import {
   memberships,
   offlineEvents,
   organizations,
+  members,
+  plans,
+  staffAssignments,
   payments,
 } from "@gym/db";
 import { conflict, forbidden, notFound, validationError } from "../errors.js";
@@ -65,21 +68,251 @@ export interface SyncResultEntry {
 
 /** Chained hash for auditable reconstruction (SPEC:OFF-RECON). */
 function chainHash(fields: Record<string, unknown>, prevHash: string | null): string {
-  return createHash("sha256").update(JSON.stringify({ ...fields, prevHash })).digest("hex");
+  return createHash("sha256")
+    .update(JSON.stringify({ ...fields, prevHash }))
+    .digest("hex");
 }
 
 export class OfflineService {
   private readonly audit: AuditService;
 
-  constructor(private readonly db: Database) {
+  constructor(
+    private readonly db: Database,
+    private readonly signingSecret: string = process.env.AUTH_SECRET ?? "",
+  ) {
     this.audit = new AuditService(db);
+  }
+
+  async policy(actor: OfflineActor) {
+    const org = await this.getOrg(actor.organizationId);
+    return { enabled: org.offlineEnabled, freshnessHours: Math.min(72, org.offlineFreshnessHours) };
+  }
+
+  async setPolicy(actor: OfflineActor, enabled: boolean) {
+    if (actor.role !== "admin") throw forbidden("Solo administración configura la contingencia");
+    await this.db.transaction(async (tx) => {
+      await tx
+        .update(organizations)
+        .set({ offlineEnabled: enabled, offlineFreshnessHours: 72 })
+        .where(eq(organizations.id, actor.organizationId));
+      await this.audit.record(
+        {
+          organizationId: actor.organizationId,
+          actorId: actor.accountId,
+          actorRole: actor.role,
+          action: "offline.policy",
+          entity: "organization",
+          entityId: actor.organizationId,
+          metadata: { enabled, freshnessHours: 72 },
+        },
+        tx,
+      );
+    });
+    return this.policy(actor);
+  }
+
+  private sign(value: unknown): string {
+    if (this.signingSecret.length < 32)
+      throw forbidden("No se configuró la firma del permiso offline");
+    const body = Buffer.from(JSON.stringify(value)).toString("base64url");
+    return `${body}.${createHmac("sha256", this.signingSecret).update(body).digest("base64url")}`;
+  }
+
+  private verify<T>(token: string): T {
+    if (this.signingSecret.length < 32 || typeof token !== "string")
+      throw forbidden("Permiso offline inválido");
+    const [body, signature, extra] = token.split(".");
+    if (!body || !signature || extra) throw forbidden("Permiso offline inválido");
+    const expected = createHmac("sha256", this.signingSecret).update(body).digest();
+    const actual = Buffer.from(signature, "base64url");
+    if (actual.length !== expected.length || !timingSafeEqual(actual, expected))
+      throw forbidden("Firma offline inválida");
+    return JSON.parse(Buffer.from(body, "base64url").toString()) as T;
+  }
+
+  async lease(actor: OfflineActor, deviceId: string) {
+    if (actor.role !== "admin" && actor.role !== "recepcion")
+      throw forbidden("Solo recepción prepara contingencia");
+    const device = await this.getDevice(actor.organizationId, deviceId);
+    if (device.accountId !== actor.accountId)
+      throw forbidden("Dispositivo asignado a otro operador");
+    if (device.state !== "habilitado") throw conflict("Dispositivo revocado");
+    const org = await this.getOrg(actor.organizationId);
+    if (!org.offlineEnabled) throw forbidden("Contingencia deshabilitada por administración");
+    const issued = Date.now();
+    const issuedAt = new Date(issued).toISOString(),
+      expiresAt = new Date(
+        issued + Math.min(72, org.offlineFreshnessHours) * 3600000,
+      ).toISOString();
+    const claims = {
+      deviceId,
+      organizationId: actor.organizationId,
+      accountId: actor.accountId,
+      issuedAt,
+      expiresAt,
+    };
+    const permit = this.sign(claims);
+    const memberRows = await this.db
+      .select({
+        id: members.id,
+        name: members.fullName,
+        qrToken: members.qrToken,
+        revoked: members.qrRevokedAt,
+      })
+      .from(members)
+      .where(eq(members.organizationId, actor.organizationId));
+    const membershipRows = await this.db
+      .select({ membership: memberships, plan: plans })
+      .from(memberships)
+      .innerJoin(
+        plans,
+        and(eq(plans.id, memberships.planId), eq(plans.organizationId, actor.organizationId)),
+      )
+      .where(eq(memberships.organizationId, actor.organizationId))
+      .orderBy(desc(memberships.endAt));
+    const snapshot = memberRows.map((m) => {
+      const own = membershipRows.filter((r) => r.membership.memberId === m.id);
+      const current = own.find(
+        (r) =>
+          r.membership.startAt &&
+          r.membership.endAt &&
+          r.membership.startAt <= new Date() &&
+          r.membership.endAt > new Date() &&
+          r.plan.coverage !== "none",
+      );
+      const billing = current ?? own[0];
+      const row = {
+        id: m.id,
+        name: m.name,
+        qrToken: m.revoked ? null : m.qrToken,
+        membershipId: billing?.membership.id ?? null,
+        coverage: m.revoked ? ("none" as const) : (current?.plan.coverage ?? ("none" as const)),
+        endAt: current?.membership.endAt?.toISOString() ?? null,
+        price: billing?.plan.priceCents ?? 0,
+      };
+      return {
+        ...row,
+        proof: this.sign({ permitHash: createHash("sha256").update(permit).digest("hex"), ...row }),
+      };
+    });
+    return { ...claims, permit, members: snapshot };
+  }
+
+  async syncLeased(actor: OfflineActor, input: { deviceId: string; events: SyncEventInput[] }) {
+    if (actor.role !== "admin" && actor.role !== "recepcion")
+      throw forbidden("Solo recepción sincroniza contingencia");
+    const device = await this.getDevice(actor.organizationId, input.deviceId);
+    if (device.accountId !== actor.accountId)
+      throw forbidden("Dispositivo asignado a otro operador");
+    const org = await this.getOrg(actor.organizationId);
+    const results: SyncResultEntry[] = [];
+    for (const ev of input.events) {
+      const prior = await this.findEvent(actor.organizationId, ev.eventId);
+      if (prior && prior.deviceId !== input.deviceId) throw forbidden("Evento de otro dispositivo");
+      if (prior) {
+        results.push({
+          eventId: ev.eventId,
+          status:
+            prior.state === "rechazado"
+              ? "rechazado"
+              : prior.state === "duplicado_negocio"
+                ? "duplicado"
+                : "sincronizado",
+          ...(prior.rejectReason ? { reason: prior.rejectReason } : {}),
+          ...(prior.paymentId ? { paymentId: prior.paymentId } : {}),
+        });
+        continue;
+      }
+      let reason: string | undefined;
+      let membershipId: string | undefined;
+      try {
+        if (device.state !== "habilitado") throw conflict("dispositivo revocado");
+        if (!org.offlineEnabled) throw forbidden("contingencia deshabilitada");
+        const payload = JSON.parse(ev.payload ?? "{}") as { permit: string; proof: string };
+        const permit = this.verify<{
+          deviceId: string;
+          organizationId: string;
+          accountId: string;
+          issuedAt: string;
+          expiresAt: string;
+        }>(payload.permit);
+        if (
+          permit.deviceId !== input.deviceId ||
+          permit.organizationId !== actor.organizationId ||
+          permit.accountId !== actor.accountId
+        )
+          throw forbidden("permiso de otro ámbito");
+        const captured = new Date(ev.capturedAt).getTime(),
+          issued = new Date(permit.issuedAt).getTime(),
+          expires = new Date(permit.expiresAt).getTime();
+        if (
+          !Number.isFinite(captured) ||
+          !Number.isFinite(issued) ||
+          !Number.isFinite(expires) ||
+          captured < issued ||
+          captured > expires ||
+          captured > Date.now() + 60000 ||
+          expires - issued > 72 * 3600000
+        )
+          throw conflict("evento fuera de la vigencia del permiso");
+        // Expired leases can settle already-captured events; they cannot create new ones.
+        const proof = this.verify<{
+          permitHash: string;
+          id: string;
+          membershipId: string | null;
+          coverage: string;
+          endAt: string | null;
+        }>(payload.proof);
+        if (
+          proof.permitHash !== createHash("sha256").update(payload.permit).digest("hex") ||
+          proof.id !== ev.memberId
+        )
+          throw forbidden("instantánea ajena o alterada");
+        membershipId = proof.membershipId ?? undefined;
+        if (ev.type === "cobro_provisional" && !proof.membershipId)
+          throw conflict("sin membresía para vincular cobro");
+        if (
+          ev.type === "ingreso_contingencia" &&
+          (proof.coverage === "none" || !proof.endAt || captured >= new Date(proof.endAt).getTime())
+        )
+          throw conflict("instantánea sin cobertura vigente");
+      } catch (e) {
+        reason = e instanceof Error ? e.message : "permiso inválido";
+      }
+      if (reason) {
+        results.push(await this.store(actor, device.id, ev, "rechazado", reason));
+        continue;
+      }
+      if (ev.type === "cobro_provisional")
+        results.push(await this.applyProvisionalCobro(actor, device.id, ev, membershipId));
+      else results.push(await this.store(actor, device.id, ev, "sincronizado"));
+    }
+    return { results };
   }
 
   // --- Devices ----------------------------------------------------------------
 
   /** Registers a pre-authorized device (admin). Bound to org + one operator. */
-  async registerDevice(actor: OfflineActor, input: { accountId: string; label: string; publicKey?: string | undefined }) {
+  async registerDevice(
+    actor: OfflineActor,
+    input: { accountId: string; label: string; publicKey?: string | undefined },
+  ) {
     if (actor.role !== "admin") throw forbidden("Solo un administrador registra dispositivos");
+    const [assignment] = await this.db
+      .select()
+      .from(staffAssignments)
+      .where(
+        and(
+          eq(staffAssignments.organizationId, actor.organizationId),
+          eq(staffAssignments.accountId, input.accountId),
+          eq(staffAssignments.active, true),
+        ),
+      );
+    // Admin self-registration is also allowed for legacy test fixtures; HTTP actors are session verified.
+    if (!assignment && input.accountId !== actor.accountId)
+      throw notFound("Operador no encontrado");
+    if (assignment && assignment.role === "instructor")
+      throw forbidden("El operador debe ser recepción o administración");
     return this.db.transaction(async (tx) => {
       const [row] = await tx
         .insert(devices)
@@ -207,15 +440,39 @@ export class OfflineService {
    * If another event with the same business fingerprint exists, this one is
    * kept and marked duplicado_negocio (REQ-9).
    */
-  private async applyProvisionalCobro(actor: OfflineActor, deviceId: string, ev: SyncEventInput): Promise<SyncResultEntry> {
+  private async applyProvisionalCobro(
+    actor: OfflineActor,
+    deviceId: string,
+    ev: SyncEventInput,
+    selectedMembershipId?: string,
+  ): Promise<SyncResultEntry> {
     if (!ev.memberId) {
       return this.store(actor, deviceId, ev, "rechazado", "cobro_provisional requiere memberId");
     }
     if (ev.amountCents == null || ev.amountCents <= 0) {
-      return this.store(actor, deviceId, ev, "rechazado", "cobro_provisional requiere amountCents > 0");
+      return this.store(
+        actor,
+        deviceId,
+        ev,
+        "rechazado",
+        "cobro_provisional requiere amountCents > 0",
+      );
     }
     const method = ev.method ?? "cash";
-    const membership = await this.findMembershipForMember(actor.organizationId, ev.memberId);
+    const membership = selectedMembershipId
+      ? (
+          await this.db
+            .select()
+            .from(memberships)
+            .where(
+              and(
+                eq(memberships.id, selectedMembershipId),
+                eq(memberships.memberId, ev.memberId),
+                eq(memberships.organizationId, actor.organizationId),
+              ),
+            )
+        )[0]
+      : await this.findMembershipForMember(actor.organizationId, ev.memberId);
     if (!membership) {
       return this.store(actor, deviceId, ev, "rechazado", "sin membresía para vincular el cobro");
     }
@@ -342,7 +599,9 @@ export class OfflineService {
     reason?: string,
   ): Promise<SyncResultEntry> {
     return this.db.transaction(async (tx) => {
-      const { row } = await this.insertEvent(tx, actor, deviceId, ev, state, { rejectReason: reason ?? null });
+      const { row } = await this.insertEvent(tx, actor, deviceId, ev, state, {
+        rejectReason: reason ?? null,
+      });
       await this.audit.record(
         {
           organizationId: actor.organizationId,
@@ -351,7 +610,13 @@ export class OfflineService {
           action: "offline.sync",
           entity: "offline_event",
           entityId: row.id,
-          metadata: { eventId: ev.eventId, folioExterno: ev.folioExterno, type: ev.type, state, reason },
+          metadata: {
+            eventId: ev.eventId,
+            folioExterno: ev.folioExterno,
+            type: ev.type,
+            state,
+            reason,
+          },
         },
         tx,
       );
@@ -376,11 +641,25 @@ export class OfflineService {
     ev: SyncEventInput,
     state: "pendiente" | "sincronizado" | "rechazado" | "duplicado_negocio",
     extra: { paymentId?: string | null; rejectReason?: string | null } = {},
-  ): Promise<{ row: NonNullable<Awaited<ReturnType<OfflineService["findEvent"]>>>; inserted: boolean }> {
+  ): Promise<{
+    row: NonNullable<Awaited<ReturnType<OfflineService["findEvent"]>>>;
+    inserted: boolean;
+  }> {
+    // Lock the device before reading the predecessor. Even an empty chain has a row to lock.
+    await tx
+      .select({ id: devices.id })
+      .from(devices)
+      .where(and(eq(devices.id, deviceId), eq(devices.organizationId, actor.organizationId)))
+      .for("update");
     const prev = await tx
       .select({ hash: offlineEvents.hash })
       .from(offlineEvents)
-      .where(and(eq(offlineEvents.organizationId, actor.organizationId), eq(offlineEvents.deviceId, deviceId)))
+      .where(
+        and(
+          eq(offlineEvents.organizationId, actor.organizationId),
+          eq(offlineEvents.deviceId, deviceId),
+        ),
+      )
       .orderBy(desc(offlineEvents.createdAt))
       .limit(1);
     const prevHash = prev[0]?.hash ?? null;
@@ -399,6 +678,7 @@ export class OfflineService {
     const rows = await tx
       .insert(offlineEvents)
       .values({
+        createdAt: sql`clock_timestamp()`,
         organizationId: actor.organizationId,
         eventId: ev.eventId,
         deviceId,
@@ -432,20 +712,30 @@ export class OfflineService {
 
   async ingressContingencia(
     actor: OfflineActor,
-    input: { deviceId: string; memberId: string; snapshotCapturedAt: string; coverage: "none" | "unlimited" | "limited" },
+    input: {
+      deviceId: string;
+      memberId: string;
+      snapshotCapturedAt: string;
+      coverage: "none" | "unlimited" | "limited";
+    },
   ) {
     const device = await this.getDevice(actor.organizationId, input.deviceId);
     if (device.state === "revocado") throw conflict("Dispositivo revocado");
     const org = await this.getOrg(actor.organizationId);
-    if (!org.offlineEnabled) throw forbidden("El permiso offline no está habilitado para esta organización");
+    if (!org.offlineEnabled)
+      throw forbidden("El permiso offline no está habilitado para esta organización");
 
     const capturedAt = new Date(input.snapshotCapturedAt);
     if (Number.isNaN(capturedAt.getTime())) {
-      throw validationError({ issues: [{ path: ["snapshotCapturedAt"], message: "Fecha de instantánea inválida" }] });
+      throw validationError({
+        issues: [{ path: ["snapshotCapturedAt"], message: "Fecha de instantánea inválida" }],
+      });
     }
     const limitMs = org.offlineFreshnessHours * 60 * 60 * 1000;
     if (Date.now() - capturedAt.getTime() > limitMs) {
-      throw conflict(`Instantánea vencida: supera la frescura permitida (${org.offlineFreshnessHours} h)`);
+      throw conflict(
+        `Instantánea vencida: supera la frescura permitida (${org.offlineFreshnessHours} h)`,
+      );
     }
 
     return this.db.transaction(async (tx) => {
@@ -473,7 +763,11 @@ export class OfflineService {
         },
         tx,
       );
-      return { memberId: input.memberId, coverage: input.coverage, admitted: input.coverage !== "none" };
+      return {
+        memberId: input.memberId,
+        coverage: input.coverage,
+        admitted: input.coverage !== "none",
+      };
     });
   }
 
@@ -540,7 +834,9 @@ export class OfflineService {
     const rows = await this.db
       .select()
       .from(offlineEvents)
-      .where(and(eq(offlineEvents.organizationId, organizationId), eq(offlineEvents.eventId, eventId)))
+      .where(
+        and(eq(offlineEvents.organizationId, organizationId), eq(offlineEvents.eventId, eventId)),
+      )
       .limit(1);
     return rows[0] ?? null;
   }
@@ -549,7 +845,9 @@ export class OfflineService {
     const rows = await this.db
       .select()
       .from(memberships)
-      .where(and(eq(memberships.organizationId, organizationId), eq(memberships.memberId, memberId)))
+      .where(
+        and(eq(memberships.organizationId, organizationId), eq(memberships.memberId, memberId)),
+      )
       .orderBy(desc(memberships.createdAt))
       .limit(1);
     return rows[0] ?? null;

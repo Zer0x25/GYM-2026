@@ -82,7 +82,7 @@ export class SessionRevocationService {
         .from(members)
         .where(
           and(
-            eq(members.contactEmail, acct.email),
+            eq(members.accountId, targetAccountId),
             eq(members.organizationId, actor.organizationId),
           ),
         )
@@ -108,12 +108,7 @@ export class SessionRevocationService {
         userAgent: authSessions.userAgent,
       })
       .from(authSessions)
-      .where(
-        and(
-          eq(authSessions.userId, targetAccountId),
-          gt(authSessions.expiresAt, new Date()),
-        ),
-      )
+      .where(and(eq(authSessions.userId, targetAccountId), gt(authSessions.expiresAt, new Date())))
       .orderBy(authSessions.createdAt);
     return rows.map((r) => ({
       id: r.id,

@@ -7,7 +7,7 @@
  * classes (.card/.error) predate the design system and style nothing.
  */
 import { useState, type FormEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Dumbbell, Shield, ScanLine, UserCog, User } from "lucide-react";
 import { ApiError } from "../api.js";
 import { useSession } from "../session.js";
@@ -93,7 +93,7 @@ export function Login() {
           <h1 id="login-title" className="text-xl font-semibold tracking-tight">
             Ingresar
           </h1>
-          <p className="text-sm text-muted-foreground">Panel del gimnasio</p>
+          <p className="text-sm text-muted-foreground">Tu gimnasio, en un solo lugar</p>
         </div>
         <form onSubmit={onSubmit} noValidate className="space-y-4">
           <div className="space-y-1.5">
@@ -123,21 +123,21 @@ export function Login() {
             />
           </div>
           {error ? (
-            <p
-              role="alert"
-              className="rounded-md bg-destructive/10 p-3 text-sm text-destructive"
-            >
+            <p role="alert" className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
               {error}
             </p>
           ) : null}
-          <Button
-            type="submit"
-            className="w-full"
-            disabled={busy || !email || !password}
-          >
+          <Button type="submit" className="w-full" disabled={busy || !email || !password}>
             {busy ? "Ingresando…" : "Ingresar"}
           </Button>
         </form>
+
+        <Link
+          to="/contingencia"
+          className="mt-5 block text-center text-xs text-primary hover:underline"
+        >
+          Abrir contingencia de este equipo
+        </Link>
 
         {import.meta.env.DEV ? (
           <div className="mt-6 border-t pt-5">

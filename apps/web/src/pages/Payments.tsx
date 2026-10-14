@@ -1,221 +1,195 @@
-/**
- * Payments page — the reception validation tray (ADR-0003, REQ-2).
- *
- * Shows provisional payments awaiting a human decision, with validate/reject
- * actions (admin only). The backend is the authority: it enforces that only
- * an admin decides, never their own registration, and that a validated
- * payment is immutable. The UI just reflects those rules and surfaces the
- * API errors (403/409) as toasts.
- */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { toast } from "sonner";
-import { Check, X, Receipt as ReceiptIcon } from "lucide-react";
-import { ApiError, api, formatCLP, type Payment } from "../api.js";
+import { Check, X } from "lucide-react";
+import type { ColumnDef } from "@tanstack/react-table";
+import { api, formatCLP, type Payment, type PaymentState } from "../api.js";
 import { useSession } from "../session.js";
+import { useResource } from "../hooks/use-resource.js";
+import { PageHead, ErrorNotice, Loading } from "../components/ui/page.js";
+import { DataTable } from "../components/ui/data-table.js";
+import { PaymentStateBadge } from "../components/ui/badge.js";
 import { Button } from "../components/ui/button.js";
-import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card.js";
-import { Badge, PaymentStateBadge } from "../components/ui/badge.js";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "../components/ui/table.js";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "../components/ui/dialog.js";
 import { Input, Label } from "../components/ui/input.js";
-import { Tabs, TabsList, TabsTrigger } from "../components/ui/tabs.js";
-import { canDecidePayments } from "../permissions.js";
-
+import { Confirm } from "../components/ui/confirm.js";
 export function Payments() {
   const { session } = useSession();
-  const isAdmin = canDecidePayments(session?.role);
-  const [tab, setTab] = useState<"provisional" | "validated" | "rejected">("provisional");
-  const [payments, setPayments] = useState<Payment[]>([]);
-  const [members, setMembers] = useState<Map<string, string>>(new Map());
-  const [error, setError] = useState<string | null>(null);
-  const [busyId, setBusyId] = useState<string | null>(null);
-
-  // Reject dialog state
-  const [rejectId, setRejectId] = useState<string | null>(null);
-  const [reason, setReason] = useState("");
-
-  const load = useCallback(async () => {
-    try {
-      const [rows, memberRows] = await Promise.all([api.listPayments(tab), api.listMembers()]);
-      setPayments(rows);
-      setMembers(new Map(memberRows.map((m) => [m.id, m.fullName])));
-      setError(null);
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Error al cargar pagos");
-    }
+  const [tab, setTab] = useState<PaymentState>("provisional"),
+    [query, setQuery] = useState(""),
+    [decision, setDecision] = useState<{ payment: Payment; type: "validate" | "reject" } | null>(
+      null,
+    ),
+    [reason, setReason] = useState(""),
+    [busy, setBusy] = useState(false);
+  const loader = useCallback(async () => {
+    const [payments, members] = await Promise.all([api.listPayments(tab), api.listMembers()]);
+    return { payments, members: new Map(members.map((m) => [m.id, m.fullName])) };
   }, [tab]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  async function onValidate(id: string) {
-    setBusyId(id);
+  const { data, error, loading, reload } = useResource(loader);
+  async function decide() {
+    if (!decision || busy) return;
+    if (decision.type === "reject" && !reason.trim()) {
+      toast.error("Indica el motivo del rechazo");
+      return;
+    }
+    setBusy(true);
     try {
-      await api.validatePayment(id);
-      toast.success("Pago validado — derechos y movimiento de caja registrados");
-      await load();
+      if (decision.type === "validate") await api.validatePayment(decision.payment.id);
+      else await api.rejectPayment(decision.payment.id, reason.trim());
+      toast.success(
+        decision.type === "validate"
+          ? "Pago validado. Membresía y caja actualizadas."
+          : "Pago rechazado",
+      );
+      setDecision(null);
+      await reload();
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : "No se pudo validar");
+      toast.error(e instanceof Error ? e.message : "No se pudo decidir el pago");
     } finally {
-      setBusyId(null);
+      setBusy(false);
     }
   }
-
-  async function onReject() {
-    if (!rejectId) return;
-    setBusyId(rejectId);
-    try {
-      await api.rejectPayment(rejectId, reason.trim());
-      toast.success("Pago rechazado");
-      setRejectId(null);
-      setReason("");
-      await load();
-    } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : "No se pudo rechazar");
-    } finally {
-      setBusyId(null);
-    }
-  }
-
+  const admin = session?.role === "admin";
+  const columns: ColumnDef<Payment>[] = [
+    {
+      id: "member",
+      header: "Socio",
+      accessorFn: (p) => data?.members.get(p.memberId) ?? "Socio",
+      cell: ({ getValue }) => <span className="font-medium">{getValue() as string}</span>,
+    },
+    {
+      accessorKey: "amountCents",
+      header: "Monto",
+      cell: ({ getValue }) => formatCLP(getValue() as number),
+    },
+    {
+      accessorKey: "method",
+      header: "Método",
+      cell: ({ getValue }) => (getValue() === "cash" ? "Efectivo" : "Transferencia"),
+    },
+    {
+      accessorKey: "reference",
+      header: "Referencia",
+      cell: ({ getValue }) => String(getValue() ?? "—"),
+    },
+    {
+      accessorKey: "state",
+      header: "Estado",
+      cell: ({ row }) => <PaymentStateBadge state={row.original.state} />,
+    },
+    {
+      accessorKey: "createdAt",
+      header: "Registro",
+      cell: ({ getValue }) => new Date(getValue() as string).toLocaleDateString("es-CL"),
+    },
+    ...(admin && tab === "provisional"
+      ? [
+          {
+            id: "actions",
+            header: "Decisión",
+            cell: ({ row }: { row: { original: Payment } }) =>
+              row.original.registeredBy === session.user.id ? (
+                <span className="text-xs text-muted-foreground">Requiere otro administrador</span>
+              ) : (
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setDecision({ payment: row.original, type: "validate" })}
+                  >
+                    <Check className="h-3 w-3" />
+                    Validar
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setReason("");
+                      setDecision({ payment: row.original, type: "reject" });
+                    }}
+                  >
+                    <X className="h-3 w-3" />
+                    Rechazar
+                  </Button>
+                </div>
+              ),
+          },
+        ]
+      : []),
+  ];
   return (
-    <section aria-labelledby="payments-title">
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 id="payments-title" className="text-2xl font-bold">
-            Pagos
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Validación humana de cobros — el backend aplica las invariantes de dinero.
-          </p>
+    <section>
+      <PageHead
+        eyebrow="Finanzas"
+        title="Pagos"
+        description="Revisa los cobros registrados. Solo un administrador distinto de quien cobró puede confirmar o rechazar."
+      />
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
+        <div className="inline-flex rounded-lg border bg-card p-1">
+          {(["provisional", "validated", "rejected"] as PaymentState[]).map((t) => (
+            <Button
+              key={t}
+              size="sm"
+              variant={tab === t ? "default" : "ghost"}
+              onClick={() => setTab(t)}
+            >
+              {t === "provisional" ? "Pendientes" : t === "validated" ? "Validados" : "Rechazados"}
+            </Button>
+          ))}
         </div>
+        <Input
+          type="search"
+          aria-label="Buscar pagos"
+          className="max-w-xs"
+          placeholder="Socio o referencia…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
       </div>
-
-      <Tabs value={tab} onValueChange={(v: string) => setTab(v as typeof tab)}>
-        <TabsList>
-          <TabsTrigger value="provisional">Provisionales</TabsTrigger>
-          <TabsTrigger value="validated">Validados</TabsTrigger>
-          <TabsTrigger value="rejected">Rechazados</TabsTrigger>
-        </TabsList>
-      </Tabs>
-
-      {error ? (
-        <p role="alert" className="mt-4 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-          {error}
+      <ErrorNotice message={error} retry={() => void reload()} />
+      {loading && !data ? (
+        <Loading />
+      ) : (
+        <DataTable
+          data={(data?.payments ?? []).filter((p) =>
+            `${data?.members.get(p.memberId) ?? ""} ${p.reference ?? ""}`
+              .toLowerCase()
+              .includes(query.toLowerCase()),
+          )}
+          columns={columns}
+          empty="No hay pagos en esta selección."
+        />
+      )}
+      {!admin && (
+        <p className="mt-4 text-xs text-muted-foreground">
+          Los pagos registrados permanecen pendientes hasta la revisión de administración.
         </p>
-      ) : null}
-
-      <Card className="mt-4">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <ReceiptIcon className="h-5 w-5" />
-            {tab === "provisional" ? "Esperando decisión" : "Historial"}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Socio</TableHead>
-                <TableHead>Monto</TableHead>
-                <TableHead>Método</TableHead>
-                <TableHead>Referencia</TableHead>
-                <TableHead>Estado</TableHead>
-                {isAdmin && tab === "provisional" ? <TableHead className="text-right">Acciones</TableHead> : null}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {payments.map((p) => (
-                <TableRow key={p.id}>
-                  <TableCell className="font-medium">{members.get(p.memberId) ?? p.memberId.slice(0, 8)}</TableCell>
-                  <TableCell>{formatCLP(p.amountCents)}</TableCell>
-                  <TableCell>{p.method === "cash" ? "Efectivo" : "Transferencia"}</TableCell>
-                  <TableCell className="text-muted-foreground">{p.reference ?? "—"}</TableCell>
-                  <TableCell><PaymentStateBadge state={p.state} /></TableCell>
-                  {isAdmin && tab === "provisional" ? (
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          size="sm"
-                          variant="success"
-                          disabled={busyId === p.id}
-                          onClick={() => void onValidate(p.id)}
-                        >
-                          <Check className="h-4 w-4" /> Validar
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          disabled={busyId === p.id}
-                          onClick={() => { setRejectId(p.id); setReason(""); }}
-                        >
-                          <X className="h-4 w-4" /> Rechazar
-                        </Button>
-                      </div>
-                    </TableCell>
-                  ) : null}
-                </TableRow>
-              ))}
-              {payments.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
-                    Sin pagos en este estado.
-                  </TableCell>
-                </TableRow>
-              ) : null}
-            </TableBody>
-          </Table>
-          {!isAdmin && tab === "provisional" ? (
-            <p className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
-              <Badge variant="outline">Solo admin</Badge>
-              La validación y el rechazo los decide un administrador.
-            </p>
-          ) : null}
-        </CardContent>
-      </Card>
-
-      {/* Reject dialog — reason is mandatory and auditable */}
-      <Dialog open={rejectId !== null} onOpenChange={(open) => !open && setRejectId(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Rechazar pago</DialogTitle>
-            <DialogDescription>
-              El rechazo es terminal e inmutable. El motivo queda en la auditoría.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="reason">Motivo (obligatorio)</Label>
+      )}
+      <Confirm
+        open={decision !== null}
+        onOpenChange={(o) => !o && setDecision(null)}
+        title={decision?.type === "validate" ? "Validar pago" : "Rechazar pago"}
+        description={
+          decision?.type === "validate"
+            ? `Confirmar ${formatCLP(decision.payment.amountCents)} para ${data?.members.get(decision.payment.memberId) ?? "este socio"} activará el período correspondiente y registrará el movimiento en el turno abierto. Esta decisión es definitiva.`
+            : "El pago quedará rechazado sin activar derechos ni generar un movimiento de caja. Registra un motivo para la auditoría."
+        }
+        label={decision?.type === "validate" ? "Confirmar validación" : "Confirmar rechazo"}
+        destructive={decision?.type === "reject"}
+        busy={busy}
+        onConfirm={() => void decide()}
+      >
+        {decision?.type === "reject" && (
+          <div>
+            <Label htmlFor="reject-reason">Motivo del rechazo</Label>
             <Input
-              id="reason"
+              id="reject-reason"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              placeholder="Ej: referencia bancaria no coincide"
+              required
             />
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRejectId(null)}>
-              Cancelar
-            </Button>
-            <Button variant="destructive" disabled={!reason.trim() || busyId === rejectId} onClick={() => void onReject()}>
-              Rechazar pago
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        )}
+      </Confirm>
     </section>
   );
 }

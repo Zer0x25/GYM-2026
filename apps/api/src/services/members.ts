@@ -10,8 +10,17 @@
 import { and, eq, ilike, or, sql } from "drizzle-orm";
 import type { Database } from "@gym/db";
 import { members } from "@gym/db";
+import { generateQrToken } from "./provisioning.js";
 import { forbidden, notFound } from "../errors.js";
 import type { Role } from "@gym/contracts";
+
+const publicFields = {
+  id: members.id,
+  organizationId: members.organizationId,
+  fullName: members.fullName,
+  contactEmail: members.contactEmail,
+  createdAt: members.createdAt,
+};
 
 export interface MemberRow {
   id: string;
@@ -44,7 +53,7 @@ export class MembersService {
       conditions.push(or(ilike(members.fullName, q), ilike(members.contactEmail, q))!);
     }
     const rows = await this.db
-      .select()
+      .select(publicFields)
       .from(members)
       .where(and(...conditions))
       .orderBy(members.fullName);
@@ -72,9 +81,10 @@ export class MembersService {
       .values({
         organizationId: actor.organizationId,
         fullName: input.fullName,
+        qrToken: generateQrToken(),
         contactEmail: input.contactEmail ?? null,
       })
-      .returning();
+      .returning(publicFields);
     if (!row) throw notFound("Socio no encontrado");
     return row;
   }
@@ -98,7 +108,7 @@ export class MembersService {
       .update(members)
       .set({ contactEmail })
       .where(and(eq(members.id, memberId), eq(members.organizationId, actor.organizationId)))
-      .returning();
+      .returning(publicFields);
     if (!row) throw notFound("Socio no encontrado");
     return row;
   }
@@ -106,15 +116,13 @@ export class MembersService {
   /** Tenant-scoped lookup: never crosses organizations. */
   private async findOwn(actor: MemberActor, memberId: string): Promise<MemberRow | undefined> {
     const rows = await this.db
-      .select()
+      .select(publicFields)
       .from(members)
       .where(
         and(
           eq(members.id, memberId),
           eq(members.organizationId, actor.organizationId),
-          actor.memberId && actor.role === "socio"
-            ? eq(members.id, actor.memberId)
-            : sql`true`,
+          actor.memberId && actor.role === "socio" ? eq(members.id, actor.memberId) : sql`true`,
         ),
       )
       .limit(1);

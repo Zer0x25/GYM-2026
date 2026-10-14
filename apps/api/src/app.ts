@@ -12,6 +12,11 @@ import { eq } from "drizzle-orm";
 import { organizations } from "@gym/db";
 import type { Database } from "@gym/db";
 import {
+  DailyReportQuery,
+  ScheduleQuery,
+  OfflineLeaseRequest,
+  OfflineLeaseResponse,
+  OfflinePolicyUpdateRequest,
   CloseCashSessionRequest,
   CreateBookingRequest,
   CancelBookingRequest,
@@ -22,7 +27,6 @@ import {
   CreatePlanRequest,
   CreateSessionRequest,
   DecidePaymentRequest,
-  IngressContingenciaRequest,
   MarkAttendanceRequest,
   OpenCashSessionRequest,
   RegisterDeviceRequest,
@@ -50,6 +54,7 @@ import { SessionsService } from "./services/sessions.js";
 import { BookingsService } from "./services/bookings.js";
 import { OfflineService } from "./services/offline.js";
 import { SessionRevocationService } from "./services/session-revocation.js";
+import { OperationsService } from "./services/operations.js";
 import { CheckinService } from "./services/checkin.js";
 import type { SessionContext } from "./session.js";
 
@@ -185,6 +190,8 @@ export async function buildServer(opts: AppOptions) {
     if (req.session) {
       throw new AppError("FORBIDDEN", "Las organizaciones se crean solo en el arranque");
     }
+    const initialized = await opts.db.select({ id: organizations.id }).from(organizations).limit(1);
+    if (initialized.length) throw new AppError("FORBIDDEN", "La organización ya fue inicializada");
     const parsed = CreateOrganizationRequest.safeParse(req.body);
     if (!parsed.success) throw validationError({ issues: parsed.error.issues });
     const [org] = await opts.db
@@ -227,7 +234,9 @@ export async function buildServer(opts: AppOptions) {
   // --- Session introspection -------------------------------------------------
   app.get("/api/v1/auth/session", async (req: FastifyRequest, reply: FastifyReply) => {
     if (!req.session) {
-      return reply.status(401).send(toErrorResponse(new AppError("UNAUTHENTICATED", "Se requiere sesión")));
+      return reply
+        .status(401)
+        .send(toErrorResponse(new AppError("UNAUTHENTICATED", "Se requiere sesión")));
     }
     const [org] = await opts.db
       .select({ id: organizations.id, name: organizations.name })
@@ -290,25 +299,22 @@ export async function buildServer(opts: AppOptions) {
     return reply.send({ data: row });
   });
 
-  app.patch<{ Params: { id: string } }>(
-    "/api/v1/members/:id/contact",
-    async (req, reply) => {
-      requireRole(req.session, ["admin", "recepcion", "socio"]);
-      assertTenantContext(req.session);
-      const parsed = UpdateContactBody.safeParse(req.body);
-      if (!parsed.success) throw validationError({ issues: parsed.error.issues });
-      const row = await members.updateContact(
-        {
-          organizationId: req.session.organizationId,
-          role: req.session.role,
-          memberId: req.session.memberId,
-        },
-        req.params.id,
-        parsed.data.contactEmail ?? null,
-      );
-      return reply.send({ data: row });
-    },
-  );
+  app.patch<{ Params: { id: string } }>("/api/v1/members/:id/contact", async (req, reply) => {
+    requireRole(req.session, ["admin", "recepcion", "socio"]);
+    assertTenantContext(req.session);
+    const parsed = UpdateContactBody.safeParse(req.body);
+    if (!parsed.success) throw validationError({ issues: parsed.error.issues });
+    const row = await members.updateContact(
+      {
+        organizationId: req.session.organizationId,
+        role: req.session.role,
+        memberId: req.session.memberId,
+      },
+      req.params.id,
+      parsed.data.contactEmail ?? null,
+    );
+    return reply.send({ data: row });
+  });
 
   // --- Plans (admin: CRUD; staff: lectura) -----------------------------------
   const plansService = new PlansService(opts.db);
@@ -414,9 +420,7 @@ export async function buildServer(opts: AppOptions) {
     const query = (req.query as { state?: string }).state;
     const rows = await paymentsService.list(
       req.session.organizationId,
-      query === "provisional" || query === "validated" || query === "rejected"
-        ? query
-        : undefined,
+      query === "provisional" || query === "validated" || query === "rejected" ? query : undefined,
     );
     return reply.send({ data: rows });
   });
@@ -532,7 +536,11 @@ export async function buildServer(opts: AppOptions) {
     const parsed = CreateClassTemplateRequest.safeParse(req.body);
     if (!parsed.success) throw validationError({ issues: parsed.error.issues });
     const row = await sessionsService.createTemplate(
-      { organizationId: req.session.organizationId, accountId: req.session.accountId, role: req.session.role },
+      {
+        organizationId: req.session.organizationId,
+        accountId: req.session.accountId,
+        role: req.session.role,
+      },
       parsed.data,
     );
     return reply.status(201).send({ data: row });
@@ -551,7 +559,11 @@ export async function buildServer(opts: AppOptions) {
     const parsed = CreateSessionRequest.safeParse(req.body);
     if (!parsed.success) throw validationError({ issues: parsed.error.issues });
     const row = await sessionsService.create(
-      { organizationId: req.session.organizationId, accountId: req.session.accountId, role: req.session.role },
+      {
+        organizationId: req.session.organizationId,
+        accountId: req.session.accountId,
+        role: req.session.role,
+      },
       {
         templateId: parsed.data.templateId,
         type: parsed.data.type,
@@ -585,7 +597,11 @@ export async function buildServer(opts: AppOptions) {
     requireRole(req.session, ["admin", "recepcion"]);
     assertTenantContext(req.session);
     const row = await sessionsService.cancel(
-      { organizationId: req.session.organizationId, accountId: req.session.accountId, role: req.session.role },
+      {
+        organizationId: req.session.organizationId,
+        accountId: req.session.accountId,
+        role: req.session.role,
+      },
       req.params.id,
     );
     return reply.send({ data: row });
@@ -596,10 +612,18 @@ export async function buildServer(opts: AppOptions) {
     requireRole(req.session, ["admin", "recepcion", "instructor"]);
     assertTenantContext(req.session);
     const query = req.query as { instructorId?: string; from?: string; to?: string };
-    if (!query.instructorId) throw validationError({ issues: [{ path: ["instructorId"], message: "instructorId requerido" }] });
+    if (!query.instructorId)
+      throw validationError({
+        issues: [{ path: ["instructorId"], message: "instructorId requerido" }],
+      });
     const from = query.from ? new Date(query.from) : new Date(Date.now() - 7 * 24 * 3600 * 1000);
     const to = query.to ? new Date(query.to) : new Date(Date.now() + 30 * 24 * 3600 * 1000);
-    const rows = await sessionsService.agenda(req.session.organizationId, query.instructorId, from, to);
+    const rows = await sessionsService.agenda(
+      req.session.organizationId,
+      query.instructorId,
+      from,
+      to,
+    );
     return reply.send({ data: rows });
   });
 
@@ -610,8 +634,12 @@ export async function buildServer(opts: AppOptions) {
     const parsed = CreateBookingRequest.safeParse(req.body);
     if (!parsed.success) throw validationError({ issues: parsed.error.issues });
     // Socio books for themselves (memberId from the session, never the client).
-    const memberId = req.session.role === "socio" ? req.session.memberId : (req.body as { memberId?: string }).memberId;
-    if (!memberId) throw validationError({ issues: [{ path: ["memberId"], message: "memberId requerido" }] });
+    const memberId =
+      req.session.role === "socio"
+        ? req.session.memberId
+        : (req.body as { memberId?: string }).memberId;
+    if (!memberId)
+      throw validationError({ issues: [{ path: ["memberId"], message: "memberId requerido" }] });
     const row = await bookingsService.create(
       {
         organizationId: req.session.organizationId,
@@ -629,7 +657,10 @@ export async function buildServer(opts: AppOptions) {
     requireRole(req.session, ["socio"]);
     assertTenantContext(req.session);
     if (!req.session.memberId) throw new AppError("FORBIDDEN", "Sesión sin socio vinculado");
-    const rows = await bookingsService.listByMember(req.session.organizationId, req.session.memberId);
+    const rows = await bookingsService.listByMember(
+      req.session.organizationId,
+      req.session.memberId,
+    );
     return reply.send({ data: rows });
   });
 
@@ -637,7 +668,8 @@ export async function buildServer(opts: AppOptions) {
     requireRole(req.session, ["admin", "recepcion", "instructor"]);
     assertTenantContext(req.session);
     const query = req.query as { sessionId?: string };
-    if (!query.sessionId) throw validationError({ issues: [{ path: ["sessionId"], message: "sessionId requerido" }] });
+    if (!query.sessionId)
+      throw validationError({ issues: [{ path: ["sessionId"], message: "sessionId requerido" }] });
     const rows = await bookingsService.listBySession(req.session.organizationId, query.sessionId);
     return reply.send({ data: rows });
   });
@@ -687,7 +719,11 @@ export async function buildServer(opts: AppOptions) {
     const parsed = RegisterDeviceRequest.safeParse(req.body);
     if (!parsed.success) throw validationError({ issues: parsed.error.issues });
     const row = await offlineService.registerDevice(
-      { organizationId: req.session.organizationId, accountId: req.session.accountId, role: req.session.role },
+      {
+        organizationId: req.session.organizationId,
+        accountId: req.session.accountId,
+        role: req.session.role,
+      },
       parsed.data,
     );
     return reply.status(201).send({ data: row });
@@ -704,7 +740,11 @@ export async function buildServer(opts: AppOptions) {
     requireRole(req.session, ["admin"]);
     assertTenantContext(req.session);
     const row = await offlineService.revokeDevice(
-      { organizationId: req.session.organizationId, accountId: req.session.accountId, role: req.session.role },
+      {
+        organizationId: req.session.organizationId,
+        accountId: req.session.accountId,
+        role: req.session.role,
+      },
       req.params.id,
     );
     return reply.send({ data: row });
@@ -712,12 +752,16 @@ export async function buildServer(opts: AppOptions) {
 
   // Idempotent sync of the device outbox (TX-06): per-event acknowledgment.
   app.post("/api/v1/offline/sync", async (req: FastifyRequest, reply: FastifyReply) => {
-    requireRole(req.session, ["admin", "recepcion", "instructor"]);
+    requireRole(req.session, ["admin", "recepcion"]);
     assertTenantContext(req.session);
     const parsed = SyncEventsRequest.safeParse(req.body);
     if (!parsed.success) throw validationError({ issues: parsed.error.issues });
-    const result = await offlineService.sync(
-      { organizationId: req.session.organizationId, accountId: req.session.accountId, role: req.session.role },
+    const result = await offlineService.syncLeased(
+      {
+        organizationId: req.session.organizationId,
+        accountId: req.session.accountId,
+        role: req.session.role,
+      },
       parsed.data,
     );
     return reply.send({ data: result });
@@ -732,16 +776,12 @@ export async function buildServer(opts: AppOptions) {
   });
 
   // Contingency ingress with snapshot freshness control (SPEC:OFF-FRESH).
-  app.post("/api/v1/offline/ingreso", async (req: FastifyRequest, reply: FastifyReply) => {
-    requireRole(req.session, ["admin", "recepcion", "instructor"]);
-    assertTenantContext(req.session);
-    const parsed = IngressContingenciaRequest.safeParse(req.body);
-    if (!parsed.success) throw validationError({ issues: parsed.error.issues });
-    const result = await offlineService.ingressContingencia(
-      { organizationId: req.session.organizationId, accountId: req.session.accountId, role: req.session.role },
-      parsed.data,
+  app.post("/api/v1/offline/ingreso", async (req: FastifyRequest) => {
+    requireRole(req.session, ["admin", "recepcion"]);
+    throw new AppError(
+      "FORBIDDEN",
+      "El ingreso de contingencia requiere permiso e instantánea firmados: usa /offline/lease/sync",
     );
-    return reply.send({ data: result });
   });
 
   // Auditable reconstruction + hash-chain verification (SPEC:OFF-RECON).
@@ -750,8 +790,51 @@ export async function buildServer(opts: AppOptions) {
     assertTenantContext(req.session);
     const parsed = ReconstructRequest.safeParse(req.body ?? {});
     if (!parsed.success) throw validationError({ issues: parsed.error.issues });
-    const result = await offlineService.reconstruct(req.session.organizationId, parsed.data.deviceId);
+    const result = await offlineService.reconstruct(
+      req.session.organizationId,
+      parsed.data.deviceId,
+    );
     return reply.send({ data: result });
+  });
+
+  app.get("/api/v1/offline/devices", async (req, reply) => {
+    requireRole(req.session, ["admin", "recepcion"]);
+    assertTenantContext(req.session);
+    return reply.send({
+      data: (await offlineService.listDevices(req.session.organizationId)).filter(
+        (d) => d.accountId === req.session!.accountId,
+      ),
+    });
+  });
+  app.get("/api/v1/offline/policy", async (req, reply) => {
+    requireRole(req.session, ["admin", "recepcion"]);
+    assertTenantContext(req.session);
+    return reply.send({ data: await offlineService.policy(req.session) });
+  });
+  app.post("/api/v1/offline/policy", async (req, reply) => {
+    requireRole(req.session, ["admin"]);
+    assertTenantContext(req.session);
+    const parsed = OfflinePolicyUpdateRequest.safeParse(req.body);
+    if (!parsed.success) throw validationError({ issues: parsed.error.issues });
+    return reply.send({ data: await offlineService.setPolicy(req.session, parsed.data.enabled) });
+  });
+  app.post("/api/v1/offline/lease", async (req, reply) => {
+    requireRole(req.session, ["admin", "recepcion"]);
+    assertTenantContext(req.session);
+    const parsed = OfflineLeaseRequest.safeParse(req.body);
+    if (!parsed.success) throw validationError({ issues: parsed.error.issues });
+    return reply.send({
+      data: OfflineLeaseResponse.parse(
+        await offlineService.lease(req.session, parsed.data.deviceId),
+      ),
+    });
+  });
+  app.post("/api/v1/offline/lease/sync", async (req, reply) => {
+    requireRole(req.session, ["admin", "recepcion"]);
+    assertTenantContext(req.session);
+    const parsed = SyncEventsRequest.safeParse(req.body);
+    if (!parsed.success) throw validationError({ issues: parsed.error.issues });
+    return reply.send({ data: await offlineService.syncLeased(req.session, parsed.data) });
   });
 
   // --- Revocación de sesión (Entrega 5, spec 006, REQ-11) -------------------
@@ -783,33 +866,39 @@ export async function buildServer(opts: AppOptions) {
   });
 
   // Revoke all sessions of an account in the admin's tenant (admin only).
-  app.post("/api/v1/admin/sessions/revoke-all", async (req: FastifyRequest, reply: FastifyReply) => {
-    requireRole(req.session, ["admin"]);
-    assertTenantContext(req.session);
-    const parsed = RevokeAllSessionsRequest.safeParse(req.body);
-    if (!parsed.success) throw validationError({ issues: parsed.error.issues });
-    const revoked = await sessionRevocation.revokeAllSessions(
-      req.session,
-      parsed.data.accountId,
-      req.ip,
-    );
-    return reply.send({ data: { revoked } });
-  });
+  app.post(
+    "/api/v1/admin/sessions/revoke-all",
+    async (req: FastifyRequest, reply: FastifyReply) => {
+      requireRole(req.session, ["admin"]);
+      assertTenantContext(req.session);
+      const parsed = RevokeAllSessionsRequest.safeParse(req.body);
+      if (!parsed.success) throw validationError({ issues: parsed.error.issues });
+      const revoked = await sessionRevocation.revokeAllSessions(
+        req.session,
+        parsed.data.accountId,
+        req.ip,
+      );
+      return reply.send({ data: { revoked } });
+    },
+  );
 
   // Close my OTHER sessions, keep the one in use (any authenticated role).
-  app.post("/api/v1/me/sessions/revoke-others", async (req: FastifyRequest, reply: FastifyReply) => {
-    requireRole(req.session, ["admin", "recepcion", "instructor", "socio"]);
-    assertTenantContext(req.session);
-    if (!req.session.sessionId) {
-      throw new AppError("INTERNAL_ERROR", "No se pudo resolver la sesión actual");
-    }
-    const revoked = await sessionRevocation.revokeOthers(
-      req.session,
-      req.session.sessionId,
-      req.ip,
-    );
-    return reply.send({ data: { revoked } });
-  });
+  app.post(
+    "/api/v1/me/sessions/revoke-others",
+    async (req: FastifyRequest, reply: FastifyReply) => {
+      requireRole(req.session, ["admin", "recepcion", "instructor", "socio"]);
+      assertTenantContext(req.session);
+      if (!req.session.sessionId) {
+        throw new AppError("INTERNAL_ERROR", "No se pudo resolver la sesión actual");
+      }
+      const revoked = await sessionRevocation.revokeOthers(
+        req.session,
+        req.session.sessionId,
+        req.ip,
+      );
+      return reply.send({ data: { revoked } });
+    },
+  );
 
   // --- QR de ingreso y check-in supervisado (Entrega 5, spec 007) ------------
   const checkinService = new CheckinService(opts.db);
@@ -842,7 +931,11 @@ export async function buildServer(opts: AppOptions) {
     assertTenantContext(req.session);
     const limitRaw = (req.query as { limit?: string }).limit;
     const limit = limitRaw ? Math.min(Math.max(parseInt(limitRaw, 10) || 50, 1), 200) : 50;
-    const rows = await checkinService.recentCheckins(req.session, limit);
+    const rows = await checkinService.recentCheckins(
+      req.session,
+      limit,
+      (req.query as { today?: string }).today === "true",
+    );
     return reply.send({ data: rows });
   });
 
@@ -871,6 +964,59 @@ export async function buildServer(opts: AppOptions) {
     return reply.send({ data: { revoked: true } });
   });
 
+  const operations = new OperationsService(opts.db);
+  app.get<{ Params: { id: string } }>("/api/v1/sessions/:id/roster", async (req, reply) => {
+    requireRole(req.session, ["admin", "recepcion", "instructor"]);
+    assertTenantContext(req.session);
+    return reply.send({ data: await operations.roster(req.session, req.params.id) });
+  });
+  app.get("/api/v1/reports/daily", async (req, reply) => {
+    requireRole(req.session, ["admin", "recepcion"]);
+    assertTenantContext(req.session);
+    const parsed = DailyReportQuery.safeParse(req.query);
+    if (!parsed.success) throw validationError({ issues: parsed.error.issues });
+    return reply.send({ data: await operations.dailyReport(req.session, parsed.data.date) });
+  });
+  app.get("/api/v1/instructors", async (req, reply) => {
+    requireRole(req.session, ["admin", "recepcion", "instructor", "socio"]);
+    assertTenantContext(req.session);
+    return reply.send({ data: await operations.instructors(req.session.organizationId) });
+  });
+  app.get("/api/v1/staff", async (req, reply) => {
+    requireRole(req.session, ["admin"]);
+    assertTenantContext(req.session);
+    return reply.send({ data: await operations.staff(req.session) });
+  });
+  app.get("/api/v1/schedule", async (req, reply) => {
+    requireRole(req.session, ["admin", "recepcion", "instructor", "socio"]);
+    assertTenantContext(req.session);
+    const query = ScheduleQuery.safeParse(req.query);
+    if (!query.success) throw validationError({ issues: query.error.issues });
+    return reply.send({
+      data: await operations.schedule(
+        req.session.organizationId,
+        query.data.from ? new Date(query.data.from) : undefined,
+        query.data.to ? new Date(query.data.to) : undefined,
+      ),
+    });
+  });
+  app.get<{ Params: { id: string } }>("/api/v1/members/:id/overview", async (req, reply) => {
+    requireRole(req.session, ["admin", "recepcion"]);
+    assertTenantContext(req.session);
+    return reply.send({ data: await operations.memberOverview(req.session, req.params.id) });
+  });
+  app.get("/api/v1/me/overview", async (req, reply) => {
+    requireRole(req.session, ["socio"]);
+    assertTenantContext(req.session);
+    return reply.send({ data: await operations.portal(req.session) });
+  });
+  app.post<{ Params: { id: string } }>("/api/v1/members/:id/checkin", async (req, reply) => {
+    requireRole(req.session, ["admin", "recepcion"]);
+    assertTenantContext(req.session);
+    return reply.send({
+      data: await checkinService.checkinMember(req.session, req.params.id, req.ip),
+    });
+  });
   return app;
 }
 

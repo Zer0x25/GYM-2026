@@ -1,206 +1,330 @@
-/**
- * Member portal (socio): own profile, contact edit, and own memberships
- * (read-only, derived state). The socio role only ever reads /members/me
- * and /memberships/mine (server-validated) — the backend resolves the socio
- * from the session, so the UI cannot widen the scope.
- */
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
-import { CalendarCheck, CalendarX2, CalendarPlus } from "lucide-react";
-import { ApiError, api, formatCLP, type Booking, type Member, type Membership, type Plan, type Session } from "../api.js";
+import { QrCode, CalendarDays, Clock, ArrowUpRight, RefreshCw } from "lucide-react";
+import { api, type Booking } from "../api.js";
+import { useResource } from "../hooks/use-resource.js";
+import { PageHead, ErrorNotice, Loading } from "../components/ui/page.js";
 import { Button } from "../components/ui/button.js";
-import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card.js";
 import { Input, Label } from "../components/ui/input.js";
-import { MembershipStateBadge, BookingStateBadge } from "../components/ui/badge.js";
-
+import { MembershipStateBadge } from "../components/ui/badge.js";
+import { MemberQr } from "../components/MemberQr.js";
+import { Confirm } from "../components/ui/confirm.js";
 export function Portal() {
-  const [me, setMe] = useState<Member | null>(null);
-  const [contactEmail, setContactEmail] = useState("");
-  const [memberships, setMemberships] = useState<Membership[]>([]);
-  const [plans, setPlans] = useState<Plan[]>([]);
-  const [bookable, setBookable] = useState<Session[]>([]);
-  const [myBookings, setMyBookings] = useState<Booking[]>([]);
-  const [busyBooking, setBusyBooking] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  const load = useCallback(async () => {
+  const loader = useCallback(() => api.portalOverview(), []);
+  const { data, error, loading, reload } = useResource(loader);
+  const scheduleLoader = useCallback(
+    async () => ({ sessions: await api.schedule(), bookings: await api.myBookings() }),
+    [],
+  );
+  const schedule = useResource(scheduleLoader);
+  const [qr, setQr] = useState(""),
+    [qrError, setQrError] = useState<string | null>(null),
+    [busy, setBusy] = useState<string | null>(null),
+    [cancel, setCancel] = useState<Booking | null>(null),
+    [rotate, setRotate] = useState(false),
+    [email, setEmail] = useState(""),
+    [contactOpen, setContactOpen] = useState(false);
+  const loadQr = useCallback(async () => {
+    setQrError(null);
     try {
-      const [m, memberships_] = await Promise.all([api.me(), api.myMemberships()]);
-      setMe(m);
-      setContactEmail(m.contactEmail ?? "");
-      setMemberships(memberships_);
+      setQr((await api.myQr()).qrToken);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Error al cargar el perfil");
+      setQr("");
+      setQrError(e instanceof Error ? e.message : "No se pudo cargar tu QR");
     }
   }, []);
-
-  const loadClasses = useCallback(async () => {
-    try {
-      const [list, mine] = await Promise.all([api.listSessions(), api.myBookings()]);
-      setBookable(list.filter((s) => s.state === "programada"));
-      setMyBookings(mine);
-    } catch {
-      // Clases are optional; a socio without coverage still sees the profile.
-    }
-  }, []);
-
   useEffect(() => {
-    void load();
-    void loadClasses();
-    void api.listPlans().then(setPlans).catch(() => undefined);
-  }, [load, loadClasses]);
-
-  async function onReserve(sessionId: string) {
-    setBusyBooking(sessionId);
+    void loadQr();
+  }, [loadQr]);
+  async function reserve(id: string) {
+    if (busy) return;
+    setBusy(id);
     try {
-      await api.createBooking({ sessionId });
+      await api.createBooking({ sessionId: id });
       toast.success("Reserva confirmada");
-      await loadClasses();
+      await schedule.reload();
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : "No se pudo reservar");
+      toast.error(e instanceof Error ? e.message : "No se pudo reservar");
     } finally {
-      setBusyBooking(null);
+      setBusy(null);
     }
   }
-
-  async function onCancelBooking(bookingId: string) {
-    setBusyBooking(bookingId);
+  async function cancelBooking() {
+    if (!cancel) return;
+    setBusy(cancel.id);
     try {
-      await api.cancelBooking(bookingId, { type: "temprana" });
+      await api.cancelBooking(cancel.id, { type: "temprana" });
       toast.success("Reserva cancelada");
-      await loadClasses();
+      setCancel(null);
+      await schedule.reload();
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : "No se pudo cancelar");
+      toast.error(e instanceof Error ? e.message : "No se pudo cancelar");
     } finally {
-      setBusyBooking(null);
+      setBusy(null);
     }
   }
-
-  async function onSave(e: FormEvent) {
+  async function save(e: FormEvent) {
     e.preventDefault();
-    setBusy(true);
-    setError(null);
+    if (!data) return;
+    setBusy("contact");
     try {
-      const updated = await api.updateContact(me!.id, contactEmail.trim() || null);
-      setMe(updated);
-      toast.success("Contacto actualizado.");
+      await api.updateContact(data.member.id, email.trim() || null);
+      toast.success("Contacto actualizado");
+      setContactOpen(false);
+      await reload();
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : "Error al guardar");
+      toast.error(e instanceof Error ? e.message : "No se pudo guardar");
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
-
+  const bookings = new Map(
+    (schedule.data?.bookings ?? [])
+      .filter((b) => b.state === "confirmada")
+      .map((b) => [b.sessionId, b]),
+  );
+  const upcoming = (schedule.data?.sessions ?? []).filter(
+    (s) => s.state === "programada" && s.type !== "bloqueo" && new Date(s.startsAt) > new Date(),
+  );
+  const mine = upcoming.filter((s) => bookings.has(s.id));
+  const active = data?.memberships.find((m) => m.state === "active");
   return (
-    <section aria-labelledby="portal-title" className="mx-auto max-w-2xl space-y-6">
-      <div>
-        <h1 id="portal-title" className="text-2xl font-bold">Mi perfil</h1>
-        <p className="text-sm text-muted-foreground">Solo podés ver y editar tu propia información.</p>
-      </div>
-
-      {error ? (
-        <p role="alert" className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</p>
-      ) : null}
-
-      <Card>
-        <CardHeader><CardTitle className="text-base">Datos de contacto</CardTitle></CardHeader>
-        <CardContent>
-          {me ? (
-            <form onSubmit={onSave} className="space-y-4">
-              <p className="font-medium">{me.fullName}</p>
-              <div className="space-y-1">
-                <Label htmlFor="contactEmail">Email de contacto</Label>
-                <Input id="contactEmail" type="email" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} />
+    <section>
+      <PageHead
+        eyebrow={
+          data?.member.fullName ? `Hola, ${data.member.fullName.split(" ")[0]}` : "Tu gimnasio"
+        }
+        title="Mi acceso"
+        description="Tu QR, tu membresía y tu próxima clase, siempre a mano."
+      />
+      <ErrorNotice message={error} retry={() => void reload()} />
+      {loading && !data ? (
+        <Loading />
+      ) : (
+        <div className="grid gap-6 md:grid-cols-[20rem_1fr]">
+          <div className="space-y-5">
+            <article className="rounded-2xl border bg-card p-6 text-center">
+              <div className="mb-4 flex items-center justify-center gap-2 text-sm font-semibold">
+                <QrCode className="h-4 w-4" />
+                Mi QR de ingreso
               </div>
-              <Button type="submit" disabled={busy}>{busy ? "Guardando…" : "Guardar"}</Button>
-            </form>
-          ) : (
-            <p className="text-sm text-muted-foreground">Cargando perfil…</p>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <CalendarCheck className="h-5 w-5" /> Mis membresías
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {memberships.length === 0 ? (
-            <p className="py-4 text-center text-sm text-muted-foreground">No tenés membresías activas.</p>
-          ) : (
-            <ul className="divide-y">
-              {memberships.map((m) => {
-                const plan = plans.find((p) => p.id === m.planId);
-                return (
-                  <li key={m.id} className="flex items-center justify-between py-3">
+              <ErrorNotice message={qrError} retry={() => void loadQr()} />
+              {qr && <MemberQr token={qr} />}
+              <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
+                Muestra este código en recepción. El ingreso depende de tu cobertura vigente.
+              </p>
+              <Button variant="ghost" size="sm" className="mt-3" onClick={() => setRotate(true)}>
+                <RefreshCw className="h-3 w-3" />
+                Renovar mi código
+              </Button>
+            </article>
+            <article className="rounded-2xl border bg-card p-6">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Mi membresía
+              </p>
+              {active ? (
+                <>
+                  <div className="mt-3 flex items-center justify-between gap-2">
+                    <h2 className="font-semibold">{active.plan.name}</h2>
+                    <MembershipStateBadge state="active" />
+                  </div>
+                  <p className="mt-3 text-sm text-muted-foreground">
+                    Vigente hasta {new Date(active.endAt!).toLocaleDateString("es-CL")}
+                  </p>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    {active.plan.coverage === "unlimited"
+                      ? "Cobertura ilimitada"
+                      : active.plan.coverage === "limited"
+                        ? "Cobertura limitada"
+                        : "Sin cobertura de ingreso"}
+                  </p>
+                </>
+              ) : (
+                <p className="mt-3 text-sm">
+                  {data?.memberships.length
+                    ? "Tu membresía requiere revisión o renovación en recepción."
+                    : "Solicita un plan en recepción para comenzar."}
+                </p>
+              )}
+              {data?.memberships
+                .filter((m) => m.id !== active?.id)
+                .map((m) => (
+                  <div
+                    key={m.id}
+                    className="mt-4 flex items-center justify-between border-t pt-3 text-xs"
+                  >
+                    <span>{m.plan.name}</span>
+                    <MembershipStateBadge state={m.state ?? "pending_payment"} />
+                  </div>
+                ))}
+            </article>
+            <article className="rounded-2xl border bg-card p-6">
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-semibold">Mi contacto</h2>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setEmail(data?.member.contactEmail ?? "");
+                    setContactOpen(!contactOpen);
+                  }}
+                >
+                  Editar
+                </Button>
+              </div>
+              <p className="mt-2 break-all text-sm text-muted-foreground">
+                {data?.member.contactEmail ?? "Sin email de contacto"}
+              </p>
+              {contactOpen && (
+                <form className="mt-4 space-y-3" onSubmit={save}>
+                  <Label htmlFor="portal-email">Email de contacto</Label>
+                  <Input
+                    id="portal-email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Tu email de inicio de sesión se mantiene.
+                  </p>
+                  <Button type="submit" size="sm" disabled={busy !== null}>
+                    Guardar contacto
+                  </Button>
+                </form>
+              )}
+            </article>
+          </div>
+          <div className="space-y-6">
+            <article className="rounded-2xl border bg-card p-6">
+              <h2 className="flex items-center gap-2 text-lg font-semibold">
+                <CalendarDays className="h-5 w-5 text-primary" />
+                Mis próximas clases
+              </h2>
+              {schedule.error ? (
+                <ErrorNotice message={schedule.error} retry={() => void schedule.reload()} />
+              ) : schedule.loading && !schedule.data ? (
+                <Loading />
+              ) : mine.length ? (
+                mine.map((s) => (
+                  <div
+                    key={s.id}
+                    className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t pt-4"
+                  >
                     <div>
-                      <p className="font-medium">{plan?.name ?? "Plan"}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {plan ? formatCLP(plan.priceCents) : ""}
-                        {m.endAt ? ` · vence ${new Date(m.endAt).toLocaleDateString("es-CL")}` : ""}
+                      <p className="font-medium">{s.title}</p>
+                      <p className="mt-1 text-sm text-muted-foreground">{s.instructorName}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {new Date(s.startsAt).toLocaleString("es-CL", {
+                          dateStyle: "medium",
+                          timeStyle: "short",
+                        })}
                       </p>
                     </div>
-                    <MembershipStateBadge state={m.state ?? "pending_payment"} />
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <CalendarPlus className="h-5 w-5" /> Reservar clase
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {(() => {
-            const booked = new Map(myBookings.filter((b) => b.state === "confirmada").map((b) => [b.sessionId, b]));
-            if (bookable.length === 0) {
-              return <p className="py-4 text-center text-sm text-muted-foreground">No hay clases disponibles para reservar.</p>;
-            }
-            return (
-              <ul className="divide-y">
-                {bookable.map((s) => {
-                  const mine = booked.get(s.id);
-                  return (
-                    <li key={s.id} className="flex items-center justify-between py-3">
-                      <div>
-                        <p className="font-medium">{s.instructorId}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {new Date(s.startsAt).toLocaleString("es-CL", { dateStyle: "medium", timeStyle: "short" })}
-                        </p>
-                      </div>
-                      {mine ? (
-                        <div className="flex items-center gap-2">
-                          <BookingStateBadge state={mine.state} />
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={busyBooking === mine.id}
-                            onClick={() => void onCancelBooking(mine.id)}
-                          >
-                            <CalendarX2 className="h-4 w-4" /> Cancelar
-                          </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={busy !== null}
+                      onClick={() => setCancel(bookings.get(s.id)!)}
+                    >
+                      Cancelar reserva
+                    </Button>
+                  </div>
+                ))
+              ) : (
+                <p className="mt-5 text-sm text-muted-foreground">
+                  Todavía no tienes reservas próximas. Elige una clase abajo.
+                </p>
+              )}
+            </article>
+            <article className="rounded-2xl border bg-card p-6">
+              <h2 className="text-lg font-semibold">Encuentra tu próxima clase</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Reserva tu lugar. La cobertura y el cupo se verifican al confirmar.
+              </p>
+              {schedule.error ? (
+                <ErrorNotice message={schedule.error} />
+              ) : (
+                <div className="mt-5 divide-y">
+                  {upcoming
+                    .filter((s) => !bookings.has(s.id))
+                    .map((s) => (
+                      <div
+                        key={s.id}
+                        className="flex flex-wrap items-center justify-between gap-3 py-5"
+                      >
+                        <div>
+                          <p className="font-semibold">{s.title}</p>
+                          <p className="mt-1 text-sm text-muted-foreground">
+                            {s.instructorName} ·{" "}
+                            {s.type === "cita"
+                              ? "Personalizada"
+                              : s.type === "fija"
+                                ? "Personalizada fija"
+                                : "Grupal"}
+                          </p>
+                          <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+                            <Clock className="h-3 w-3" />
+                            {new Date(s.startsAt).toLocaleString("es-CL", {
+                              dateStyle: "medium",
+                              timeStyle: "short",
+                            })}{" "}
+                            · {s.remaining} plazas
+                          </p>
                         </div>
-                      ) : (
-                        <Button size="sm" disabled={busyBooking === s.id} onClick={() => void onReserve(s.id)}>
-                          Reservar
+                        <Button
+                          size="sm"
+                          disabled={busy !== null || s.remaining === 0}
+                          onClick={() => void reserve(s.id)}
+                        >
+                          {busy === s.id
+                            ? "Reservando…"
+                            : s.remaining === 0
+                              ? "Completa"
+                              : "Reservar"}
+                          <ArrowUpRight className="h-3 w-3" />
                         </Button>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-            );
-          })()}
-        </CardContent>
-      </Card>
+                      </div>
+                    ))}
+                  {upcoming.length === 0 && !schedule.loading && (
+                    <p className="py-5 text-sm text-muted-foreground">
+                      No hay clases publicadas próximamente.
+                    </p>
+                  )}
+                </div>
+              )}
+            </article>
+          </div>
+        </div>
+      )}
+      <Confirm
+        open={cancel !== null}
+        onOpenChange={(o) => !o && setCancel(null)}
+        title="Cancelar reserva"
+        description="La política de cancelación de la clase determina si se devuelve el beneficio. Tu plaza se libera al confirmar."
+        onConfirm={() => void cancelBooking()}
+        busy={busy !== null}
+        label="Confirmar cancelación"
+        destructive
+      />
+      <Confirm
+        open={rotate}
+        onOpenChange={setRotate}
+        title="Renovar mi QR"
+        description="Tu código anterior dejará de funcionar. Usa el nuevo código en recepción."
+        onConfirm={() => {
+          setBusy("qr");
+          void api
+            .rotateQr()
+            .then((r) => {
+              setQr(r.qrToken);
+              setQrError(null);
+              setRotate(false);
+            })
+            .catch((e) => toast.error(e.message))
+            .finally(() => setBusy(null));
+        }}
+        busy={busy === "qr"}
+      />
     </section>
   );
 }

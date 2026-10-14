@@ -1,3 +1,4 @@
+import type { OfflineLeaseResponse } from "@gym/contracts";
 /**
  * Minimal API client for the GYM API.
  *
@@ -32,9 +33,11 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     error?: { code: string; message: string; details?: unknown };
   };
   if (!res.ok) {
+    if (res.status === 401) window.dispatchEvent(new Event("gym:session-expired"));
     const err = payload.error ?? { code: "HTTP_ERROR", message: `HTTP ${res.status}` };
     throw new ApiError(res.status, err.code, err.message, err.details);
   }
+  if (method !== "GET") window.dispatchEvent(new Event("gym:data-changed"));
   return payload.data as T;
 }
 
@@ -201,6 +204,7 @@ export interface CreateSessionInput {
 }
 
 export interface Booking {
+  attendance?: "asistio" | "ausencia" | null;
   id: string;
   organizationId: string;
   sessionId: string;
@@ -229,6 +233,8 @@ export interface BookingCancellation {
  *  error — the receptionist sees the reason and can act on it. */
 export interface CheckinResult {
   allowed: boolean;
+  memberId?: string;
+  fullName?: string;
   member?: { id: string; fullName: string };
   coverage?: "unlimited" | "limited";
   membershipEndsAt?: string;
@@ -246,6 +252,49 @@ export interface CheckinFeedEntry {
 }
 
 export const api = {
+  roster: (id: string) => request<Booking[]>("GET", `/sessions/${id}/roster`),
+  dailyReport: (date: string) => request<DailyReport>("GET", `/reports/daily?date=${date}`),
+  memberOverview: (id: string) => request<MemberOverview>("GET", `/members/${id}/overview`),
+  portalOverview: () => request<PortalOverview>("GET", "/me/overview"),
+  schedule: (from?: string, to?: string) =>
+    request<ScheduledSession[]>(
+      "GET",
+      `/schedule?${new URLSearchParams({ ...(from ? { from } : {}), ...(to ? { to } : {}) })}`,
+    ),
+  instructors: () => request<Instructor[]>("GET", "/instructors"),
+  staff: () => request<Staff[]>("GET", "/staff"),
+  createStaff: (input: {
+    email: string;
+    password: string;
+    name: string;
+    role: "admin" | "recepcion" | "instructor";
+  }) => request<{ accountId: string }>("POST", "/staff", input),
+  checkinMember: (id: string) => request<CheckinResult>("POST", `/members/${id}/checkin`),
+  rotateQr: () => request<{ qrToken: string }>("POST", "/me/qr/rotate"),
+  reissueQr: (id: string) => request<{ qrToken: string }>("POST", `/members/${id}/qr/reissue`),
+  revokeQr: (id: string) => request<{ revoked: boolean }>("POST", `/members/${id}/qr/revoke`),
+  accountSessions: (accountId: string) =>
+    request<AccountSession[]>("GET", `/admin/sessions?accountId=${encodeURIComponent(accountId)}`),
+  revokeSession: (sessionId: string) => request("POST", "/admin/sessions/revoke", { sessionId }),
+  revokeOthers: () => request("POST", "/me/sessions/revoke-others"),
+  ownDevices: () => request<Device[]>("GET", "/offline/devices"),
+  devices: () => request<Device[]>("GET", "/devices"),
+  registerDevice: (accountId: string, label: string) =>
+    request<Device>("POST", "/devices", { accountId, label }),
+  revokeDevice: (id: string) => request<Device>("POST", `/devices/${id}/revoke`),
+  offlinePolicy: () =>
+    request<{ enabled: boolean; freshnessHours: number }>("GET", "/offline/policy"),
+  setOfflinePolicy: (enabled: boolean) => request("POST", "/offline/policy", { enabled }),
+  offlineLease: (deviceId: string) => request<OfflineLease>("POST", "/offline/lease", { deviceId }),
+  offlineSync: (deviceId: string, events: OfflineEvent[]) =>
+    request<{ results: SyncResult[] }>("POST", "/offline/lease/sync", { deviceId, events }),
+  offlineEvents: () => request<ServerOfflineEvent[]>("GET", "/offline/events"),
+  reconstruct: (deviceId: string) =>
+    request<{ eventsChecked: number; chainIntact: boolean; brokenAt: string | null }>(
+      "POST",
+      "/offline/reconstruct",
+      { deviceId },
+    ),
   session: () => request<SessionData>("GET", "/auth/session"),
   signIn: (email: string, password: string) =>
     fetch("/api/auth/sign-in/email", {
@@ -271,7 +320,15 @@ export const api = {
       method: "POST",
       credentials: "include",
       headers: { origin: window.location.origin },
-    }).then(() => undefined),
+    }).then(async (res) => {
+      if (!res.ok)
+        throw new ApiError(
+          res.status,
+          "SIGN_OUT_FAILED",
+          "No se pudo cerrar la sesión. Reintenta.",
+        );
+      window.dispatchEvent(new Event("gym:session-expired"));
+    }),
   listMembers: (q?: string) =>
     request<Member[]>("GET", `/members${q ? `?q=${encodeURIComponent(q)}` : ""}`),
   createMember: (input: { fullName: string; contactEmail?: string | null }) =>
@@ -326,31 +383,125 @@ export const api = {
     request<ClassTemplate>("POST", "/class-templates", input),
 
   listSessions: (from?: string, to?: string) =>
-    request<Session[]>("GET", `/sessions${from || to ? `?${from ? `from=${from}` : ""}${to ? `${from ? "&" : ""}to=${to}` : ""}` : ""}`),
+    request<Session[]>(
+      "GET",
+      `/sessions${from || to ? `?${from ? `from=${from}` : ""}${to ? `${from ? "&" : ""}to=${to}` : ""}` : ""}`,
+    ),
   getSession: (id: string) => request<Session>("GET", `/sessions/${id}`),
   createSession: (input: CreateSessionInput) => request<Session>("POST", "/sessions", input),
   cancelSession: (id: string) => request<Session>("POST", `/sessions/${id}/cancel`),
 
   agenda: (instructorId: string, from?: string, to?: string) =>
-    request<Session[]>("GET", `/agenda?instructorId=${instructorId}${from ? `&from=${from}` : ""}${to ? `&to=${to}` : ""}`),
+    request<Session[]>(
+      "GET",
+      `/agenda?instructorId=${instructorId}${from ? `&from=${from}` : ""}${to ? `&to=${to}` : ""}`,
+    ),
 
   createBooking: (input: { sessionId: string; memberId?: string }) =>
     request<Booking>("POST", "/bookings", input),
   myBookings: () => request<Booking[]>("GET", "/bookings/mine"),
-  listBookings: (sessionId: string) => request<Booking[]>("GET", `/bookings?sessionId=${sessionId}`),
+  listBookings: (sessionId: string) =>
+    request<Booking[]>("GET", `/bookings?sessionId=${sessionId}`),
   cancelBooking: (id: string, input: { type: CancellationType; reason?: string }) =>
-    request<{ booking: Booking; cancellation: BookingCancellation }>("POST", `/bookings/${id}/cancel`, input),
+    request<{ booking: Booking; cancellation: BookingCancellation }>(
+      "POST",
+      `/bookings/${id}/cancel`,
+      input,
+    ),
   markAttendance: (id: string, outcome: "asistio" | "ausencia") =>
     request<Booking>("POST", `/bookings/${id}/attendance`, { outcome }),
 
   // --- Entrega 5: QR de ingreso y check-in supervisado (spec 007) ----------
   /** Supervised check-in: reception scans a member's QR. Coverage denial is
    *  a business decision (200 + allowed:false), never a transport error. */
-  checkin: (qrToken: string) =>
-    request<CheckinResult>("POST", "/checkin", { qrToken }),
+  checkin: (qrToken: string) => request<CheckinResult>("POST", "/checkin", { qrToken }),
   /** The socio's own QR token (REQ-7): only ever their own. */
   myQr: () => request<{ qrToken: string }>("GET", "/me/qr"),
   /** Live feed of the organization's recent check-ins (mostrador view). */
   recentCheckins: (limit = 50) =>
-    request<CheckinFeedEntry[]>("GET", `/checkins/recent?limit=${limit}`),
+    request<CheckinFeedEntry[]>("GET", `/checkins/recent?limit=${limit}&today=true`),
 };
+
+export interface Instructor {
+  id: string;
+  name: string;
+}
+export interface Staff extends Instructor {
+  email: string;
+  role: "admin" | "recepcion" | "instructor";
+}
+export interface ScheduledSession extends Session {
+  title: string;
+  instructorName: string;
+  booked: number;
+  remaining: number;
+}
+export interface PortalOverview {
+  member: Member;
+  memberships: (Membership & { plan: Plan })[];
+}
+export interface MemberOverview extends PortalOverview {
+  payments: Payment[];
+}
+export interface AccountSession {
+  id: string;
+  createdAt: string;
+  expiresAt: string;
+  ipAddress: string | null;
+  userAgent: string | null;
+}
+export interface Device {
+  id: string;
+  accountId: string;
+  label: string;
+  state: "habilitado" | "revocado";
+  createdAt: string;
+}
+export interface OfflineMember {
+  id: string;
+  name: string;
+  qrToken: string | null;
+  membershipId: string | null;
+  coverage: "none" | "unlimited" | "limited";
+  endAt: string | null;
+  price: number;
+  proof: string;
+}
+export type OfflineLease = OfflineLeaseResponse;
+
+export interface OfflineEvent {
+  eventId: string;
+  type: "cobro_provisional" | "ingreso_contingencia" | "excepcion";
+  folioExterno: string;
+  memberId?: string;
+  capturedAt: string;
+  amountCents?: number;
+  method?: "cash" | "transfer";
+  payload: string;
+}
+export interface SyncResult {
+  eventId: string;
+  status: "sincronizado" | "duplicado" | "rechazado";
+  reason?: string;
+  paymentId?: string;
+}
+export interface ServerOfflineEvent {
+  id: string;
+  deviceId: string;
+  eventId: string;
+  folioExterno: string;
+  type: string;
+  state: string;
+  rejectReason: string | null;
+  createdAt: string;
+}
+
+export interface DailyReport {
+  date: string;
+  timeZone: string;
+  cash: number;
+  transfer: number;
+  income: number;
+  movements: number;
+  shifts: CashSession[];
+}

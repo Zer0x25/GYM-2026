@@ -8,7 +8,7 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq, sql } from "drizzle-orm";
-import { createDb, members, organizations, type Database } from "@gym/db";
+import { createDb, authUsers, members, organizations, type Database } from "@gym/db";
 import { MembersService } from "./services/members.js";
 import { resolveSession } from "./resolve-session.js";
 import { ORG_A, ORG_B, SOCIO_A1, SOCIO_A2 } from "./fixtures.js";
@@ -28,9 +28,27 @@ describe.skipIf(!DATABASE_URL)("members integration", () => {
       { id: ORG_A, name: "Gimnasio A" },
       { id: ORG_B, name: "Gimnasio B" },
     ]);
+    await db.insert(authUsers).values([
+      { id: "member-account-1", name: SOCIO_A1.fullName, email: SOCIO_A1.email },
+      {
+        id: "00000000-0000-4000-8000-000000000001",
+        name: SOCIO_A2.fullName,
+        email: SOCIO_A2.email,
+      },
+    ]);
     await db.insert(members).values([
-      { organizationId: ORG_A, fullName: SOCIO_A1.fullName, contactEmail: SOCIO_A1.email },
-      { organizationId: ORG_A, fullName: SOCIO_A2.fullName, contactEmail: SOCIO_A2.email },
+      {
+        organizationId: ORG_A,
+        fullName: SOCIO_A1.fullName,
+        contactEmail: SOCIO_A1.email,
+        accountId: "member-account-1",
+      },
+      {
+        organizationId: ORG_A,
+        fullName: SOCIO_A2.fullName,
+        contactEmail: SOCIO_A2.email,
+        accountId: "00000000-0000-4000-8000-000000000001",
+      },
       { organizationId: ORG_B, fullName: "Socio B Uno", contactEmail: "socio.b1@gym.test" },
     ]);
   });
@@ -41,10 +59,7 @@ describe.skipIf(!DATABASE_URL)("members integration", () => {
 
   it("CA-2: an actor of org A cannot fetch a member of org B (404, no data leak)", async () => {
     const service = new MembersService(db);
-    const memberB = await db
-      .select()
-      .from(members)
-      .where(eq(members.organizationId, ORG_B));
+    const memberB = await db.select().from(members).where(eq(members.organizationId, ORG_B));
     const memberBId = memberB[0]!.id;
     await expect(
       service.getById({ organizationId: ORG_A, role: "admin" }, memberBId),
@@ -82,7 +97,11 @@ describe.skipIf(!DATABASE_URL)("members integration", () => {
     const s1 = rowsA.find((r) => r.contactEmail === SOCIO_A1.email)!;
     const s2 = rowsA.find((r) => r.contactEmail === SOCIO_A2.email)!;
     await expect(
-      service.updateContact({ organizationId: ORG_A, role: "socio", memberId: s1.id }, s2.id, "x@y.cl"),
+      service.updateContact(
+        { organizationId: ORG_A, role: "socio", memberId: s1.id },
+        s2.id,
+        "x@y.cl",
+      ),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
     const updated = await service.updateContact(
       { organizationId: ORG_A, role: "socio", memberId: s1.id },
@@ -93,14 +112,10 @@ describe.skipIf(!DATABASE_URL)("members integration", () => {
   });
 
   it("CA-1/CA-2: resolveSession scopes by tenant from stored data only", async () => {
-    // Any non-uuid actor id: the tenant comes from members.contact_email,
-    // never from the account id the client could influence.
-    const ctx = await resolveSession(db, { id: "no-importa", email: SOCIO_A1.email }).catch(
-      () => undefined,
-    );
-    // If the account id is a uuid column it may error; the socio path only
-    // depends on the email. Seed a real uuid to exercise the staff query too.
-    expect(ctx ?? true).toBeTruthy();
+    const ctx = await resolveSession(db, { id: "no-importa", email: SOCIO_A1.email });
+    expect(ctx).toBeUndefined(); // Email de contacto no concede identidad.
+    const own = await resolveSession(db, { id: "member-account-1", email: SOCIO_A1.email });
+    expect(own).toMatchObject({ role: "socio", organizationId: ORG_A });
   });
 
   it("CA-1/CA-2: socio resolution links the session to the member of its org", async () => {

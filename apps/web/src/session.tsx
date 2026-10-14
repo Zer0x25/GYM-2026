@@ -44,12 +44,20 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     void reload();
+    const expire = () => setSession(null);
+    const reconnect = () => void reload();
+    window.addEventListener("gym:session-expired", expire);
+    window.addEventListener("online", reconnect);
+    return () => {
+      window.removeEventListener("gym:session-expired", expire);
+      window.removeEventListener("online", reconnect);
+    };
   }, [reload]);
 
   const signIn = useCallback(async (email: string, password: string) => {
     await api.signIn(email, password);
-    await reload();
-  }, [reload]);
+    setSession(await api.session());
+  }, []);
 
   const signOut = useCallback(async () => {
     await api.signOut();

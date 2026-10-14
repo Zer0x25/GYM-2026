@@ -2,7 +2,7 @@
   "name": "gym-2026",
   "private": true,
   "version": "0.1.0",
-  "description": "App GYM — plataforma web multi-organización para gimnasios independientes (MVP v1.0)",
+  "description": "App GYM \u2014 plataforma web multi-organizaci\u00f3n para gimnasios independientes (MVP v1.0)",
   "type": "module",
   "packageManager": "pnpm@9.15.0",
   "engines": {
@@ -16,10 +16,17 @@
     "verify": "./scripts/verify.sh",
     "seed:dev": "pnpm --filter @gym/api seed:dev",
     "db:generate": "pnpm --filter @gym/db db:generate",
-    "db:migrate": "pnpm --filter @gym/db db:migrate"
+    "db:migrate": "pnpm --filter @gym/db db:migrate",
+    "dev": "node scripts/dev.mjs",
+    "dev:prepare": "node scripts/dev.mjs --prepare",
+    "test:integration": "node scripts/integration.mjs",
+    "test:e2e": "node scripts/e2e.mjs",
+    "test:coverage": "node scripts/coverage.mjs",
+    "start": "node scripts/dev.mjs --preview"
   },
   "devDependencies": {
     "@eslint/js": "^9.13.0",
+    "@playwright/test": "^1.64.1",
     "@types/node": "^22.9.0",
     "drizzle-orm": "^0.36.0",
     "eslint": "^9.13.0",
