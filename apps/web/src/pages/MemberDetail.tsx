@@ -1,4 +1,5 @@
 import { paymentMethodLabel } from "../lib/payment-method.js";
+import { CreditPeriods } from "../components/CreditPeriods.js";
 import { useCallback, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -119,6 +120,7 @@ export function MemberDetail() {
       <ErrorNotice message={error} />
       <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="min-w-0 space-y-6">
+          <CreditPeriods periods={profile.creditPeriods ?? []} />
           <div className="rounded-2xl border bg-card p-6">
             <h2 className="mb-4 font-semibold">Membresías y cobertura</h2>
             {profile.memberships.map((m) => (

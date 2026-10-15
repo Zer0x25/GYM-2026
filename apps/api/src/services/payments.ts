@@ -23,7 +23,14 @@
 import { and, eq } from "drizzle-orm";
 import { TransbankEvidence } from "@gym/contracts";
 import type { Database } from "@gym/db";
-import { cashMovements, cashSessions, memberships, payments, plans } from "@gym/db";
+import {
+  cashMovements,
+  cashSessions,
+  membershipPeriods,
+  memberships,
+  payments,
+  plans,
+} from "@gym/db";
 import { conflict, forbidden, notFound } from "../errors.js";
 import { AuditService } from "./audit.js";
 
@@ -155,7 +162,16 @@ export class PaymentsService {
       if (!validated) throw conflict("El pago cambió de estado durante la validación");
 
       // Extend the membership window from the previous end (no gaps).
-      const membership = await this.findMembership(actor.organizationId, payment.membershipId, tx);
+      const [membership] = await tx
+        .select()
+        .from(memberships)
+        .where(
+          and(
+            eq(memberships.organizationId, actor.organizationId),
+            eq(memberships.id, payment.membershipId),
+          ),
+        )
+        .for("update");
       const plan = await this.findPlan(actor.organizationId, payment.planId, tx);
       if (!membership || !plan) throw notFound("Membresía o plan no encontrado");
 
@@ -166,8 +182,28 @@ export class PaymentsService {
 
       await tx
         .update(memberships)
-        .set({ startAt: start, endAt: end, lastPaymentId: paymentId })
+        .set({
+          startAt: previousEnd && previousEnd > now ? (membership.startAt ?? start) : start,
+          endAt: end,
+          lastPaymentId: paymentId,
+        })
         .where(eq(memberships.id, membership.id));
+
+      await tx.insert(membershipPeriods).values({
+        organizationId: actor.organizationId,
+        memberId: membership.memberId,
+        membershipId: membership.id,
+        paymentId,
+        startsAt: start,
+        endsAt: end,
+        coverage: plan.coverage,
+        planName: plan.name,
+        priceCents: plan.priceCents,
+        durationDays: plan.durationDays,
+        grupalCredits: plan.grupalCredits,
+        fijaCredits: plan.fijaCredits,
+        citaCredits: plan.citaCredits,
+      });
 
       // Cash movement: created here and only here (validated money), and
       // ALWAYS inside an open session — validated money has a responsible

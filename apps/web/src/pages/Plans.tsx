@@ -24,20 +24,42 @@ export function Plans() {
     [price, setPrice] = useState("30000"),
     [days, setDays] = useState("30"),
     [coverage, setCoverage] = useState<"none" | "unlimited" | "limited">("unlimited"),
+    [quotas, setQuotas] = useState({ grupal: "", fija: "", cita: "" }),
     [formError, setFormError] = useState<string | null>(null);
   async function create(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
     setFormError(null);
     try {
+      if (
+        coverage === "limited" &&
+        Object.values(quotas).some(
+          (value) =>
+            value === "" ||
+            !Number.isInteger(Number(value)) ||
+            Number(value) < 0 ||
+            Number(value) > 100000,
+        )
+      )
+        throw new Error("Configura las tres cantidades de créditos por período.");
       await api.createPlan({
         name: name.trim(),
         priceCents: Number(price),
         durationDays: Number(days),
         coverage,
+        ...(coverage === "limited"
+          ? {
+              classCredits: {
+                grupal: Number(quotas.grupal),
+                fija: Number(quotas.fija),
+                cita: Number(quotas.cita),
+              },
+            }
+          : {}),
       });
       setOpen(false);
       setName("");
+      setQuotas({ grupal: "", fija: "", cita: "" });
       toast.success("Plan creado");
       await reload();
     } catch (e) {
@@ -85,6 +107,13 @@ export function Plans() {
                     ? "Cobertura limitada"
                     : "Cobertura ilimitada"}
               </p>
+              {p.coverage === "limited" && (
+                <p className="mt-3 text-sm">
+                  Por período: {p.grupalCredits ?? "sin configurar"} grupales ·{" "}
+                  {p.fijaCredits ?? "sin configurar"} fijas · {p.citaCredits ?? "sin configurar"}{" "}
+                  citas. Sin acumulación.
+                </p>
+              )}
               <p className="mt-3 text-xs text-muted-foreground">
                 Se activa después de validar el pago.
               </p>
@@ -150,6 +179,38 @@ export function Plans() {
               <option value="limited">Limitada</option>
               <option value="none">Sin ingreso</option>
             </Select>
+            {coverage === "limited" && (
+              <fieldset className="space-y-3 rounded-lg border p-3">
+                <legend className="px-1 text-sm font-medium">
+                  Créditos separados · sin acumulación
+                </legend>
+                {(
+                  [
+                    ["grupal", "Créditos grupales por período"],
+                    ["fija", "Créditos de fijas por período"],
+                    ["cita", "Créditos de citas por período"],
+                  ] as const
+                ).map(([key, label]) => (
+                  <div key={key}>
+                    <Label htmlFor={`quota-${key}`}>{label}</Label>
+                    <Input
+                      id={`quota-${key}`}
+                      type="number"
+                      min="0"
+                      max="100000"
+                      step="1"
+                      required
+                      value={quotas[key]}
+                      onChange={(e) => setQuotas({ ...quotas, [key]: e.target.value })}
+                    />
+                  </div>
+                ))}
+                <p className="text-xs text-muted-foreground">
+                  0 no habilita esa modalidad. Cada período validado conserva sus propias
+                  condiciones.
+                </p>
+              </fieldset>
+            )}
             <Button type="submit" disabled={busy || !name.trim()}>
               {busy ? "Creando…" : "Crear plan"}
             </Button>

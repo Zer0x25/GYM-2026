@@ -50,7 +50,13 @@
 
 ## Meta actual — App GYM funcional (2026-10-14)
 
-Unidad activa: 015-recuperacion-contacto
+Unidad activa: 016-periodos-creditos
+
+## Unidad 016 — Períodos y créditos por modalidad — Tier 1 — Implementada/verificada; revisión humana pendiente
+
+- Autoridad: «continua» y respuesta explícita a cuotas separadas por modalidad/período, sin acumulación; ADR 0009 registrado antes de código. Spec 016, revisión humana al cierre y commits locales sin push.
+- Evidencia final: gate raíz salida 0, 197/197 (145 API, 36 web, 11 contratos, 5 db), sin omitidos; integración completa 14 suites sin omitidos, E2E 11/11, cobertura 64 pruebas/97.23% statements-lines, booking-credits 100%. Trece casos de créditos prueban límite concurrente entre sesiones, última plaza, cancelación multi-clase/multi-socio sin deadlock, restitución/reclamo único, snapshot y renovación consecutiva sin perder inicio. Migración desde 0012 probada en BDs ficticias limitada/ilimitada, sin saldos inventados ni pérdida de reservas; captura móvil inspeccionada. Detalle por CA en spec 016.
+- Checkpoint final: unidad 016 como commit local por ID, base fe715cd; sin push. Revisiones humanas 010/012/013/014/015/016 pendientes. Fuente/decisión cuantitativa en ADR 0009; no alterar históricos. Siguiente unidad: pausas autorizadas/cambio al siguiente período y versiones editables de catálogo, concretar reglas antes de editar; abonos/conciliación, exportaciones, menores, correo real y staging/G2 siguen pendientes. Matriz actualizada; meta abierta y contador 0.
 
 ## Unidad 015 — Recuperación y contacto verificado — Tier 1 — Implementada/verificada; revisión humana y entrega real pendientes
 

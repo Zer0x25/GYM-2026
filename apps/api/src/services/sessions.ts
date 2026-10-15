@@ -13,6 +13,7 @@ import { and, eq, gt, lt, or, sql } from "drizzle-orm";
 import type { Database } from "@gym/db";
 import { classTemplates, sessions } from "@gym/db";
 import { conflict, forbidden, notFound, validationError } from "../errors.js";
+import { BookingsService } from "./bookings.js";
 import { AuditService } from "./audit.js";
 
 export interface SessionActor {
@@ -170,6 +171,7 @@ export class SessionsService {
 
   /** Cancels a session (el gimnasio cancela). Bookings keep their own policy. */
   async cancel(actor: SessionActor, sessionId: string) {
+    if (actor.role !== "admin" && actor.role !== "recepcion") throw forbidden();
     const session = await this.getById(actor.organizationId, sessionId);
     if (session.state === "cancelada") throw conflict("La sesión ya está cancelada");
     return this.db.transaction(async (tx) => {
@@ -179,6 +181,7 @@ export class SessionsService {
         .where(and(eq(sessions.id, sessionId), eq(sessions.state, "programada")))
         .returning();
       if (!row) throw conflict("La sesión cambió de estado");
+      await new BookingsService(this.db).cancelForSession(tx, actor, sessionId);
       await this.audit.record(
         {
           organizationId: actor.organizationId,

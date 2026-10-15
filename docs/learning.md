@@ -2,6 +2,10 @@
 
 > Formato mínimo: fecha, ID de unidad, hallazgo, evidencia, aplicación futura.
 
+## 2026-10-15 — Unidad 016 — Saldo por período y locks entre operaciones
+
+Una marca booleana de reserva no acredita saldo cuantitativo. Cuotas capturadas al validar, ledger append-only y locks de membresía/período permiten último crédito entre sesiones distintas y no prestan sobrantes de renovación. Mantener inicio agregado vigente al renovar evita perder ingreso/cobertura actual al crear período futuro. Rechazar duplicado bajo lock de sesión antes de tomar saldo evita invertir locks con cancelación; cancelación de clase bloquea membresías en orden estable antes de devolver múltiples créditos. Pruebas PostgreSQL verifican carreras, restitución única, snapshots y reclamo AC-215 sin traslado. Fuente histórica 004 conservada; política cuantitativa explícitamente confirmada en ADR 0009. Evidencia por CA en spec 016.
+
 ## 2026-10-15 — Unidad 015 — Probar posesión sin sustituir identidad
 
 Contacto e identidad deben permanecer separados: el desafío liga hash/org/miembro/cuenta y solo una confirmación consume y cambia contacto en transacción; la edición manual cancela desafíos y elimina marca verificada. Pruebas con PostgreSQL/buzón ficticio comprobaron caducidad, reenvío, tenant, concurrencia y conservación de cuenta. Better Auth necesita `revokeSessionsOnPasswordReset` explícito; se comprobó rechazo de cookie anterior con lectura autoritativa, no solo respuesta del reset. La versión instalada 1.7.7 no hace transacción global del reset; documentar esa limitación antes de correo real, sin asumir comportamiento de documentación de main. Con transporte ausente capacidades falsas y cero efectos son el contrato correcto, no un mensaje de envío exitoso. Evidencia por criterio en spec 015.

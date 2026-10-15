@@ -1,6 +1,7 @@
 import { safeRequest } from "./safe-request.js";
 import type { EmailDelivery } from "./email-delivery.js";
 import { ContactVerificationService } from "./services/contact-verification.js";
+import { BookingCreditsService } from "./services/booking-credits.js";
 import { FinancialAdjustmentsService } from "./services/financial-adjustments.js";
 /**
  * Fastify application for App GYM (GYM-2026).
@@ -793,6 +794,26 @@ export async function buildServer(opts: AppOptions) {
     );
     return reply.send({ data: row });
   });
+
+  const bookingCredits = new BookingCreditsService(opts.db);
+  app.get("/api/v1/me/credit-periods", async (req, reply) => {
+    requireRole(req.session, ["socio"]);
+    assertTenantContext(req.session);
+    return reply.send({ data: await bookingCredits.list(req.session, req.session.memberId!) });
+  });
+  app.get<{ Params: { id: string } }>("/api/v1/members/:id/credit-periods", async (req, reply) => {
+    requireRole(req.session, ["admin", "recepcion", "socio"]);
+    assertTenantContext(req.session);
+    return reply.send({ data: await bookingCredits.list(req.session, req.params.id) });
+  });
+  app.post<{ Params: { id: string } }>(
+    "/api/v1/members/:id/bookings/revalidate",
+    async (req, reply) => {
+      requireRole(req.session, ["admin", "recepcion"]);
+      assertTenantContext(req.session);
+      return reply.send({ data: await bookingsService.revalidate(req.session, req.params.id) });
+    },
+  );
 
   // --- Offline controlado (Entrega 4, spec 005, REQ-9) ------------------------
   const offlineService = new OfflineService(opts.db);

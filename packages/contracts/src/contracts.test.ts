@@ -13,6 +13,27 @@ import {
 } from "./index.js";
 
 describe("contracts", () => {
+  it("SPEC016 cuotas limitadas son completas, enteras y separadas por modalidad", () => {
+    const plan = { name: "Limitado", priceCents: 10000, durationDays: 30, coverage: "limited" };
+    for (const classCredits of [
+      undefined,
+      { grupal: 1 },
+      { grupal: -1, fija: 2, cita: 0 },
+      { grupal: 1.5, fija: 2, cita: 0 },
+    ])
+      expect(CreatePlanRequest.safeParse({ ...plan, classCredits }).success).toBe(false);
+    expect(
+      CreatePlanRequest.safeParse({ ...plan, classCredits: { grupal: 1, fija: 2, cita: 0 } })
+        .success,
+    ).toBe(true);
+    expect(
+      CreatePlanRequest.safeParse({
+        ...plan,
+        coverage: "unlimited",
+        classCredits: { grupal: 1, fija: 2, cita: 0 },
+      }).success,
+    ).toBe(false);
+  });
   it("SPEC015 exige correo y token opaco; capacidad es explícita", () => {
     expect(RequestContactVerification.parse({ email: " nuevo@example.test " }).email).toBe(
       "nuevo@example.test",

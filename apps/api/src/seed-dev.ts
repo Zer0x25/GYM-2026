@@ -18,7 +18,7 @@
  *   - 2 provisional payments (awaiting admin decision) + 1 validated
  */
 import "dotenv/config";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import {
   cashMovements,
   cashSessions,
@@ -175,6 +175,12 @@ async function main() {
     .from(identityAccounts)
     .where(eq(identityAccounts.email, "recepcion@pilot.cl"));
   await seedEntrega2(org.id, adminId, recep!.id);
+  // Explicit fictional legacy snapshots for direct demo windows; no limited quotas invented.
+  await db.execute(sql`INSERT INTO membership_periods (organization_id,member_id,membership_id,starts_at,ends_at,coverage,plan_name,price_cents,duration_days)
+    SELECT m.organization_id,m.member_id,m.id,m.start_at,m.end_at,p.coverage,p.name,p.price_cents,p.duration_days
+    FROM memberships m JOIN plans p ON p.id=m.plan_id AND p.organization_id=m.organization_id
+    WHERE m.organization_id=${org.id} AND m.start_at IS NOT NULL AND m.end_at>m.start_at
+    AND NOT EXISTS (SELECT 1 FROM membership_periods mp WHERE mp.membership_id=m.id)`);
   const [coach] = await db
     .select()
     .from(authUsers)
@@ -215,18 +221,16 @@ async function main() {
   if (!next && coach) {
     const start = new Date(Date.now() + 24 * 3600000);
     start.setMinutes(0, 0, 0);
-    await db
-      .insert(sessions)
-      .values({
-        organizationId: org.id,
-        templateId: template!.id,
-        type: "grupal",
-        instructorId: coach.id,
-        startsAt: start,
-        endsAt: new Date(start.getTime() + 3600000),
-        capacity: 12,
-        createdBy: adminId,
-      });
+    await db.insert(sessions).values({
+      organizationId: org.id,
+      templateId: template!.id,
+      type: "grupal",
+      instructorId: coach.id,
+      startsAt: start,
+      endsAt: new Date(start.getTime() + 3600000),
+      capacity: 12,
+      createdBy: adminId,
+    });
   }
 
   log("\nSeed listo. Credenciales de desarrollo (NO produccion):");

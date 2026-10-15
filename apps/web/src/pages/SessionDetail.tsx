@@ -30,10 +30,10 @@ export function SessionDetail() {
     try {
       await api.markAttendance(id, outcome);
       toast.success(outcome === "asistio" ? "Asistencia registrada" : "Ausencia registrada");
-      await reload();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "No se pudo marcar asistencia");
     } finally {
+      await reload();
       setBusy(null);
     }
   }

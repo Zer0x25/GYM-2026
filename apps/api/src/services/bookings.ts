@@ -24,8 +24,10 @@
  */
 import { and, count, eq, sql } from "drizzle-orm";
 import type { Database } from "@gym/db";
-import { bookingCancellations, bookings, classTemplates, memberships, sessions } from "@gym/db";
+import { bookingCancellations, bookings, classTemplates, members, sessions } from "@gym/db";
 import { conflict, forbidden, notFound } from "../errors.js";
+import { BookingCreditsService } from "./booking-credits.js";
+import { AppError } from "../errors.js";
 import { AuditService } from "./audit.js";
 
 export interface BookingActor {
@@ -52,6 +54,12 @@ export class BookingsService {
    * the session row so two concurrent last-slot bookings cannot both win.
    */
   async create(actor: BookingActor, sessionId: string, memberId: string) {
+    if (!["admin", "recepcion", "socio"].includes(actor.role)) throw forbidden();
+    const [member] = await this.db
+      .select({ id: members.id })
+      .from(members)
+      .where(and(eq(members.organizationId, actor.organizationId), eq(members.id, memberId)));
+    if (!member) throw notFound("Socio no encontrado");
     // A socio can only book for themselves (REQ-7): the memberId comes from
     // the session; staff may book on behalf of a member.
     if (actor.role === "socio" && actor.memberId !== memberId) {
@@ -60,8 +68,6 @@ export class BookingsService {
     const session = await this.getSession(actor.organizationId, sessionId);
     if (session.state !== "programada") throw conflict("La sesión no está disponible");
     if (session.type === "bloqueo") throw conflict("Un bloqueo no es reservable");
-
-    await this.assertCoverage(actor.organizationId, memberId, sessionId);
 
     return this.db.transaction(async (tx) => {
       // Lock the session row: serializes concurrent last-slot bookings.
@@ -73,6 +79,7 @@ export class BookingsService {
         .limit(1);
       if (!locked) throw notFound("Sesión no encontrada");
       if (locked.state !== "programada") throw conflict("La sesión cambió de estado");
+      if (locked.startsAt <= new Date()) throw conflict("La sesión ya comenzó");
 
       // Last-slot check under the lock (TX-01).
       const confirmed = await this.countConfirmed(sessionId, tx);
@@ -80,6 +87,18 @@ export class BookingsService {
         throw conflict("No quedan plazas disponibles en esta sesión");
       }
 
+      const [existing] = await tx
+        .select({ id: bookings.id })
+        .from(bookings)
+        .where(
+          and(
+            eq(bookings.organizationId, actor.organizationId),
+            eq(bookings.sessionId, sessionId),
+            eq(bookings.memberId, memberId),
+          ),
+        );
+      if (existing) throw conflict("Ya tenés una reserva en esta sesión");
+      const choice = await new BookingCreditsService(this.db).choose(tx, actor, memberId, locked);
       let row;
       try {
         [row] = await tx
@@ -88,6 +107,7 @@ export class BookingsService {
             organizationId: actor.organizationId,
             sessionId,
             memberId,
+            periodId: choice.periodId,
             state: "confirmada",
             beneficioComprometido: true, // committed exactly once, here (REQ-4)
             createdBy: actor.accountId,
@@ -99,6 +119,7 @@ export class BookingsService {
         throw e;
       }
       if (!row) throw notFound("Reserva no encontrada");
+      await new BookingCreditsService(this.db).commit(tx, actor, memberId, row.id, choice);
 
       await this.audit.record(
         {
@@ -127,6 +148,8 @@ export class BookingsService {
     bookingId: string,
     input: { type: "temprana" | "tardia" | "gimnasio" | "ausencia"; reason?: string | undefined },
   ) {
+    if (actor.role === "socio" && (input.type === "gimnasio" || input.type === "ausencia"))
+      throw forbidden("El socio no autoriza cancelaciones del gimnasio ni ausencias");
     const booking = await this.getById(actor.organizationId, bookingId);
     // A socio may only cancel their own booking (REQ-7).
     if (actor.role === "socio" && booking.memberId !== actor.memberId) {
@@ -136,14 +159,6 @@ export class BookingsService {
     if (booking.state === "ausente") throw conflict("La reserva ya fue marcada como ausencia");
 
     const session = await this.getSession(actor.organizationId, booking.sessionId);
-    // temprana/tardia are decided by the window; gimnasio/ausencia are forced.
-    let type = input.type;
-    if (type === "temprana" || type === "tardia") {
-      const windowHours = await this.templateCancellationWindow(actor.organizationId, session.templateId);
-      type = withinCancellationWindow(session.startsAt, windowHours) ? "temprana" : "tardia";
-    }
-    const creditReturned = type === "temprana" || type === "gimnasio";
-
     return this.db.transaction(async (tx) => {
       // Lock the booking: serializes concurrent cancels of the same booking.
       const [locked] = await tx
@@ -155,6 +170,17 @@ export class BookingsService {
       if (!locked) throw notFound("Reserva no encontrada");
       if (locked.state === "cancelada") throw conflict("La reserva ya está cancelada");
 
+      let type = input.type;
+      if (type === "temprana" || type === "tardia") {
+        if (session.startsAt <= new Date())
+          throw conflict("La sesión ya comenzó; recepción debe registrar el resultado");
+        const hours = await this.templateCancellationWindow(
+          actor.organizationId,
+          session.templateId,
+        );
+        type = withinCancellationWindow(session.startsAt, hours) ? "temprana" : "tardia";
+      }
+      const creditReturned = type === "temprana" || type === "gimnasio";
       const [updated] = await tx
         .update(bookings)
         .set({ state: "cancelada" })
@@ -162,6 +188,9 @@ export class BookingsService {
         .returning();
       if (!updated) throw conflict("La reserva cambió de estado durante la cancelación");
 
+      const effect = creditReturned
+        ? await new BookingCreditsService(this.db).restore(tx, actor, bookingId)
+        : { creditReturned: false, creditReviewRequired: false };
       let cancellation;
       try {
         [cancellation] = await tx
@@ -170,7 +199,7 @@ export class BookingsService {
             organizationId: actor.organizationId,
             bookingId,
             type,
-            creditReturned,
+            ...effect,
             reason: input.reason ?? null,
             actorId: actor.accountId,
             actorRole: actor.role,
@@ -178,7 +207,8 @@ export class BookingsService {
           .returning();
       } catch (e) {
         // Unique on bookingId: already cancelled → idempotent rejection.
-        if (isUniqueViolation(e)) throw conflict("Esta reserva ya tiene una cancelación registrada");
+        if (isUniqueViolation(e))
+          throw conflict("Esta reserva ya tiene una cancelación registrada");
         throw e;
       }
       if (!cancellation) throw conflict("No se pudo registrar la cancelación");
@@ -191,7 +221,7 @@ export class BookingsService {
           action: "booking.cancel",
           entity: "booking",
           entityId: bookingId,
-          metadata: { type, creditReturned, reason: input.reason ?? null },
+          metadata: { type, ...effect, reason: input.reason ?? null },
         },
         tx,
       );
@@ -206,7 +236,27 @@ export class BookingsService {
     const booking = await this.getById(actor.organizationId, bookingId);
     if (booking.state !== "confirmada") throw conflict("La reserva no está confirmada");
 
-    return this.db.transaction(async (tx) => {
+    const result = await this.db.transaction(async (tx) => {
+      const [locked] = await tx
+        .select()
+        .from(bookings)
+        .where(and(eq(bookings.organizationId, actor.organizationId), eq(bookings.id, bookingId)))
+        .for("update");
+      if (!locked || locked.state !== "confirmada") throw conflict("La reserva cambió de estado");
+      const session = await this.getSession(actor.organizationId, locked.sessionId);
+      try {
+        await new BookingCreditsService(this.db).choose(
+          tx,
+          actor,
+          locked.memberId,
+          session,
+          locked,
+        );
+      } catch (error) {
+        if (!(error instanceof AppError) || error.code !== "CONFLICT") throw error;
+        await this.cancelLostCoverage(tx, actor, locked);
+        return null;
+      }
       if (outcome === "ausencia") {
         const [row] = await tx
           .update(bookings)
@@ -257,6 +307,137 @@ export class BookingsService {
       );
       return booking;
     });
+    if (!result)
+      throw conflict("Cobertura perdida: reserva cancelada y plaza liberada", {
+        cancelled: true,
+        bookingId,
+      });
+    return result;
+  }
+
+  private async cancelLostCoverage(
+    tx: Tx,
+    actor: BookingActor,
+    booking: typeof bookings.$inferSelect,
+  ) {
+    const effect = await new BookingCreditsService(this.db).restore(tx, actor, booking.id);
+    await tx
+      .update(bookings)
+      .set({ state: "cancelada" })
+      .where(and(eq(bookings.id, booking.id), eq(bookings.organizationId, actor.organizationId)));
+    await tx.insert(bookingCancellations).values({
+      organizationId: actor.organizationId,
+      bookingId: booking.id,
+      type: "gimnasio",
+      ...effect,
+      reason: "Pérdida confirmada de cobertura",
+      actorId: actor.accountId,
+      actorRole: actor.role,
+    });
+    await this.audit.record(
+      {
+        organizationId: actor.organizationId,
+        actorId: actor.accountId,
+        actorRole: actor.role,
+        action: "booking.coverage-lost",
+        entity: "booking",
+        entityId: booking.id,
+        metadata: effect,
+      },
+      tx,
+    );
+  }
+  async cancelForSession(tx: Tx, actor: BookingActor, sessionId: string) {
+    if (actor.role !== "admin" && actor.role !== "recepcion") throw forbidden();
+    const rows = await tx
+      .select()
+      .from(bookings)
+      .where(
+        and(
+          eq(bookings.organizationId, actor.organizationId),
+          eq(bookings.sessionId, sessionId),
+          eq(bookings.state, "confirmada"),
+        ),
+      )
+      .orderBy(bookings.id)
+      .for("update");
+    await new BookingCreditsService(this.db).lockMembers(
+      tx,
+      actor.organizationId,
+      rows.map((row) => row.memberId),
+    );
+    for (const booking of rows) {
+      const effect = await new BookingCreditsService(this.db).restore(tx, actor, booking.id);
+      await tx.update(bookings).set({ state: "cancelada" }).where(eq(bookings.id, booking.id));
+      await tx.insert(bookingCancellations).values({
+        organizationId: actor.organizationId,
+        bookingId: booking.id,
+        type: "gimnasio",
+        ...effect,
+        reason: "Sesión cancelada por el gimnasio",
+        actorId: actor.accountId,
+        actorRole: actor.role,
+      });
+      await this.audit.record(
+        {
+          organizationId: actor.organizationId,
+          actorId: actor.accountId,
+          actorRole: actor.role,
+          action: "booking.cancel",
+          entity: "booking",
+          entityId: booking.id,
+          metadata: { type: "gimnasio", ...effect },
+        },
+        tx,
+      );
+    }
+  }
+  async revalidate(actor: BookingActor, memberId: string) {
+    if (actor.role !== "admin" && actor.role !== "recepcion") throw forbidden();
+    const [member] = await this.db
+      .select({ id: members.id })
+      .from(members)
+      .where(and(eq(members.organizationId, actor.organizationId), eq(members.id, memberId)));
+    if (!member) throw notFound("Socio no encontrado");
+    const candidates = await this.db
+      .select({ id: bookings.id })
+      .from(bookings)
+      .innerJoin(
+        sessions,
+        and(eq(bookings.sessionId, sessions.id), eq(sessions.organizationId, actor.organizationId)),
+      )
+      .where(
+        and(
+          eq(bookings.organizationId, actor.organizationId),
+          eq(bookings.memberId, memberId),
+          eq(bookings.state, "confirmada"),
+          sql`${sessions.startsAt} > now()`,
+        ),
+      );
+    let cancelled = 0;
+    for (const candidate of candidates) {
+      const changed = await this.db.transaction(async (tx) => {
+        const [booking] = await tx
+          .select()
+          .from(bookings)
+          .where(
+            and(eq(bookings.organizationId, actor.organizationId), eq(bookings.id, candidate.id)),
+          )
+          .for("update");
+        if (!booking || booking.state !== "confirmada") return false;
+        const session = await this.getSession(actor.organizationId, booking.sessionId);
+        try {
+          await new BookingCreditsService(this.db).choose(tx, actor, memberId, session, booking);
+        } catch (error) {
+          if (!(error instanceof AppError) || error.code !== "CONFLICT") throw error;
+          await this.cancelLostCoverage(tx, actor, booking);
+          return true;
+        }
+        return false;
+      });
+      if (changed) cancelled++;
+    }
+    return { cancelled };
   }
 
   async listByMember(organizationId: string, memberId: string) {
@@ -299,33 +480,6 @@ export class BookingsService {
     return row;
   }
 
-  /**
-   * Coverage revalidation (SPEC:REVAL-01): the member needs an active
-   * membership whose coverage is not "none" (a plan that permits bookings).
-   * The exact coverage match (unlimited/limited) is a v1.0 simplification:
-   * active membership with coverage = the member may book.
-   */
-  private async assertCoverage(organizationId: string, memberId: string, sessionId: string): Promise<void> {
-    // ISO string: postgres.js does not accept a raw Date as a parameter.
-    const now = new Date().toISOString();
-    const rows = await this.db
-      .select()
-      .from(memberships)
-      .where(
-        and(
-          eq(memberships.organizationId, organizationId),
-          eq(memberships.memberId, memberId),
-          // active window right now (derived from validated payments)
-          sql`${memberships.endAt} IS NOT NULL AND ${memberships.endAt} > ${now}`,
-        ),
-      )
-      .limit(1);
-    if (!rows[0]) {
-      throw conflict("El socio no tiene una membresía activa para reservar");
-    }
-    void sessionId;
-  }
-
   private async countConfirmed(sessionId: string, tx?: Tx): Promise<number> {
     const db = tx ?? this.db;
     const rows = await db
@@ -354,10 +508,7 @@ export class BookingsService {
 /** True when the error is a Postgres unique violation (SQLSTATE 23505). */
 function isUniqueViolation(e: unknown): boolean {
   return (
-    typeof e === "object" &&
-    e !== null &&
-    "code" in e &&
-    (e as { code?: string }).code === "23505"
+    typeof e === "object" && e !== null && "code" in e && (e as { code?: string }).code === "23505"
   );
 }
 

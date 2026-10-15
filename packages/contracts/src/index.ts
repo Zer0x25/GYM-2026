@@ -85,15 +85,35 @@ export const PlanRef = z.object({
   priceCents: z.number().int().nonnegative(),
   durationDays: z.number().int().positive(),
   coverage: z.enum(["none", "unlimited", "limited"]),
+  grupalCredits: z.number().int().nonnegative().nullable().optional(),
+  fijaCredits: z.number().int().nonnegative().nullable().optional(),
+  citaCredits: z.number().int().nonnegative().nullable().optional(),
 });
 export type PlanRef = z.infer<typeof PlanRef>;
 
-export const CreatePlanRequest = z.object({
-  name: z.string().min(1).max(200),
-  priceCents: z.number().int().nonnegative(),
-  durationDays: z.number().int().positive(),
-  coverage: z.enum(["none", "unlimited", "limited"]),
+export const ClassCredits = z.object({
+  grupal: z.number().int().min(0).max(100000),
+  fija: z.number().int().min(0).max(100000),
+  cita: z.number().int().min(0).max(100000),
 });
+export type ClassCredits = z.infer<typeof ClassCredits>;
+export const CreatePlanRequest = z
+  .object({
+    name: z.string().min(1).max(200),
+    priceCents: z.number().int().nonnegative(),
+    durationDays: z.number().int().positive(),
+    coverage: z.enum(["none", "unlimited", "limited"]),
+    classCredits: ClassCredits.optional(),
+  })
+  .superRefine((value, ctx) => {
+    if ((value.coverage === "limited") !== Boolean(value.classCredits)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["classCredits"],
+        message: "Configura cuotas completas solo para cobertura limitada",
+      });
+    }
+  });
 export type CreatePlanRequest = z.infer<typeof CreatePlanRequest>;
 
 // ---------------------------------------------------------------------------
@@ -336,6 +356,7 @@ export const BookingDetail = z.object({
   sessionId: z.string().uuid(),
   memberId: z.string().uuid(),
   state: BookingState,
+  periodId: z.string().uuid().nullable().optional(),
   beneficioComprometido: z.boolean(),
   createdAt: z.string(),
 });
@@ -353,6 +374,7 @@ export const BookingCancellationDetail = z.object({
   bookingId: z.string().uuid(),
   type: CancellationType,
   creditReturned: z.boolean(),
+  creditReviewRequired: z.boolean().optional(),
   reason: z.string().nullable(),
   actorId: z.string(),
   actorRole: z.string(),
@@ -578,4 +600,24 @@ export const ConfirmContactVerification = z.object({ token: z.string().regex(/^[
 export const EmailCapabilities = z.object({
   passwordReset: z.boolean(),
   contactVerification: z.boolean(),
+});
+
+export const PeriodCreditBalance = z.object({
+  quota: z.number().int().nonnegative().nullable(),
+  committed: z.number().int().nonnegative(),
+  available: z.number().int().nullable(),
+});
+export const CreditPeriodSummary = z.object({
+  id: z.string().uuid(),
+  startsAt: z.string().datetime(),
+  endsAt: z.string().datetime(),
+  coverage: z.enum(["none", "unlimited", "limited"]),
+  planName: z.string(),
+  credits: z.object({
+    grupal: PeriodCreditBalance,
+    fija: PeriodCreditBalance,
+    cita: PeriodCreditBalance,
+  }),
+  reviewCount: z.number().int().nonnegative(),
+  reviewBookingIds: z.array(z.string().uuid()),
 });

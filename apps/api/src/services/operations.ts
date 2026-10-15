@@ -16,6 +16,7 @@ import {
   type Database,
 } from "@gym/db";
 import { forbidden, notFound } from "../errors.js";
+import { BookingCreditsService } from "./booking-credits.js";
 import { PaymentsService } from "./payments.js";
 import type { CheckinActor } from "./checkin.js";
 
@@ -266,12 +267,19 @@ export class OperationsService {
         and(eq(payments.organizationId, actor.organizationId), eq(payments.memberId, memberId)),
       )
       .orderBy(desc(payments.createdAt));
-    return { ...profile, payments: history };
+    return {
+      ...profile,
+      payments: history,
+      creditPeriods: await new BookingCreditsService(this.db).list(actor, memberId),
+    };
   }
 
   async portal(actor: CheckinActor) {
     if (actor.role !== "socio" || !actor.memberId)
       throw forbidden("Se requiere una cuenta de socio vinculada");
-    return this.profile(actor.organizationId, actor.memberId);
+    return {
+      ...(await this.profile(actor.organizationId, actor.memberId)),
+      creditPeriods: await new BookingCreditsService(this.db).list(actor, actor.memberId),
+    };
   }
 }

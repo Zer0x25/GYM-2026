@@ -19,6 +19,7 @@ export default defineConfig({
         "src/services/financial-adjustments.ts",
         "src/services/cash.ts",
         "src/services/bookings.ts",
+        "src/services/booking-credits.ts",
         "src/services/memberships.ts",
       ],
       thresholds: {

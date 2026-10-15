@@ -7,6 +7,7 @@ import { PageHead, ErrorNotice, Loading } from "../components/ui/page.js";
 import { Button } from "../components/ui/button.js";
 import { Input, Label } from "../components/ui/input.js";
 import { MembershipStateBadge } from "../components/ui/badge.js";
+import { CreditPeriods } from "../components/CreditPeriods.js";
 import { MemberQr } from "../components/MemberQr.js";
 import { Confirm } from "../components/ui/confirm.js";
 export function Portal() {
@@ -42,7 +43,7 @@ export function Portal() {
     try {
       await api.createBooking({ sessionId: id });
       toast.success("Reserva confirmada");
-      await schedule.reload();
+      await Promise.all([schedule.reload(), reload()]);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "No se pudo reservar");
     } finally {
@@ -56,7 +57,7 @@ export function Portal() {
       await api.cancelBooking(cancel.id, { type: "temprana" });
       toast.success("Reserva cancelada");
       setCancel(null);
-      await schedule.reload();
+      await Promise.all([schedule.reload(), reload()]);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "No se pudo cancelar");
     } finally {
@@ -123,6 +124,7 @@ export function Portal() {
                 Renovar mi código
               </Button>
             </article>
+            <CreditPeriods periods={data?.creditPeriods ?? []} />
             <article className="rounded-2xl border bg-card p-6">
               <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 Mi membresía

@@ -208,10 +208,18 @@ export const plans = pgTable(
     priceCents: integer("price_cents").notNull(),
     durationDays: integer("duration_days").notNull(),
     coverage: text("coverage", { enum: ["none", "unlimited", "limited"] }).notNull(),
+    grupalCredits: integer("grupal_credits"),
+    fijaCredits: integer("fija_credits"),
+    citaCredits: integer("cita_credits"),
     active: boolean("active").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("plans_org_idx").on(t.organizationId)],
+  (t) => [
+    index("plans_org_idx").on(t.organizationId),
+    check("plans_grupal_credits_check", sql`${t.grupalCredits} BETWEEN 0 AND 100000`),
+    check("plans_fija_credits_check", sql`${t.fijaCredits} BETWEEN 0 AND 100000`),
+    check("plans_cita_credits_check", sql`${t.citaCredits} BETWEEN 0 AND 100000`),
+  ],
 );
 
 /**
@@ -401,6 +409,47 @@ export const financialAdjustments = pgTable(
   ],
 );
 
+/** Immutable conditions of a confirmed period; no quota migration is invented. */
+export const membershipPeriods = pgTable(
+  "membership_periods",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id),
+    memberId: uuid("member_id")
+      .notNull()
+      .references(() => members.id),
+    membershipId: uuid("membership_id")
+      .notNull()
+      .references(() => memberships.id),
+    paymentId: uuid("payment_id")
+      .unique()
+      .references(() => payments.id),
+    startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
+    endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
+    coverage: text("coverage", { enum: ["none", "unlimited", "limited"] }).notNull(),
+    planName: text("plan_name").notNull(),
+    priceCents: integer("price_cents").notNull(),
+    durationDays: integer("duration_days").notNull(),
+    grupalCredits: integer("grupal_credits"),
+    fijaCredits: integer("fija_credits"),
+    citaCredits: integer("cita_credits"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("membership_periods_member_idx").on(t.organizationId, t.memberId),
+    check("membership_periods_dates", sql`${t.endsAt} > ${t.startsAt}`),
+    check(
+      "membership_periods_coverage_check",
+      sql`${t.coverage} IN ('none','unlimited','limited')`,
+    ),
+    check("membership_periods_grupal_credits_check", sql`${t.grupalCredits} BETWEEN 0 AND 100000`),
+    check("membership_periods_fija_credits_check", sql`${t.fijaCredits} BETWEEN 0 AND 100000`),
+    check("membership_periods_cita_credits_check", sql`${t.citaCredits} BETWEEN 0 AND 100000`),
+  ],
+);
+
 /**
  * Class template (plantilla de clase): defines a group or fixed class with
  * its capacity, reservation window, cancellation window and required
@@ -484,6 +533,7 @@ export const bookings = pgTable(
     memberId: uuid("member_id")
       .notNull()
       .references(() => members.id),
+    periodId: uuid("period_id").references(() => membershipPeriods.id),
     state: text("state", { enum: ["confirmada", "cancelada", "ausente"] })
       .notNull()
       .default("confirmada"),
@@ -519,6 +569,7 @@ export const bookingCancellations = pgTable(
     type: text("type", { enum: ["temprana", "tardia", "gimnasio", "ausencia"] }).notNull(),
     /** Whether the member's benefit/credit was returned (temprana/gimnasio). */
     creditReturned: boolean("credit_returned").notNull().default(false),
+    creditReviewRequired: boolean("credit_review_required").notNull().default(false),
     reason: text("reason"),
     actorId: text("actor_id").notNull(),
     actorRole: text("actor_role").notNull(),
@@ -528,6 +579,43 @@ export const bookingCancellations = pgTable(
     index("booking_cancellations_org_idx").on(t.organizationId),
     // One cancellation per booking: the idempotency key for the credit move.
     unique("booking_cancellations_booking_unique").on(t.bookingId),
+  ],
+);
+
+/** Append-only credit effects; one commitment/return/review per booking. */
+export const creditMovements = pgTable(
+  "credit_movements",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id),
+    memberId: uuid("member_id")
+      .notNull()
+      .references(() => members.id),
+    periodId: uuid("period_id")
+      .notNull()
+      .references(() => membershipPeriods.id),
+    bookingId: uuid("booking_id")
+      .notNull()
+      .references(() => bookings.id),
+    modality: text("modality", { enum: ["grupal", "fija", "cita"] }).notNull(),
+    kind: text("kind", { enum: ["commit", "return", "review"] }).notNull(),
+    quantity: integer("quantity").notNull(),
+    actorId: text("actor_id")
+      .notNull()
+      .references(() => authUsers.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check("credit_movements_modality_check", sql`${t.modality} IN ('grupal','fija','cita')`),
+    check("credit_movements_kind_check", sql`${t.kind} IN ('commit','return','review')`),
+    unique("credit_movements_booking_kind_unique").on(t.bookingId, t.kind),
+    index("credit_movements_period_idx").on(t.organizationId, t.periodId),
+    check(
+      "credit_movements_effect",
+      sql`(${t.kind}='commit' AND ${t.quantity}=-1) OR (${t.kind}='return' AND ${t.quantity}=1) OR (${t.kind}='review' AND ${t.quantity}=0)`,
+    ),
   ],
 );
 
@@ -687,6 +775,8 @@ export const schema = {
   members,
   plans,
   memberships,
+  membershipPeriods,
+  creditMovements,
   payments,
   cashSessions,
   cashMovements,

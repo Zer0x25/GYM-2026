@@ -9,7 +9,7 @@ import { and, eq } from "drizzle-orm";
 import type { Database } from "@gym/db";
 import { plans } from "@gym/db";
 import { notFound } from "../errors.js";
-import type { CreatePlanRequest } from "@gym/contracts";
+import { CreatePlanRequest } from "@gym/contracts";
 
 export class PlansService {
   constructor(private readonly db: Database) {}
@@ -37,6 +37,7 @@ export class PlansService {
 
   /** Creates a plan in the caller's organization. */
   async create(organizationId: string, input: CreatePlanRequest) {
+    input = CreatePlanRequest.parse(input);
     const [row] = await this.db
       .insert(plans)
       .values({
@@ -45,6 +46,9 @@ export class PlansService {
         priceCents: input.priceCents,
         durationDays: input.durationDays,
         coverage: input.coverage,
+        grupalCredits: input.classCredits?.grupal ?? null,
+        fijaCredits: input.classCredits?.fija ?? null,
+        citaCredits: input.classCredits?.cita ?? null,
       })
       .returning();
     if (!row) throw notFound("Plan no encontrado");

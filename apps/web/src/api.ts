@@ -79,6 +79,9 @@ export interface Plan {
   priceCents: number;
   durationDays: number;
   coverage: "none" | "unlimited" | "limited";
+  grupalCredits?: number | null;
+  fijaCredits?: number | null;
+  citaCredits?: number | null;
   active: boolean;
   createdAt: string;
 }
@@ -385,6 +388,7 @@ export const api = {
     priceCents: number;
     durationDays: number;
     coverage: "none" | "unlimited" | "limited";
+    classCredits?: { grupal: number; fija: number; cita: number };
   }) => request<Plan>("POST", "/plans", input),
 
   listMemberships: () => request<Membership[]>("GET", "/memberships"),
@@ -487,7 +491,21 @@ export interface ScheduledSession extends Session {
   booked: number;
   remaining: number;
 }
+export interface CreditPeriod {
+  id: string;
+  startsAt: string;
+  endsAt: string;
+  coverage: "none" | "unlimited" | "limited";
+  planName: string;
+  credits: Record<
+    "grupal" | "fija" | "cita",
+    { quota: number | null; committed: number; available: number | null }
+  >;
+  reviewCount: number;
+  reviewBookingIds: string[];
+}
 export interface PortalOverview {
+  creditPeriods?: CreditPeriod[];
   member: Member;
   memberships: (Membership & { plan: Plan })[];
 }
