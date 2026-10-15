@@ -9,6 +9,7 @@
  *
  * Secrets come from the environment (AUTH_SECRET) — never from the repo.
  */
+import { accountLink, type EmailDelivery } from "./email-delivery.js";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { admin } from "better-auth/plugins";
@@ -19,18 +20,18 @@ export interface AuthOptions {
   db: Database;
   secret: string;
   baseURL: string;
+  emailDelivery?: EmailDelivery;
+  appOrigin?: string;
 }
 
 /** Minimal structural type of the Better Auth instance (the inferred type
  *  with the admin plugin is not portable across module boundaries).
  *  Consuming code uses the documented calls only. */
 export interface GymAuth {
+  emailDeliveryEnabled?: boolean;
   handler: (request: Request) => Promise<Response>;
   api: {
-    getSession(opts: {
-      headers: Headers;
-      query?: { disableCookieCache?: boolean };
-    }): Promise<{
+    getSession(opts: { headers: Headers; query?: { disableCookieCache?: boolean } }): Promise<{
       session: { id: string; userId: string; expiresAt: Date } | null;
       user: { id: string; email: string } | null;
     } | null>;
@@ -81,16 +82,37 @@ export function createAuth(opts: AuthOptions): GymAuth {
       // admins create accounts through ProvisioningService (admin plugin's
       // createUser), which is a server-side call, not the public endpoint.
       disableSignUp: true,
+      resetPasswordTokenExpiresIn: 15 * 60,
+      revokeSessionsOnPasswordReset: true,
+      ...(opts.emailDelivery
+        ? {
+            sendResetPassword: async ({
+              user,
+              token,
+            }: {
+              user: { email: string };
+              token: string;
+            }) => {
+              try {
+                await opts.emailDelivery!({
+                  to: user.email,
+                  purpose: "password-reset",
+                  url: accountLink(opts.appOrigin ?? opts.baseURL, "/recuperar", token),
+                });
+              } catch {
+                throw new Error("Password recovery delivery unavailable");
+              }
+            },
+          }
+        : {}),
     },
+    verification: { storeIdentifier: "hashed" },
     // CSRF allow-list of browser origins allowed to call /api/auth/*.
     // In dev the Vite SPA runs on :5173 and proxies /api/* to the API, so the
     // browser Origin header is the SPA's — it must be trusted explicitly.
     // In production both are same-origin behind the proxy and the env var
     // APP_ORIGIN (default: the API's own baseURL) covers it.
-    trustedOrigins: (
-      process.env.TRUSTED_ORIGINS ??
-      "http://localhost:5173,http://localhost:3000"
-    )
+    trustedOrigins: (process.env.TRUSTED_ORIGINS ?? "http://localhost:5173,http://localhost:3000")
       .split(",")
       .map((o) => o.trim())
       .filter(Boolean),
@@ -118,7 +140,9 @@ export function createAuth(opts: AuthOptions): GymAuth {
       },
     },
   });
-  return instance as unknown as GymAuth;
+  return Object.assign(instance, {
+    emailDeliveryEnabled: Boolean(opts.emailDelivery),
+  }) as unknown as GymAuth;
 }
 
 export type Auth = GymAuth;

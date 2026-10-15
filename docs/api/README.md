@@ -84,7 +84,7 @@ Errores: 401/403/409/400 como arriba.
 | `POST /api/v1/members` | admin, recepcion | Alta de socio (sin login) en la organización de la sesión |
 | `GET /api/v1/members/:id` | admin, recepcion, instructor, socio | Socio solo su propio id (otros → 404/403) |
 | `GET /api/v1/members/me` | socio | Perfil propio (memberId de la sesión) |
-| `PATCH /api/v1/members/:id/contact` | admin, recepcion, socio | Socio solo su propio contacto (D-04/B) |
+| `PATCH /api/v1/members/:id/contact` | admin, recepcion, socio | Socio propio: solo eliminar (null); nuevo correo requiere verificación (015) |
 
 Request `CreateMemberRequest`: `{ "fullName", "contactEmail"? }`
 Request `PATCH .../contact`: `{ "contactEmail": "<email>" | null }`
@@ -310,7 +310,7 @@ nunca del cliente) y el cross-tenant es **404** (no 403: sin fuga de existencia)
 | POST /members | ✓ | ✓ | — | — |
 | GET /members/:id | ✓ | ✓ | ✓ | propio |
 | GET /members/me | — | — | — | propio |
-| PATCH /members/:id/contact | ✓ | ✓ | — | propio |
+| PATCH /members/:id/contact | ✓ | ✓ | — | propio, solo null (015) |
 | POST /members/:id/qr/reissue | ✓ | — | — | — |
 | POST /members/:id/qr/revoke | ✓ | — | — | — |
 | GET /plans | ✓ | ✓ | ✓ | — |
@@ -434,3 +434,14 @@ Política confirmada en ADR 0008. `POST /api/v1/payments/:id/adjustments` requie
 El pago, movimiento de ingreso y membresía no cambian; se agrega financial_adjustments y audit_log en una transacción. Nuevos cobros adicionales usan el flujo de pago provisional vigente. No existe PATCH/DELETE de compensaciones ni operación offline para crearlas.
 
 Detalle de turno añade `adjustments` y conserva `movements` originales. Cierre esperado = apertura + ingresos − salidas compensatorias; no se reescribe un turno cerrado para compensar un pago antiguo. Consolidado conserva totalCents/byMethod de ingresos brutos y añade adjustmentTotalCents (salidas positivas), netCents y adjustmentCount. Reporte diario Santiago conserva income/cash/transfer/transbank y añade refunds, adjustments, outflow y net; las salidas pertenecen al día de su registro. CSV mantiene sus columnas y añade devoluciones/ajustes/neto. Caja presenta salidas con signo negativo y tipo explícito.
+
+
+## Unidad 015 — Recuperación y prueba de contacto (preparación sin entrega real)
+
+`GET /api/v1/account/email-capabilities` público responde `{data:{passwordReset:false,contactVerification:false}}` en el servidor operativo. No hay adaptador ni proveedor/credenciales de correo conectados. La UI `/recuperar` lo informa y deshabilita la solicitud; no simula entrega. Better Auth `/api/auth/request-password-reset` recibe `{email}` y sin callback responde 400 `RESET_PASSWORD_DISABLED` tanto para cuentas existentes como inexistentes, sin token. `/api/auth/reset-password` recibe `{token,newPassword}` (mínimo 10 caracteres); token válido de un solo uso y 15 minutos, identificador hasheado; éxito revoca sesiones anteriores, sin auto-login. Request/reset mantienen contrato nativo Better Auth, errores de dominio mantienen ErrorResponse. El transporte inyectado por pruebas usa exclusivamente buzón ficticio.
+
+`POST /api/v1/members/:id/contact-verification` recibe `{email}`: solo socio autenticado propio; 401 sin sesión, 403 otro rol, 404 otro miembro/tenant, 400 formato, 503 `SERVICE_UNAVAILABLE` sin transporte (sin desafío ni cambio de contacto). Con transporte de prueba devuelve 202 `{data:{pending:true}}`; serializa por miembro, invalida anteriores y persiste solo hash de token aleatorio de 32 bytes, contacto propuesto/previo, vínculo org/member/account y expiración 15 minutos. Fallo de entrega cancela desafío y devuelve 503 sin exponer error del proveedor.
+
+`POST /api/v1/members/:id/contact/verify` recibe `{token}` hex64: sesión socio propia, 400 formato, 404 alcance ajeno, 409 inválido/vencido/usado/cancelado o contacto modificado entretanto; 200 `{data:{verified:true}}` al actualizar contacto/marca, consumir desafío y auditar una vez en transacción. No cambia user.email, identity_accounts, members.account_id, sesión, roles ni membresías. Abrir enlace GET nunca consume el desafío. Reenvío invalida enlace previo; edición manual/eliminación también cancela pendientes.
+
+El nuevo contrato de PATCH permite al socio eliminar (null); asignar correo no nulo requiere el flujo de prueba (409 en PATCH). Admin/recepción mantienen edición manual, siempre sin marca verificada. Migración no considera verificados los contactos históricos. Enlaces de prueba apuntan a origen fijo confiable y llevan token en fragmento; UI lo captura en memoria y reemplaza historial sin fragmento. Confirmación de contacto exige un botón explícito y resuelve el miembro desde la sesión del servidor. Logs omiten query/cookies/cuerpos y redactan el segmento legacy de reset; JSON malformado responde 400 sin reflejar contenido. Ninguna respuesta de solicitud devuelve un token.

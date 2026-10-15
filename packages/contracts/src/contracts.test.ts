@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  RequestContactVerification,
+  ConfirmContactVerification,
+  EmailCapabilities,
   CreateMemberRequest,
   CreateOrganizationRequest,
   CreatePlanRequest,
@@ -10,6 +13,18 @@ import {
 } from "./index.js";
 
 describe("contracts", () => {
+  it("SPEC015 exige correo y token opaco; capacidad es explícita", () => {
+    expect(RequestContactVerification.parse({ email: " nuevo@example.test " }).email).toBe(
+      "nuevo@example.test",
+    );
+    expect(RequestContactVerification.safeParse({ email: "invalido" }).success).toBe(false);
+    expect(ConfirmContactVerification.safeParse({ token: "a".repeat(64) }).success).toBe(true);
+    expect(ConfirmContactVerification.safeParse({ token: "adivinado" }).success).toBe(false);
+    expect(
+      EmailCapabilities.safeParse({ passwordReset: false, contactVerification: false }).success,
+    ).toBe(true);
+    expect(ErrorCode.safeParse("SERVICE_UNAVAILABLE").success).toBe(true);
+  });
   it("SPEC 014 exige intención, motivo e importe positivo de compensación", () => {
     const base = {
       idempotencyKey: "11111111-1111-4111-8111-111111111111",

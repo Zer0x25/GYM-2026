@@ -84,7 +84,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("SPEC 010 — superficies operat
     await db.execute(sql`UPDATE members SET account_id = ${actor.accountId} WHERE id = ${member}`);
     const service = new MembersService(db);
     await service.updateContact(
-      { organizationId: org, role: "socio", memberId: member },
+      { organizationId: org, role: "admin" },
       member,
       "contacto@nuevo.test",
     );

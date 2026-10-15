@@ -133,6 +133,12 @@ export function Login() {
         </form>
 
         <Link
+          to="/recuperar"
+          className="mt-4 block text-center text-sm text-primary hover:underline"
+        >
+          ¿Olvidaste tu contraseña?
+        </Link>
+        <Link
           to="/contingencia"
           className="mt-5 block text-center text-xs text-primary hover:underline"
         >

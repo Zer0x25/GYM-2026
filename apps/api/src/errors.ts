@@ -19,10 +19,14 @@ export const unauthenticated = (message = "Authentication required") =>
   new AppError("UNAUTHENTICATED", message);
 export const forbidden = (message = "Not authorized for this resource") =>
   new AppError("FORBIDDEN", message);
-export const notFound = (message = "Resource not found") =>
-  new AppError("NOT_FOUND", message);
+export const notFound = (message = "Resource not found") => new AppError("NOT_FOUND", message);
 export const conflict = (message: string, details?: Record<string, unknown>) =>
   new AppError("CONFLICT", message, details);
+export const serviceUnavailable = () =>
+  new AppError(
+    "SERVICE_UNAVAILABLE",
+    "El envío de correos está pendiente de habilitación. El contacto no se ha cambiado.",
+  );
 export const internalError = (message = "Internal error") =>
   new AppError("INTERNAL_ERROR", message);
 

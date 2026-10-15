@@ -9,6 +9,7 @@ export {
   authSessions,
   authAccounts,
   authVerifications,
+  contactVerifications,
   identityAccounts,
   staffAssignments,
   members,

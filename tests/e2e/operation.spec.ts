@@ -83,7 +83,7 @@ test.describe.serial("SPEC 010 jornada de gimnasio", () => {
     const sessions = await get<{ id: string; type: string }[]>(page, "schedule");
     sessionId = sessions.find((s) => s.type === "cita")!.id;
   });
-  test("socio móvil ve QR, reserva, cancela y cambia contacto sin perder identidad", async ({
+  test("socio móvil ve QR, reserva, cancela y conserva contacto hasta verificar", async ({
     page,
   }) => {
     await page.setViewportSize({ width: 390, height: 844 });
@@ -110,10 +110,15 @@ test.describe.serial("SPEC 010 jornada de gimnasio", () => {
     ).toBe("cancelada");
     await page.getByRole("button", { name: "Editar", exact: true }).click();
     await page.getByLabel("Email de contacto").fill("nuevo.contacto@pilot.cl");
-    await page.getByRole("button", { name: "Guardar contacto" }).click();
+    const previous = await get<{ contactEmail: string }>(page, "members/me");
+    await page.getByRole("button", { name: "Solicitar verificación" }).click();
+    await expect(page.getByText(/envío de correos está pendiente/)).toBeVisible();
+    expect((await get<{ contactEmail: string }>(page, "members/me")).contactEmail).toBe(
+      previous.contactEmail,
+    );
     await page.reload();
     await expect(page.getByRole("heading", { name: "Mi acceso" })).toBeVisible();
-    await expect(page.getByText("nuevo.contacto@pilot.cl", { exact: true })).toBeVisible();
+    await expect(page.getByText(previous.contactEmail, { exact: true })).toBeVisible();
     expect((await page.request.get("/api/v1/staff")).status()).toBe(403);
     expect((await page.request.get("/api/v1/payments")).status()).toBe(403);
     const width = await page.evaluate(() => ({

@@ -18,6 +18,7 @@ export const ErrorCode = z.enum([
   "NOT_FOUND",
   "CONFLICT",
   "INTERNAL_ERROR",
+  "SERVICE_UNAVAILABLE",
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;
 
@@ -570,3 +571,11 @@ export const OfflineLeaseResponse = z.object({
   permit: z.string(),
 });
 export type OfflineLeaseResponse = z.infer<typeof OfflineLeaseResponse>;
+
+/** SPEC 015: possession of a contact address never grants login identity. */
+export const RequestContactVerification = z.object({ email: z.string().trim().email().max(254) });
+export const ConfirmContactVerification = z.object({ token: z.string().regex(/^[a-f0-9]{64}$/) });
+export const EmailCapabilities = z.object({
+  passwordReset: z.boolean(),
+  contactVerification: z.boolean(),
+});

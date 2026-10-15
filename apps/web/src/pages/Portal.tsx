@@ -68,8 +68,13 @@ export function Portal() {
     if (!data) return;
     setBusy("contact");
     try {
-      await api.updateContact(data.member.id, email.trim() || null);
-      toast.success("Contacto actualizado");
+      if (email.trim()) {
+        await api.requestContactVerification(data.member.id, email.trim());
+        toast.success("Verificación solicitada. El contacto cambiará al confirmar el enlace.");
+      } else {
+        await api.updateContact(data.member.id, null);
+        toast.success("Contacto eliminado");
+      }
       setContactOpen(false);
       await reload();
     } catch (e) {
@@ -185,10 +190,10 @@ export function Portal() {
                     onChange={(e) => setEmail(e.target.value)}
                   />
                   <p className="text-xs text-muted-foreground">
-                    Tu email de inicio de sesión se mantiene.
+                    El nuevo correo requiere verificación. Tu email de inicio de sesión se mantiene.
                   </p>
                   <Button type="submit" size="sm" disabled={busy !== null}>
-                    Guardar contacto
+                    {email.trim() ? "Solicitar verificación" : "Eliminar contacto"}
                   </Button>
                 </form>
               )}

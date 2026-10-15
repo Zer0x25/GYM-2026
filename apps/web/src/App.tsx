@@ -22,6 +22,8 @@ import {
 import { api, type CashSession } from "./api.js";
 import { SessionProvider, useSession } from "./session.js";
 import { RequireStaff, RequireRoles } from "./guards.js";
+import { AccountRecovery } from "./pages/AccountRecovery.js";
+import { VerifyContact } from "./pages/VerifyContact.js";
 import { Login } from "./pages/Login.js";
 import { Mostrador } from "./pages/Mostrador.js";
 import { Panel } from "./pages/Panel.js";
@@ -87,6 +89,7 @@ function Shell() {
         </main>
       </div>
     );
+  if (location.pathname === "/recuperar") return <AccountRecovery />;
   if (loading)
     return (
       <p
@@ -96,6 +99,7 @@ function Shell() {
         Verificando sesión…
       </p>
     );
+  if (location.pathname === "/verificar-contacto") return <VerifyContact />;
   if (!session) return <Login />;
   const reception = session.role === "admin" || session.role === "recepcion";
   const admin = session.role === "admin";

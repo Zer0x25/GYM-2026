@@ -91,7 +91,7 @@ describe.skipIf(!DATABASE_URL)("members integration", () => {
     expect(rows.some((r) => r.id === row.id)).toBe(true);
   });
 
-  it("CA-4: a socio updates only their own contact; another member → FORBIDDEN", async () => {
+  it("CA-4/015: socio must verify a new address; another member → FORBIDDEN", async () => {
     const service = new MembersService(db);
     const rowsA = await service.list({ organizationId: ORG_A, role: "admin" });
     const s1 = rowsA.find((r) => r.contactEmail === SOCIO_A1.email)!;
@@ -103,12 +103,17 @@ describe.skipIf(!DATABASE_URL)("members integration", () => {
         "x@y.cl",
       ),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
-    const updated = await service.updateContact(
-      { organizationId: ORG_A, role: "socio", memberId: s1.id },
-      s1.id,
-      "socio.a1.nuevo@gym.test",
-    );
-    expect(updated.contactEmail).toBe("socio.a1.nuevo@gym.test");
+    // SPEC015 deliberately replaces direct self-assignment with proof of possession.
+    await expect(
+      service.updateContact(
+        { organizationId: ORG_A, role: "socio", memberId: s1.id },
+        s1.id,
+        "socio.a1.nuevo@gym.test",
+      ),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+    expect(
+      (await service.getById({ organizationId: ORG_A, role: "admin" }, s1.id)).contactEmail,
+    ).toBe(SOCIO_A1.email);
   });
 
   it("CA-1/CA-2: resolveSession scopes by tenant from stored data only", async () => {

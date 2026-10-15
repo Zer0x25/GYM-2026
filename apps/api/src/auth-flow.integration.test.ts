@@ -94,7 +94,7 @@ describe.skipIf(!DATABASE_URL)("auth-flow integration (spec 002)", () => {
     expect(rows.some((m: { contactEmail: string }) => m.contactEmail === "socio.b@test.cl")).toBe(false);
   });
 
-  it("CA-4/REQ-7: socio sees only itself, edits only its own contact", async () => {
+  it("CA-4/REQ-7/015: socio sees only itself, verifies new contact and may remove own contact", async () => {
     const asSocio = (method: string, url: string, payload?: unknown) =>
       app.inject({ method, url, payload, headers: { cookie: socioCookie, origin: "http://localhost:3000" } });
 
@@ -115,9 +115,14 @@ describe.skipIf(!DATABASE_URL)("auth-flow integration (spec 002)", () => {
     // ...while reading its own profile through :id is allowed (200).
     expect((await asSocio("GET", `/api/v1/members/${own.id}`)).statusCode).toBe(200);
     expect((await asSocio("PATCH", `/api/v1/members/${other.id}/contact`, { contactEmail: "x@y.cl" })).statusCode).toBeGreaterThanOrEqual(403);
-    const ok = await asSocio("PATCH", `/api/v1/members/${own.id}/contact`, { contactEmail: "socio.a1.nuevo@test.cl" });
-    expect(ok.statusCode).toBe(200);
-    expect(ok.json().data.contactEmail).toBe("socio.a1.nuevo@test.cl");
+    const unverified = await asSocio("PATCH", `/api/v1/members/${own.id}/contact`, { contactEmail: "socio.a1.nuevo@test.cl" });
+    expect(unverified.statusCode).toBe(409);
+    expect((await asSocio("GET", "/api/v1/members/me")).json().data.contactEmail).toBe("socio.a1@test.cl");
+    const unavailable = await asSocio("POST", `/api/v1/members/${own.id}/contact-verification`, { email: "socio.a1.nuevo@test.cl" });
+    expect(unavailable.statusCode).toBe(503);
+    const removed = await asSocio("PATCH", `/api/v1/members/${own.id}/contact`, { contactEmail: null });
+    expect(removed.statusCode).toBe(200);
+    expect((await asSocio("GET", "/api/v1/members/me")).json().data.contactEmail).toBeNull();
   });
 
   it("CA-6: sign-out invalidates the session server-side (authoritative read)", async () => {

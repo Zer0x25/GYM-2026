@@ -1,3 +1,6 @@
+import { safeRequest } from "./safe-request.js";
+import type { EmailDelivery } from "./email-delivery.js";
+import { ContactVerificationService } from "./services/contact-verification.js";
 import { FinancialAdjustmentsService } from "./services/financial-adjustments.js";
 /**
  * Fastify application for App GYM (GYM-2026).
@@ -71,17 +74,28 @@ export interface AppOptions {
   db: Database;
   /** When provided, auth routes are mounted; otherwise they 501. */
   auth?: Auth | undefined;
+  emailDelivery?: EmailDelivery;
+  appOrigin?: string;
 }
 
 export async function buildServer(opts: AppOptions) {
-  const app = Fastify({ logger: true });
+  const app = Fastify({ logger: { serializers: { req: safeRequest } } });
 
   // Centralized error handling with the stable ErrorResponse contract.
   app.setErrorHandler((err: unknown, req: FastifyRequest, reply: FastifyReply) => {
-    const response = toErrorResponse(err);
+    const invalidJson =
+      typeof err === "object" &&
+      err !== null &&
+      "code" in err &&
+      err.code === "FST_ERR_CTP_INVALID_JSON_BODY";
+    const response = toErrorResponse(invalidJson ? validationError() : err);
     const status = errorStatus(response.error.code);
     if (response.error.code === "INTERNAL_ERROR") {
-      req.log.error({ err }, "unhandled error");
+      if (req.url.startsWith("/api/auth/") || req.url.includes("/contact")) {
+        req.log.error({ code: "INTERNAL_ERROR" }, "account request failed");
+      } else {
+        req.log.error({ err }, "unhandled error");
+      }
     }
     return reply.status(status).send(response);
   });
@@ -89,7 +103,14 @@ export async function buildServer(opts: AppOptions) {
   app.setNotFoundHandler((req: FastifyRequest, reply: FastifyReply) => {
     return reply
       .status(404)
-      .send(toErrorResponse(new AppError("NOT_FOUND", `Route ${req.method} ${req.url} not found`)));
+      .send(
+        toErrorResponse(
+          new AppError(
+            "NOT_FOUND",
+            `Route ${safeRequest(req).method} ${safeRequest(req).url} not found`,
+          ),
+        ),
+      );
   });
 
   app.decorateRequest("tenant", undefined);
@@ -128,6 +149,35 @@ export async function buildServer(opts: AppOptions) {
   });
 
   app.get("/health", async () => ({ status: "ok" }));
+
+  app.get("/api/v1/account/email-capabilities", async () => ({
+    data: {
+      passwordReset: Boolean(opts.auth?.emailDeliveryEnabled),
+      contactVerification: Boolean(opts.emailDelivery),
+    },
+  }));
+  const contactVerification = new ContactVerificationService(
+    opts.db,
+    opts.emailDelivery,
+    opts.appOrigin,
+  );
+  app.post<{ Params: { id: string } }>(
+    "/api/v1/members/:id/contact-verification",
+    async (req, reply) => {
+      requireRole(req.session, ["socio"]);
+      assertTenantContext(req.session);
+      return reply
+        .status(202)
+        .send({ data: await contactVerification.request(req.session, req.params.id, req.body) });
+    },
+  );
+  app.post<{ Params: { id: string } }>("/api/v1/members/:id/contact/verify", async (req, reply) => {
+    requireRole(req.session, ["socio"]);
+    assertTenantContext(req.session);
+    return reply.send({
+      data: await contactVerification.confirm(req.session, req.params.id, req.body),
+    });
+  });
 
   // --- Better Auth handler (sign-in, sign-out, session endpoints) ----------
   if (opts.auth) {
@@ -1086,6 +1136,8 @@ function errorStatus(code: string): number {
       return 403;
     case "NOT_FOUND":
       return 404;
+    case "SERVICE_UNAVAILABLE":
+      return 503;
     case "CONFLICT":
       return 409;
     default:

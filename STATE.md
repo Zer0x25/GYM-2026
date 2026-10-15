@@ -50,7 +50,15 @@
 
 ## Meta actual — App GYM funcional (2026-10-14)
 
-Unidad activa: 014-ajustes-devoluciones
+Unidad activa: 015-recuperacion-contacto
+
+## Unidad 015 — Recuperación y contacto verificado — Tier 1 — Implementada/verificada; revisión humana y entrega real pendientes
+
+- Autoridad: usuario «1:C» y «continua»; preparar sin proveedor/envío real. Spec 015, transporte de prueba exclusivamente ficticio, revisión humana al cierre; commits locales, sin push.
+- Diagnóstico 015: gate encontró una expectativa HTTP antigua en auth-flow (PATCH sin verificar 200→409); spec amplía ruta antes de actualizar test al contrato vigente, conserva aislamiento/eliminación propia y prueba completa de verificación en nueva suite. Contador 0, causa reducida y corrección acotada.
+- Evidencia final: gate raíz salida 0, 181/181 (132 API, 34 web, 10 contratos, 5 db), sin omitidos; integración 13 suites en BDs aisladas, E2E 10/10 sobre preview, cobertura financiera 96.71% (51 pruebas). Token de reset de un uso entre dos instancias, caducidad, contraseña/sesiones; contacto atómico con prueba, cuenta estable, permisos/reenvío/fallo de entrega comprobados. Captura móvil inspeccionada; diff propio 33 rutas, scope del lote 63 rutas y estructura correctos. Detalle por CA en spec 015; aprendizaje actualizado.
+- Límite: correo real apagado, sin proveedor/credenciales/adaptador. Núcleo probado solo con buzón ficticio; activar entrega exige su unidad, controles operativos y revisar atomicidad global del reset en Better Auth 1.7.7, documentada en runbook. No declarar REQ-7 ni MVP completos.
+- Checkpoint final: unidad 014 en e9ee19d; commit local de 015 identificado por ID, sin push. Remoto main verificado sigue eac204f. Revisiones humanas 010/012/013/014/015 pendientes por PROMPT-MAESTRO/AGENTS. Próximo paso: revisar estas entregas; siguiente brecha de producto en matriz es créditos/períodos y revalidación, contrastar reglas confirmadas y consultar ambigüedades de negocio antes de spec nueva. Meta abierta, sin bloqueo técnico; contador 0.
 
 ## Unidad 014 — Ajustes y devoluciones — Tier 1 — Implementada/verificada; revisión humana pendiente
 

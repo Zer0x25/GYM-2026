@@ -7,11 +7,11 @@
  * permission. Member ids are opaque; not-found is returned for both
  * "does not exist" and "exists in another tenant" to avoid enumeration.
  */
-import { and, eq, ilike, or, sql } from "drizzle-orm";
+import { and, eq, ilike, or, sql, isNull } from "drizzle-orm";
 import type { Database } from "@gym/db";
-import { members } from "@gym/db";
+import { members, contactVerifications } from "@gym/db";
 import { generateQrToken } from "./provisioning.js";
-import { forbidden, notFound } from "../errors.js";
+import { forbidden, notFound, conflict } from "../errors.js";
 import type { Role } from "@gym/contracts";
 
 const publicFields = {
@@ -90,9 +90,9 @@ export class MembersService {
   }
 
   /**
-   * Updates the member's contact. A socio may update only their own contact
-   * (D-04/B: autogestión limitada de contacto); staff may update any member
-   * of their organization. fullName is NOT editable here (protected data).
+   * Staff may replace contacts inside their tenant, clearing proof of possession.
+   * A socio may remove their own contact; assigning an address goes through
+   * ContactVerificationService (SPEC015). fullName stays protected.
    */
   async updateContact(
     actor: MemberActor,
@@ -104,13 +104,31 @@ export class MembersService {
     }
     const existing = await this.findOwn(actor, memberId);
     if (!existing) throw notFound("Socio no encontrado");
-    const [row] = await this.db
-      .update(members)
-      .set({ contactEmail })
-      .where(and(eq(members.id, memberId), eq(members.organizationId, actor.organizationId)))
-      .returning(publicFields);
-    if (!row) throw notFound("Socio no encontrado");
-    return row;
+    if (actor.role === "socio" && contactEmail !== null) {
+      throw conflict("Debes verificar el nuevo correo antes de cambiar tu contacto.");
+    }
+    return this.db.transaction(async (tx) => {
+      const scope = and(eq(members.id, memberId), eq(members.organizationId, actor.organizationId));
+      await tx.select({ id: members.id }).from(members).where(scope).for("update");
+      const [row] = await tx
+        .update(members)
+        .set({ contactEmail, contactVerifiedAt: null })
+        .where(scope)
+        .returning(publicFields);
+      await tx
+        .update(contactVerifications)
+        .set({ cancelledAt: new Date() })
+        .where(
+          and(
+            eq(contactVerifications.memberId, memberId),
+            eq(contactVerifications.organizationId, actor.organizationId),
+            isNull(contactVerifications.consumedAt),
+            isNull(contactVerifications.cancelledAt),
+          ),
+        );
+      if (!row) throw notFound("Socio no encontrado");
+      return row;
+    });
   }
 
   /** Tenant-scoped lookup: never crosses organizations. */

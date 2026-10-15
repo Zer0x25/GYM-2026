@@ -155,6 +155,7 @@ export const members = pgTable(
       .references(() => authUsers.id),
     fullName: text("full_name").notNull(),
     contactEmail: text("contact_email"),
+    contactVerifiedAt: timestamp("contact_verified_at", { withTimezone: true }),
     adultResponsibleId: uuid("adult_responsible_id"),
     /**
      * Static, opaque, globally-unique QR token for supervised ingress
@@ -168,6 +169,31 @@ export const members = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("members_org_idx").on(t.organizationId)],
+);
+
+/** Short-lived proof bound to the authenticated member; only token hashes persist. */
+export const contactVerifications = pgTable(
+  "contact_verifications",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id),
+    memberId: uuid("member_id")
+      .notNull()
+      .references(() => members.id),
+    accountId: text("account_id")
+      .notNull()
+      .references(() => authUsers.id),
+    tokenHash: text("token_hash").notNull().unique(),
+    targetEmail: text("target_email").notNull(),
+    previousEmail: text("previous_email"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("contact_verifications_member_idx").on(t.organizationId, t.memberId)],
 );
 
 /** Plan definition, configurable per gym (P-MEM-02.1/B). */
@@ -655,6 +681,7 @@ export const schema = {
   authSessions,
   authAccounts,
   authVerifications,
+  contactVerifications,
   identityAccounts,
   staffAssignments,
   members,

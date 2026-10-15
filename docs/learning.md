@@ -2,6 +2,10 @@
 
 > Formato mínimo: fecha, ID de unidad, hallazgo, evidencia, aplicación futura.
 
+## 2026-10-15 — Unidad 015 — Probar posesión sin sustituir identidad
+
+Contacto e identidad deben permanecer separados: el desafío liga hash/org/miembro/cuenta y solo una confirmación consume y cambia contacto en transacción; la edición manual cancela desafíos y elimina marca verificada. Pruebas con PostgreSQL/buzón ficticio comprobaron caducidad, reenvío, tenant, concurrencia y conservación de cuenta. Better Auth necesita `revokeSessionsOnPasswordReset` explícito; se comprobó rechazo de cookie anterior con lectura autoritativa, no solo respuesta del reset. La versión instalada 1.7.7 no hace transacción global del reset; documentar esa limitación antes de correo real, sin asumir comportamiento de documentación de main. Con transporte ausente capacidades falsas y cero efectos son el contrato correcto, no un mensaje de envío exitoso. Evidencia por criterio en spec 015.
+
 ## 2026-10-15 — Unidad 014 — Compensación financiera concurrente
 
 Conservar el pago y su ingreso único exige ledger de salidas separado. Serializar clave de intención y saldo del pago, y compartir lock del turno con el cierre, evita duplicados, exceso acumulado y egresos sobre turnos cerrados. Siete pruebas PostgreSQL comprobaron las carreras, replay posterior al cierre, roles/tenant y conservación exacta de pago/movimiento/membresía. UI conserva clave y cuerpo tras fallo de transporte. Reportes mantienen bruto y añaden salidas/neto, sin reinterpretar campos históricos. Evidencia en spec 014; no inferir que devolver dinero revoca derechos.

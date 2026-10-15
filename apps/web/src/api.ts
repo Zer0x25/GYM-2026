@@ -258,7 +258,39 @@ export interface CheckinFeedEntry {
   at: string;
 }
 
+async function accountCommand(path: string, body: object): Promise<void> {
+  const response = await fetch(`/api/auth/${path}`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    throw new ApiError(
+      response.status,
+      "ACCOUNT_RECOVERY_FAILED",
+      response.status === 429
+        ? "Demasiados intentos. Espera antes de volver a intentar."
+        : path === "reset-password"
+          ? "No se pudo cambiar la contraseña. El enlace puede haber vencido o ya fue utilizado."
+          : "La recuperación no está disponible. Intenta más tarde.",
+    );
+  }
+}
+
 export const api = {
+  emailCapabilities: () =>
+    request<{ passwordReset: boolean; contactVerification: boolean }>(
+      "GET",
+      "/account/email-capabilities",
+    ),
+  requestPasswordReset: (email: string) => accountCommand("request-password-reset", { email }),
+  resetPassword: (token: string, newPassword: string) =>
+    accountCommand("reset-password", { token, newPassword }),
+  requestContactVerification: (id: string, email: string) =>
+    request<{ pending: boolean }>("POST", `/members/${id}/contact-verification`, { email }),
+  confirmContactVerification: (id: string, token: string) =>
+    request<{ verified: boolean }>("POST", `/members/${id}/contact/verify`, { token }),
   roster: (id: string) => request<Booking[]>("GET", `/sessions/${id}/roster`),
   dailyReport: (date: string) => request<DailyReport>("GET", `/reports/daily?date=${date}`),
   memberOverview: (id: string) => request<MemberOverview>("GET", `/members/${id}/overview`),
