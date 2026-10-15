@@ -1,3 +1,4 @@
+import { paymentMethodLabel } from "../lib/payment-method.js";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import { Check, X } from "lucide-react";
@@ -64,11 +65,16 @@ export function Payments() {
     {
       accessorKey: "method",
       header: "Método",
-      cell: ({ getValue }) => (getValue() === "cash" ? "Efectivo" : "Transferencia"),
+      cell: ({ getValue }) => paymentMethodLabel(getValue()),
     },
     {
       accessorKey: "reference",
       header: "Referencia",
+      cell: ({ getValue }) => String(getValue() ?? "—"),
+    },
+    {
+      accessorKey: "comment",
+      header: "Comentario",
       cell: ({ getValue }) => String(getValue() ?? "—"),
     },
     {

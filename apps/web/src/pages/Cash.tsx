@@ -1,3 +1,4 @@
+import { paymentMethodLabel } from "../lib/payment-method.js";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import { Lock, Unlock, RefreshCw } from "lucide-react";
@@ -29,6 +30,10 @@ export function Cash() {
   const transfer =
     data?.movements
       .filter((m) => m.method === "transfer")
+      .reduce((sum, m) => sum + m.amountCents, 0) ?? 0;
+  const transbank =
+    data?.movements
+      .filter((m) => m.method === "transbank")
       .reduce((sum, m) => sum + m.amountCents, 0) ?? 0;
   async function submit() {
     if (busy) return;
@@ -64,7 +69,7 @@ export function Cash() {
     {
       accessorKey: "method",
       header: "Método",
-      cell: ({ getValue }) => (getValue() === "cash" ? "Efectivo" : "Transferencia"),
+      cell: ({ getValue }) => paymentMethodLabel(getValue()),
     },
     {
       accessorKey: "amountCents",
@@ -105,7 +110,7 @@ export function Cash() {
       ) : (
         data && (
           <>
-            <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
               <Stat
                 label="Estado del turno"
                 value={data.session ? "Abierto" : "Cerrado"}
@@ -124,6 +129,11 @@ export function Cash() {
                 label="Transferencias validadas"
                 value={formatCLP(transfer)}
                 note={`${data.movements.filter((m) => m.method === "transfer").length} movimientos`}
+              />
+              <Stat
+                label="Transbank externo"
+                value={formatCLP(transbank)}
+                note="Cobros registrados y validados manualmente"
               />
               <Stat
                 label="Total esperado"
@@ -165,7 +175,7 @@ export function Cash() {
         description={
           dialog === "open"
             ? "Registra el fondo de apertura en pesos chilenos."
-            : `Total esperado: ${formatCLP(expected)}. Incluye efectivo y transferencias según la conciliación del sistema. El cierre es definitivo y registra cualquier diferencia.`
+            : `Total esperado: ${formatCLP(expected)}. Incluye efectivo, transferencias y Transbank externo según la conciliación del sistema. El cierre es definitivo y registra cualquier diferencia.`
         }
         label={dialog === "open" ? "Abrir turno" : "Confirmar cierre"}
         destructive={dialog === "close"}

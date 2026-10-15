@@ -102,13 +102,15 @@ export class OperationsService {
       )
       .orderBy(cashSessions.openedAt);
     const cash = rows.find((r) => r.method === "cash")?.total ?? 0,
-      transfer = rows.find((r) => r.method === "transfer")?.total ?? 0;
+      transfer = rows.find((r) => r.method === "transfer")?.total ?? 0,
+      transbank = rows.find((r) => r.method === "transbank")?.total ?? 0;
     return {
       date,
       timeZone: "America/Santiago",
       cash,
       transfer,
-      income: cash + transfer,
+      transbank,
+      income: cash + transfer + transbank,
       movements: rows.reduce((v, r) => v + r.count, 0),
       shifts,
     };

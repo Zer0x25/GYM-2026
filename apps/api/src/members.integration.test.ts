@@ -22,7 +22,7 @@ describe.skipIf(!DATABASE_URL)("members integration", () => {
     db = createDb(DATABASE_URL!);
     await db.execute(
       // truncate our tables for a deterministic fixture
-      sql`TRUNCATE organizations, identity_accounts, staff_assignments, members, plans RESTART IDENTITY CASCADE`,
+      sql`TRUNCATE organizations, identity_accounts, staff_assignments, members, plans, "user" RESTART IDENTITY CASCADE`,
     );
     await db.insert(organizations).values([
       { id: ORG_A, name: "Gimnasio A" },

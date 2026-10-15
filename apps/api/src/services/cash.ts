@@ -87,7 +87,10 @@ export class CashService {
         .select()
         .from(cashSessions)
         .where(
-          and(eq(cashSessions.id, sessionId), eq(cashSessions.organizationId, actor.organizationId)),
+          and(
+            eq(cashSessions.id, sessionId),
+            eq(cashSessions.organizationId, actor.organizationId),
+          ),
         )
         .for("update")
         .limit(1);
@@ -195,13 +198,13 @@ export class CashService {
       )
       .groupBy(cashMovements.method);
 
-    const byMethod = { cash: 0, transfer: 0 };
+    const byMethod = { cash: 0, transfer: 0, transbank: 0 };
     let movementCount = 0;
     for (const r of rows) {
       byMethod[r.method] += Number(r.total);
       movementCount += Number(r.count);
     }
-    const totalCents = byMethod.cash + byMethod.transfer;
+    const totalCents = byMethod.cash + byMethod.transfer + byMethod.transbank;
 
     const session = await this.findOpenSession(organizationId);
     return {

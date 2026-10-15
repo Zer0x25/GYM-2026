@@ -126,13 +126,32 @@ export const MembershipRef = z.object({
 });
 export type MembershipRef = z.infer<typeof MembershipRef>;
 
-export const RegisterPaymentRequest = z.object({
-  membershipId: z.string().uuid(),
-  amountCents: z.number().int().nonnegative(),
-  method: z.enum(["cash", "transfer"]),
-  /** Mandatory when method === "transfer" (REQ-2). */
-  reference: z.string().min(1).optional(),
+export const PaymentMethod = z.enum(["cash", "transfer", "transbank"]);
+export type PaymentMethod = z.infer<typeof PaymentMethod>;
+export const TransbankEvidence = z.object({
+  reference: z.string().trim().min(1).max(200),
+  comment: z.string().trim().min(1).max(1000),
 });
+
+export const RegisterPaymentRequest = z
+  .object({
+    membershipId: z.string().uuid(),
+    amountCents: z.number().int().nonnegative(),
+    method: PaymentMethod,
+    /** Mandatory when method === "transfer" (REQ-2). */
+    reference: z
+      .string()
+      .min(1)
+      .transform((value) => value.trim())
+      .optional(),
+    comment: z.string().trim().max(1000).optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.method === "transbank") {
+      const evidence = TransbankEvidence.safeParse(value);
+      if (!evidence.success) for (const issue of evidence.error.issues) ctx.addIssue(issue);
+    }
+  });
 export type RegisterPaymentRequest = z.infer<typeof RegisterPaymentRequest>;
 
 export const PaymentRef = z.object({
@@ -142,8 +161,9 @@ export const PaymentRef = z.object({
   membershipId: z.string().uuid(),
   planId: z.string().uuid(),
   amountCents: z.number().int(),
-  method: z.enum(["cash", "transfer"]),
+  method: PaymentMethod,
   reference: z.string().nullable(),
+  comment: z.string().nullable().optional(),
   state: z.enum(["provisional", "validated", "rejected"]),
   registeredBy: z.string(),
   decidedBy: z.string().nullable(),
@@ -190,7 +210,7 @@ export const CashMovementRef = z.object({
   sessionId: z.string().uuid(),
   paymentId: z.string().uuid(),
   type: z.enum(["income"]),
-  method: z.enum(["cash", "transfer"]),
+  method: PaymentMethod,
   amountCents: z.number().int(),
   createdAt: z.string(),
 });
@@ -205,6 +225,7 @@ export const CashConsolidation = z.object({
   byMethod: z.object({
     cash: z.number().int(),
     transfer: z.number().int(),
+    transbank: z.number().int().default(0),
   }),
   movementCount: z.number().int(),
 });
@@ -372,7 +393,7 @@ export const OfflineEventInput = z.object({
   memberId: z.string().uuid().optional(),
   capturedAt: z.string(),
   amountCents: z.number().int().optional(),
-  method: z.enum(["cash", "transfer"]).optional(),
+  method: PaymentMethod.optional(),
   payload: z.string().optional(),
 });
 export type OfflineEventInput = z.infer<typeof OfflineEventInput>;

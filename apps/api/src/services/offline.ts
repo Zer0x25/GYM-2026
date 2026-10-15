@@ -25,6 +25,7 @@
  *  7. AUDIT: every mutation writes its audit row in the same transaction,
  *     carrying event_id and folio_externo for device→server traceability.
  */
+import { TransbankEvidence } from "@gym/contracts";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { and, desc, eq, sql } from "drizzle-orm";
 import type { Database } from "@gym/db";
@@ -55,7 +56,7 @@ export interface SyncEventInput {
   memberId?: string | undefined;
   capturedAt: string;
   amountCents?: number | undefined;
-  method?: "cash" | "transfer" | undefined;
+  method?: "cash" | "transfer" | "transbank" | undefined;
   payload?: string | undefined;
 }
 
@@ -459,6 +460,25 @@ export class OfflineService {
       );
     }
     const method = ev.method ?? "cash";
+    let evidence: { reference: string; comment: string } | undefined;
+    if (method === "transbank") {
+      let raw: unknown;
+      try {
+        raw = JSON.parse(ev.payload ?? "{}");
+      } catch {
+        raw = null;
+      }
+      const parsed = TransbankEvidence.safeParse(raw);
+      if (!parsed.success)
+        return this.store(
+          actor,
+          deviceId,
+          ev,
+          "rechazado",
+          "Transbank externo requiere número de operación y comentario válidos",
+        );
+      evidence = parsed.data;
+    }
     const membership = selectedMembershipId
       ? (
           await this.db
@@ -550,7 +570,8 @@ export class OfflineService {
           planId: membership.planId,
           amountCents,
           method,
-          reference: ev.folioExterno,
+          reference: evidence?.reference ?? ev.folioExterno,
+          comment: evidence?.comment ?? null,
           state: "provisional",
           registeredBy: actor.accountId,
         })

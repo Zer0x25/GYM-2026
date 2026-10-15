@@ -51,8 +51,8 @@ export function Reports() {
   function exportCsv() {
     if (!data) return;
     const csv = [
-      "Fecha,Efectivo CLP,Transferencias CLP,Total CLP,Movimientos",
-      `${data.date},${data.cash},${data.transfer},${data.income},${data.movements}`,
+      "Fecha,Efectivo CLP,Transferencias CLP,Transbank externo CLP,Total CLP,Movimientos",
+      `${data.date},${data.cash},${data.transfer},${data.transbank ?? 0},${data.income},${data.movements}`,
     ].join("\r\n");
     const url = URL.createObjectURL(
         new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" }),
@@ -94,7 +94,7 @@ export function Reports() {
       ) : (
         data && (
           <>
-            <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
               <Stat
                 label="Ingresos confirmados"
                 value={formatCLP(data.income)}
@@ -105,6 +105,11 @@ export function Reports() {
                 label="Transferencias"
                 value={formatCLP(data.transfer)}
                 note="Ingresos por transferencia"
+              />
+              <Stat
+                label="Transbank externo"
+                value={formatCLP(data.transbank ?? 0)}
+                note="Cobros externos validados manualmente"
               />
               <Stat
                 label="Movimientos"

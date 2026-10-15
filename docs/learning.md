@@ -2,6 +2,12 @@
 
 > Formato mínimo: fecha, ID de unidad, hallazgo, evidencia, aplicación futura.
 
+## 2026-10-14 — Unidad 012 — Métodos financieros, fixtures y aceptación
+
+Añadir un método manual exige extender los totales/proyecciones y etiquetas, no solo permitir un enum: antes el reporte sumaba únicamente cash+transfer. Contratos/API/UI fallaron por ausencia de Transbank antes de implementar; la nueva suite comprueba pago provisional, evidencia, roles/tenant, movimiento único y folio offline independiente. Conservar operación del terminal y folio de contingencia como evidencias distintas.
+
+El runner de integración reutiliza bases ficticias; members.integration.test.ts dejaba usuarios y fallaba por user_pkey en la siguiente corrida. Truncar también la identidad del fixture preserva aislamiento sin borrar la BD ni cambiar aserciones; dos corridas consecutivas de 8/8 lo comprobaron, luego pasó el runner completo de 11 suites. La matriz de aceptación separa créditos/pausas/ajustes pendientes del núcleo ya probado: un booleano de compromiso no acredita un ledger de saldo. La captura móvil detectó crecimiento del grid por ancho intrínseco de tabla; minmax(0,1fr) conserva scroll interno sin ensanchar la página.
+
 ## 2026-10-14 — Unidad 011 — Sincronización del test de Caja
 
 El título de una página no acredita que hayan terminado sus peticiones. CI 38661089570 y el primer gate previo al push fallaron leyendo «Abierto» antes de cargar la caja; un reintento verde solo ocultó la carrera. Fixture con promesa diferida reproduce el mismo fallo sin sleeps; findByText conserva la expectativa y espera el estado observable. Suite web: 26/26 en /tmp/gym-011-web.log. Para futuras pruebas de datos asíncronos, esperar el resultado y controlar la resolución del fixture en lugar de usar el título como señal de carga completa.

@@ -404,3 +404,23 @@ El servidor firma la captura y el ámbito de dispositivo/operador/tenant. El eve
 Idempotencia `organizationId + eventId`: efecto exactamente una vez; folio externo y huella de negocio conservados para revisión. El bloqueo del dispositivo serializa la cadena de auditoría incluso con eventos diferentes concurrentes; createdAt usa clock_timestamp para ordenar después de adquirir el bloqueo. Cobro firmado se vincula a la membresía de la instantánea, sin elegir arbitrariamente otra posterior. Ningún evento valida pagos ni reserva clases.
 
 El vínculo `members.account_id` es estable: cambiar contacto no modifica titularidad ni cuenta de login. Backfill migración 0009 solo cuando la coincidencia histórica de email es única; perfiles simples con email no adquieren acceso por coincidencia. Listados públicos nunca exponen accountId, qrToken ni datos legales.
+
+## Unidad 012 — Transbank externo registrado manualmente
+
+Cambio aditivo: `PaymentMethod = cash | transfer | transbank`. No hay integración ni cobro de tarjeta desde la API. Mantiene roles/tenant, pago provisional, validación por otro admin, movimiento único y auditoría transaccional.
+
+`POST /api/v1/payments` (admin/recepción), body:
+
+```json
+{"membershipId":"11111111-1111-4111-8111-111111111111","amountCents":30000,"method":"transbank","reference":"OP-123","comment":"Terminal externo mostrador"}
+```
+
+Para Transbank, `reference` (operación, 1–200 caracteres tras trim) y `comment` (1–1000 tras trim) son obligatorios. No ingresar PAN/CVV ni credenciales del terminal. Cash y transfer conservan sus reglas previas. Respuesta `201 {data: Payment}` incluye `method`, `reference`, `comment` nullable y `state: provisional`; el alta no activa derechos ni crea movimiento. Históricos conservan comment=null. Lectura/listado/ficha devuelven el mismo dato sin modificar los pagos validados.
+
+Rechazos: `400 VALIDATION_ERROR` por método desconocido/evidencia inválida; `401 UNAUTHENTICATED`; `403 FORBIDDEN` por rol, validación por recepción o autovalidación; `404 NOT_FOUND` para membresía/pago ajeno o ausente; `409 CONFLICT` por transición terminal repetida o validación sin turno abierto. `POST /payments/:id/validate` sigue siendo una operación separada online; no constituye confirmación bancaria de liquidación.
+
+`GET /api/v1/cash/consolidation` añade `byMethod.transbank`; totalCents suma cash+transfer+transbank y movementCount cuenta cada movimiento una sola vez. `GET /api/v1/reports/daily?date=YYYY-MM-DD` añade `transbank` junto a cash/transfer/income/movements/shifts; todos son montos confirmados, provisional excluido. Fecha del reporte en America/Santiago. Fórmula de cierre preservada: apertura más suma de movimientos por todos los métodos. CSV añade columna `Transbank externo CLP`.
+
+Sync offline: `events[].method` acepta transbank. El `payload` JSON conserva permiso/proof existentes y añade `reference`/`comment`; el `folioExterno` sigue siendo copia independiente y no reemplaza la operación del terminal. Evidencia faltante → evento persistido rechazado y cero pagos nuevos; nunca se valida dinero offline. Recibo por evento e idempotencia de event_id permanecen vigentes. La captura local sigue cifrada en el vault del operador; no requiere cambiar claves ni borrar outboxes anteriores.
+
+Verificación: `transbank.integration.test.ts` prueba almacenamiento, falta de evidencia, roles, aislamiento, totales/cierre y replay; `transbank.test.tsx` prueba captura; `tests/e2e/transbank.spec.ts` recorre cobro/validación/CSV con backend real. Resultados ejecutados en spec 012.

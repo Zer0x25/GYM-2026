@@ -101,8 +101,9 @@ export interface Payment {
   membershipId: string;
   planId: string;
   amountCents: number;
-  method: "cash" | "transfer";
+  method: "cash" | "transfer" | "transbank";
   reference: string | null;
+  comment?: string | null;
   state: PaymentState;
   registeredBy: string;
   decidedBy: string | null;
@@ -131,7 +132,7 @@ export interface CashMovement {
   sessionId: string;
   paymentId: string;
   type: "income";
-  method: "cash" | "transfer";
+  method: "cash" | "transfer" | "transbank";
   amountCents: number;
   createdAt: string;
 }
@@ -141,7 +142,7 @@ export interface Consolidation {
   date: string;
   openingCents: number;
   totalCents: number;
-  byMethod: { cash: number; transfer: number };
+  byMethod: { cash: number; transfer: number; transbank?: number };
   movementCount: number;
 }
 
@@ -357,8 +358,9 @@ export const api = {
   registerPayment: (input: {
     membershipId: string;
     amountCents: number;
-    method: "cash" | "transfer";
+    method: "cash" | "transfer" | "transbank";
     reference?: string;
+    comment?: string;
   }) => request<Payment>("POST", "/payments", input),
   listPayments: (state?: PaymentState) =>
     request<Payment[]>("GET", `/payments${state ? `?state=${state}` : ""}`),
@@ -476,7 +478,7 @@ export interface OfflineEvent {
   memberId?: string;
   capturedAt: string;
   amountCents?: number;
-  method?: "cash" | "transfer";
+  method?: "cash" | "transfer" | "transbank";
   payload: string;
 }
 export interface SyncResult {
@@ -501,6 +503,7 @@ export interface DailyReport {
   timeZone: string;
   cash: number;
   transfer: number;
+  transbank?: number;
   income: number;
   movements: number;
   shifts: CashSession[];

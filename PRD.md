@@ -62,10 +62,11 @@ Todos los requisitos de esta entrega son obligatorios; lo opcional va a «futuro
   - Destino: VPS propio Linux (decisión G1-HOST); runbook con Docker Compose; el VPS concreto puede cambiar (no necesariamente zer0x-a1).
   - Commits: locales autorizados por unidad verificada; sin push automático.
 - **Pendientes críticos** (registrados con su estado en STATE.md; resolver antes del piloto real):
-  - Parámetro de autorización offline P-09.3.1b (duración exacta y mecanismo de verificación; 72 h es valor de trabajo derivado, no aprobado).
-  - Cifrado/gestión de claves del almacenamiento local offline y revocación diferida (ADR-G1-OFF: mecanismo definido en ADR, parámetros por validar en piloto).
+  - P-09.3.1b resuelto el 2026-10-14: permiso máximo 72 h firmado y revalidado online; cifrado AES-GCM y frase local aceptados en ADR 0007. La comprobación en equipos reales y los procedimientos de custodia/pérdida/revocación diferida siguen pendientes antes del piloto.
   - Validación jurídica de datos de menores (D-05) y acceso temporal de soporte (D-06).
   - Política integral P-09.3 (mecanismo completo de autorización/verificación offline) y representación de menores.
 - **No aplicables (v1.0):** sauna y reservas de recursos (v1.1); multisede; propietario multi-organización (P-11/D-08); monetización CM-01; pagos integrados; notificaciones SMS/WhatsApp; rutinas/nutrición.
 
 La arquitectura vive en `docs/adr/0002-arquitectura-base.md`; autoridad e invocación en `PROMPT-MAESTRO.md`; pruebas y escenarios en specs; progreso en `STATE.md`. Cambios al alcance o criterios requieren confirmación registrada y nuevas decisiones cuando afecten arquitectura.
+
+Matriz de cobertura y brechas observadas: `docs/product/aceptacion-mvp.md`. Inventaría evidencia y pendientes sin modificar el alcance ni declarar aceptación final.

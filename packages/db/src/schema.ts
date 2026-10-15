@@ -246,9 +246,11 @@ export const payments = pgTable(
       .references(() => plans.id),
     /** Amount in CLP cents (integer). Must match plan.priceCents (warn on diff). */
     amountCents: integer("amount_cents").notNull(),
-    method: text("method", { enum: ["cash", "transfer"] }).notNull(),
+    method: text("method", { enum: ["cash", "transfer", "transbank"] }).notNull(),
     /** Bank transfer reference (REQUIRED for method=transfer). */
     reference: text("reference"),
+    /** Operator comment for a manually recorded external terminal payment. */
+    comment: text("comment"),
     state: text("state", { enum: ["provisional", "validated", "rejected"] })
       .notNull()
       .default("provisional"),
@@ -321,7 +323,7 @@ export const cashMovements = pgTable(
       .notNull()
       .references(() => payments.id),
     type: text("type", { enum: ["income"] }).notNull(),
-    method: text("method", { enum: ["cash", "transfer"] }).notNull(),
+    method: text("method", { enum: ["cash", "transfer", "transbank"] }).notNull(),
     amountCents: integer("amount_cents").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -530,7 +532,7 @@ export const offlineEvents = pgTable(
     /** Timestamp declared by the device (may be stale — freshness checked on ingress). */
     capturedAt: timestamp("captured_at", { withTimezone: true }).notNull(),
     amountCents: integer("amount_cents"),
-    method: text("method", { enum: ["cash", "transfer"] }),
+    method: text("method", { enum: ["cash", "transfer", "transbank"] }),
     payload: text("payload"),
     state: text("state", {
       enum: ["pendiente", "sincronizado", "rechazado", "duplicado_negocio"],

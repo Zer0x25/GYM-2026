@@ -39,9 +39,10 @@ export function QuickPay({
 }) {
   const [step, setStep] = useState<1 | 2>(1);
   const [membershipId, setMembershipId] = useState<string>("");
-  const [method, setMethod] = useState<"cash" | "transfer">("cash");
+  const [method, setMethod] = useState<"cash" | "transfer" | "transbank">("cash");
   const [amount, setAmount] = useState("");
   const [reference, setReference] = useState("");
+  const [comment, setComment] = useState("");
   const [busy, setBusy] = useState(false);
 
   function pickMembership(id: string) {
@@ -56,6 +57,7 @@ export function QuickPay({
     setMembershipId("");
     setAmount("");
     setReference("");
+    setComment("");
     setMethod("cash");
   }
 
@@ -66,7 +68,8 @@ export function QuickPay({
         membershipId,
         amountCents: Number(amount),
         method,
-        reference: method === "transfer" ? reference.trim() : undefined,
+        reference: method !== "cash" ? reference.trim() : undefined,
+        comment: method === "transbank" ? comment.trim() : undefined,
       });
       toast.success("Pago registrado — queda provisional hasta validación");
       reset();
@@ -82,7 +85,11 @@ export function QuickPay({
   const canSubmit =
     Number.isSafeInteger(Number(amount)) &&
     Number(amount) > 0 &&
-    (method === "cash" || reference.trim().length > 0);
+    (method === "cash" || reference.trim().length > 0) &&
+    (method !== "transbank" ||
+      (reference.trim().length <= 200 &&
+        comment.trim().length > 0 &&
+        comment.trim().length <= 1000));
 
   return (
     <Dialog
@@ -128,7 +135,7 @@ export function QuickPay({
           </div>
         ) : (
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
               <button
                 type="button"
                 onClick={() => setMethod("cash")}
@@ -153,6 +160,18 @@ export function QuickPay({
               >
                 <CreditCard className="h-4 w-4" /> Transferencia
               </button>
+              <button
+                type="button"
+                onClick={() => setMethod("transbank")}
+                className={cn(
+                  "flex items-center justify-center gap-2 rounded-md border p-3 text-sm font-medium",
+                  method === "transbank"
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "hover:bg-accent",
+                )}
+              >
+                <CreditCard className="h-4 w-4" /> Transbank externo
+              </button>
             </div>
             <div className="space-y-2">
               <Label htmlFor="amount">Monto (CLP)</Label>
@@ -165,9 +184,13 @@ export function QuickPay({
                 onChange={(e) => setAmount(e.target.value)}
               />
             </div>
-            {method === "transfer" ? (
+            {method !== "cash" ? (
               <div className="space-y-2">
-                <Label htmlFor="ref">Referencia bancaria (obligatoria)</Label>
+                <Label htmlFor="ref">
+                  {method === "transbank"
+                    ? "Número de operación (obligatorio)"
+                    : "Referencia bancaria (obligatoria)"}
+                </Label>
                 <Input
                   id="ref"
                   value={reference}
@@ -176,6 +199,22 @@ export function QuickPay({
                 />
               </div>
             ) : null}
+            {method === "transbank" && (
+              <div className="space-y-2">
+                <Label htmlFor="payment-comment">Comentario (obligatorio)</Label>
+                <Input
+                  id="payment-comment"
+                  maxLength={1000}
+                  value={comment}
+                  onChange={(e) => setComment(e.target.value)}
+                  placeholder="Identifica el cobro externo, sin datos de tarjeta"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Registra un cobro ya realizado fuera de la app. No ingreses números de tarjeta ni
+                  códigos de seguridad.
+                </p>
+              </div>
+            )}
           </div>
         )}
 

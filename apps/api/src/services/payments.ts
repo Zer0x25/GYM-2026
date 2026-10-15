@@ -21,6 +21,7 @@
  * ids behave as not-found, never as forbidden-with-details.
  */
 import { and, eq } from "drizzle-orm";
+import { TransbankEvidence } from "@gym/contracts";
 import type { Database } from "@gym/db";
 import { cashMovements, cashSessions, memberships, payments, plans } from "@gym/db";
 import { conflict, forbidden, notFound } from "../errors.js";
@@ -35,8 +36,9 @@ export interface PaymentActor {
 export interface RegisterPaymentInput {
   membershipId: string;
   amountCents: number;
-  method: "cash" | "transfer";
+  method: "cash" | "transfer" | "transbank";
   reference?: string | undefined;
+  comment?: string | undefined;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -60,6 +62,9 @@ export class PaymentsService {
     if (input.method === "transfer" && !input.reference?.trim()) {
       throw conflict("La transferencia requiere una referencia bancaria");
     }
+    if (input.method === "transbank" && !TransbankEvidence.safeParse(input).success) {
+      throw conflict("Transbank externo requiere número de operación y comentario válidos");
+    }
     const membership = await this.findMembership(actor.organizationId, input.membershipId);
     if (!membership) throw notFound("Membresía no encontrada");
     const plan = await this.findPlan(actor.organizationId, membership.planId);
@@ -76,6 +81,7 @@ export class PaymentsService {
           amountCents: input.amountCents,
           method: input.method,
           reference: input.reference?.trim() ?? null,
+          comment: input.comment?.trim() || null,
           state: "provisional",
           registeredBy: actor.accountId,
         })
@@ -168,9 +174,7 @@ export class PaymentsService {
       // shift. No open session → refuse to validate (no orphan money).
       const session = await this.findOpenSession(actor.organizationId, tx);
       if (!session) {
-        throw conflict(
-          "No hay un turno de caja abierto: abrilo antes de validar pagos",
-        );
+        throw conflict("No hay un turno de caja abierto: abrilo antes de validar pagos");
       }
       await tx.insert(cashMovements).values({
         organizationId: actor.organizationId,

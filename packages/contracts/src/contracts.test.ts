@@ -5,9 +5,44 @@ import {
   CreatePlanRequest,
   ErrorCode,
   SessionResponse,
+  RegisterPaymentRequest,
 } from "./index.js";
 
 describe("contracts", () => {
+  it("SPEC 012 CA-1 acepta Transbank externo con operación y comentario", () => {
+    expect(
+      RegisterPaymentRequest.safeParse({
+        membershipId: "11111111-1111-4111-8111-111111111111",
+        amountCents: 30000,
+        method: "transbank",
+        reference: " OP-123 ",
+        comment: " Terminal externo ",
+      }),
+    ).toMatchObject({
+      success: true,
+      data: { method: "transbank", reference: "OP-123", comment: "Terminal externo" },
+    });
+  });
+  it("SPEC 012 CA-1 rechaza evidencia vacía o excesiva y métodos desconocidos", () => {
+    const base = {
+      membershipId: "11111111-1111-4111-8111-111111111111",
+      amountCents: 30000,
+      method: "transbank",
+      reference: "OP-123",
+      comment: "Terminal externo",
+    };
+    for (const invalid of [
+      { reference: " " },
+      { comment: " " },
+      { reference: undefined },
+      { comment: undefined },
+      { reference: "x".repeat(201) },
+      { comment: "x".repeat(1001) },
+      { method: "card-api" },
+    ]) {
+      expect(RegisterPaymentRequest.safeParse({ ...base, ...invalid }).success).toBe(false);
+    }
+  });
   it("accepts a valid create-organization request", () => {
     const parsed = CreateOrganizationRequest.safeParse({ name: "Gimnasio Piloto" });
     expect(parsed.success).toBe(true);

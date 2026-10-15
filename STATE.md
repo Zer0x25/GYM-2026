@@ -42,8 +42,7 @@
 - **Decisión del usuario 2026-10-12**: commits locales autorizados; **push a origin/main SOLO cuando el usuario lo pida explícitamente**.
 - Pendientes críticos (resolver antes del piloto real G2)
 
-- Parámetro de permiso offline P-09.3.1b (duración exacta y verificación; 72 h es valor de trabajo derivado, no aprobado).
-- Cifrado/gestión de claves del almacenamiento local offline y revocación diferida.
+- P-09.3.1b y cifrado resueltos el 2026-10-14 en ADR 0007: permiso firmado de máximo 72 h, revalidación online, AES-GCM/frase local. Pendiente validar equipos y procedimientos de custodia/pérdida/revocación diferida en el piloto.
 - Validación jurídica de datos de menores (D-05) y acceso temporal de soporte (D-06).
 - Política integral P-09.3; VPS concreto, región y recursos.
 
@@ -51,7 +50,18 @@
 
 ## Meta actual — App GYM funcional (2026-10-14)
 
-Unidad activa: 011-caja-test-asincrono
+Unidad activa: 012-transbank-manual
+
+## Unidad 012 — Transbank manual y matriz de aceptación — Tier 1 — Implementada/verificada; revisión humana pendiente
+
+- Autoridad: «continua», 2026-10-14; PRD REQ-2/3/9 y delegación confirmada. Spec specs/012-transbank-manual.md; revisión humana al cierre pendiente, commits locales autorizados, sin nuevo permiso de push/despliegue/G2.
+- Objetivo: cobro manual Transbank con operación/comentario, proyecciones y outbox coherentes; matriz completa de aceptación con evidencia y brechas; corregir pendientes documentales ya resueltos por ADR 0007.
+- Checkpoint: main limpio eac204f, CI 38661741866 verde; primero tests/rojo, implementación, integración/cobertura/E2E/gate y commit local de lo verificado. Falta de progreso: 0.
+- Pendientes de información: canal de correo para recuperación/verificación y política de ajustes/devoluciones (preguntas asíncronas). Spec 003 excluyó devoluciones y dejó ajustes por definir; no se inventa política. Menores requieren validación jurídica antes de uso real. Unidad 010 sigue pendiente de aceptación humana.
+- Matriz de aceptación: docs/product/aceptacion-mvp.md distingue núcleo probado de brechas en recuperación/contacto, menores, pausas/versiones, créditos limitados, abonos/ajustes, reprogramación y exportaciones. No se presenta el núcleo como MVP completo.
+- Diagnóstico de verificación: runner de integración falló por usuarios residuales en fixture members (user_pkey); ampliación de alcance registrada antes de corregir su preparación, sin cambiar expectativas ni borrar la BD. Verificar dos ejecuciones consecutivas. Falta de progreso: 0 (causa reproducida).
+- Evidencia final: members 8/8 dos veces en la misma BD; integración completa 11 suites sin omitidos; E2E 8/8 (Transbank/validación/CSV y regresión offline); cobertura 44 tests, 95.98% statements/lines. Gate raíz salida 0, 157/157 reales, sin omitidos, lint/build/typecheck/scope verdes. Logs y detalle por criterio en spec 012; aprendizaje actualizado.
+- Checkpoint: commit local de unidad 012 (por ID, sin segundo commit para anotar hash); sin push. Siguiente unidad: CI integración/E2E; primer paso registrar spec Tier 1 y preparar BD migrada/navegador sin alterar el gate raíz. Correo y ajustes siguen esperando respuesta; aceptación humana de 010/012 y staging/G2 pendientes. Contador 0.
 
 ## Unidad 011 — Espera del estado de Caja — Tier 3 — Cerrada
 

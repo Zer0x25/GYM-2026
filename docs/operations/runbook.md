@@ -245,3 +245,11 @@ check-in QR concurrente coherente; latencia p50=60ms, p95=91ms, max=93ms.
 ### Evidencia de operación 010
 
 El 2026-10-14 se ejecutó `pnpm start`: /health en 3000 y web 4173 dieron 200. SIGINT detuvo ambos grupos de procesos y conservó PostgreSQL (2 socios, 3 pagos). Backup de gym_dev con pg_dump custom y restore --exit-on-error en BD nueva gym_010_restore_check con migración 0009: conteos idénticos (members 2, account_id vinculados 1, QR 2, payments 3, memberships 2, sessions 1, cash_movements 1, staff 4). Esta prueba es local y con datos ficticios; restore en staging sigue pendiente antes de G2.
+
+## Unidad 012 — Migración y operación de Transbank manual
+
+Aplicar migración aditiva `0010_payment_comment` mediante `pnpm db:migrate` contra la BD elegida antes de iniciar el nuevo backend; agrega payments.comment nullable, sin borrar datos ni cambiar estados o importes históricos. La ampliación de métodos usa columnas text ya existentes y no requiere enum PostgreSQL ni pasarela externa. Verificar en una BD ficticia/migrada antes de staging; registrar método/operación/comentario y comprobar que queda provisional hasta la validación separada.
+
+Reversión: conservar la columna nueva y sus datos. No operar nuevos cobros Transbank con una versión antigua que no reconoce ese método; restaurar la versión compatible o mantener detenido el registro de cobros afectados. No convertir Transbank a transferencia ni borrar movimientos para volver atrás. La outbox anterior sigue siendo compatible; los eventos nuevos conservan evidencia del terminal en payload y folio independiente. No almacenar datos de tarjeta en comentarios/folios ni enviar dinero desde la app.
+
+La duración de 72 horas y el cifrado ya fueron aceptados en ADR 0007. La validación de dispositivos/procedimientos reales, staging/restore y privacidad/G2 siguen pendientes. El inventario actual de aceptación está en docs/product/aceptacion-mvp.md.

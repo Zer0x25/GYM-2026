@@ -48,7 +48,9 @@ export function Offline() {
     [memberId, setMemberId] = useState(""),
     [folio, setFolio] = useState(""),
     [amount, setAmount] = useState(""),
-    [method, setMethod] = useState<"cash" | "transfer">("cash"),
+    [reference, setReference] = useState(""),
+    [comment, setComment] = useState(""),
+    [method, setMethod] = useState<"cash" | "transfer" | "transbank">("cash"),
     [label, setLabel] = useState(""),
     [operator, setOperator] = useState(""),
     [enable, setEnable] = useState(false),
@@ -241,6 +243,15 @@ export function Offline() {
         (!Number.isSafeInteger(Number(amount)) || Number(amount) <= 0 || !member.membershipId)
       )
         throw new Error("El cobro necesita membresía y un monto entero positivo");
+      if (
+        type === "cobro_provisional" &&
+        method === "transbank" &&
+        (!reference.trim() ||
+          reference.trim().length > 200 ||
+          !comment.trim() ||
+          comment.trim().length > 1000)
+      )
+        throw new Error("Transbank externo necesita número de operación y comentario válidos");
       await updateVault((value) => {
         checkLease(
           value.lease,
@@ -265,11 +276,19 @@ export function Offline() {
           memberId: current.id,
           capturedAt: new Date().toISOString(),
           ...(type === "cobro_provisional" ? { amountCents: Number(amount), method } : {}),
-          payload: JSON.stringify({ permit: value.lease.permit, proof: current.proof }),
+          payload: JSON.stringify({
+            permit: value.lease.permit,
+            proof: current.proof,
+            ...(type === "cobro_provisional" && method === "transbank"
+              ? { reference: reference.trim(), comment: comment.trim() }
+              : {}),
+          }),
         };
         return { ...value, lastClock: Date.now(), events: [...value.events, event] };
       });
       setFolio("");
+      setReference("");
+      setComment("");
       toast.success(
         type === "cobro_provisional"
           ? "Cobro provisional guardado. Conserva el folio externo."
@@ -620,7 +639,31 @@ export function Offline() {
                 >
                   <option value="cash">Efectivo</option>
                   <option value="transfer">Transferencia</option>
+                  <option value="transbank">Transbank externo</option>
                 </Select>
+                {method === "transbank" && (
+                  <>
+                    <div>
+                      <Label htmlFor="offline-reference">Número de operación (obligatorio)</Label>
+                      <Input
+                        id="offline-reference"
+                        maxLength={200}
+                        value={reference}
+                        onChange={(e) => setReference(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="offline-comment">Comentario (obligatorio)</Label>
+                      <Input
+                        id="offline-comment"
+                        maxLength={1000}
+                        value={comment}
+                        onChange={(e) => setComment(e.target.value)}
+                        placeholder="Cobro externo, sin datos de tarjeta"
+                      />
+                    </div>
+                  </>
+                )}
                 <div className="flex flex-wrap gap-2">
                   <Button
                     disabled={
