@@ -253,3 +253,9 @@ Aplicar migración aditiva `0010_payment_comment` mediante `pnpm db:migrate` con
 Reversión: conservar la columna nueva y sus datos. No operar nuevos cobros Transbank con una versión antigua que no reconoce ese método; restaurar la versión compatible o mantener detenido el registro de cobros afectados. No convertir Transbank a transferencia ni borrar movimientos para volver atrás. La outbox anterior sigue siendo compatible; los eventos nuevos conservan evidencia del terminal en payload y folio independiente. No almacenar datos de tarjeta en comentarios/folios ni enviar dinero desde la app.
 
 La duración de 72 horas y el cifrado ya fueron aceptados en ADR 0007. La validación de dispositivos/procedimientos reales, staging/restore y privacidad/G2 siguen pendientes. El inventario actual de aceptación está en docs/product/aceptacion-mvp.md.
+
+## Unidad 013 — CI completa configurada
+
+El workflow usa ubuntu-24.04, PostgreSQL de servicio en 5432 y TEST_DATABASE_URL igual a DATABASE_URL. La preparación exige la variable, instala con lockfile congelado y migra esa BD antes de invocar el mismo ./scripts/verify.sh. Los cuatro límites de workers Vitest son 1; integración requiere cero suites omitidas. Después instala Chromium/dependencias con Playwright y ejecuta pnpm test:e2e sin continue-on-error. E2E usa el runner existente, su Compose en 55432 y gym_e2e exclusiva; no reutiliza ni resetea la BD de integración de Actions.
+
+Verificado localmente: ensayos de ausencia de variable y propagación de migración fallida; preparación y gate literales en BD ficticia nueva, 157/157 sin omitidos; E2E del código/runner sin cambios, 8/8. Esto no acredita la instalación del navegador/paquetes de sistema en un runner remoto ni un resultado Actions aún no ejecutado. Publicar únicamente con autorización de push y comprobar el run del SHA publicado; si falla preparación, corregir causa, sin omitir migración/integración/E2E. Revisión humana de la unidad sigue pendiente.

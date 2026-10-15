@@ -1,6 +1,6 @@
 # Matriz de aceptación MVP v1.0
 
-Actualizada por unidad 012 (2026-10-14). Fuente ejecutable: PRD.md, ADR aceptados y specs. Contexto de negocio: [MVP aprobado](https://app.notion.com/p/3f529b8ebe2981d6a2e8dce35e0920c3). No certifica G2 ni sustituye aceptación humana. CI verde acredita solo los pasos ejecutados: el workflow actual no define TEST_DATABASE_URL y omite integración; tampoco ejecuta E2E.
+Actualizada por unidades 012/013. Fuente ejecutable: PRD.md, ADR aceptados y specs. Contexto de negocio: [MVP aprobado](https://app.notion.com/p/3f529b8ebe2981d6a2e8dce35e0920c3). No certifica G2 ni sustituye aceptación humana. El CI publicado en eac204f omitía integración/E2E. La configuración local 013 añade BD migrada/TEST_DATABASE_URL y E2E obligatorios; ejecución remota pendiente de push autorizado, no se confunde prueba local con Actions.
 
 ## Requisitos y evidencia
 
@@ -17,8 +17,8 @@ Actualizada por unidad 012 (2026-10-14). Fuente ejecutable: PRD.md, ADR aceptado
 | REQ-9 / MVP-AC-08: offline | offline/operations.integration.test.ts; dos contextos reales de navegador con recarga/replay en operation.spec.ts; cifrado Web Crypto | Implementado para escenarios probados; permiso 72h/cifrado aceptados en ADR 0007. Compatibilidad, almacenamiento/custodia/folios y reconstrucción operativa deben validarse con equipos del piloto antes de G2. |
 | REQ-10 / MVP-AC-10: exclusión sauna | Revisión de rutas/esquema/migraciones y evidencia de 001–010 | Excluido de v1.0; menciones documentales de exclusión no son funcionalidad. No implementar contratos/tablas anticipados. |
 | REQ-11 / MVP-AC-09: backup, sesiones, privacidad | session-revocation.integration.test.ts; dump/restore local en BD limpia, runbook y 010 | Restore local demostrado; falta prueba en staging, privacidad de menores y procedimiento de soporte. |
-| CAL-1: gate local/remoto | ./scripts/verify.sh, CI eac204f verde; gate local previo 148/148 | CI remoto omite integración y E2E. Endurecer en unidad Tier 1 conservando mismo gate y verificando preparación de BD/navegador. |
-| CAL-2: cobertura financiera | pnpm test:coverage, evidencia 010: 96.24% statements/lines | Reejecutar tras nuevos cambios financieros; el umbral ≥80% no se reduce. Ramas informativas según decisión registrada. |
+| CAL-1: gate local/remoto | ./scripts/verify.sh: 157/157 reales, lint/build/typecheck; E2E 8/8. Unidad 013 prueba preparación/gate del workflow en BD nueva | Configuración CI fortalecida localmente; publicar/verificar Actions con autorización. Preparación rechaza URL ausente/migración fallida. Revisión humana de 013 pendiente. |
+| CAL-2: cobertura financiera | pnpm test:coverage, unidad 012: 44 tests reales, 95.98% statements/lines | Umbral ≥80% conservado, suite Transbank incluida. Ramas 75% informativas según decisión registrada. |
 | CAL-3: contratos | packages/contracts y docs/api/README.md; nuevos contratos 012 | Revisar correspondencia completa rutas/errores/request/response e idempotencia al cierre; un índice de endpoints por sí solo no acredita todos sus contratos. |
 
 ## Detalles del alcance que siguen abiertos
@@ -35,7 +35,7 @@ Actualizada por unidad 012 (2026-10-14). Fuente ejecutable: PRD.md, ADR aceptado
 1. Unidad 012: Transbank manual y esta matriz; conservar evidencia roja/verde, migración, cobertura y E2E reales.
 2. Identidad/contacto tras confirmar canal de correo; política financiera tras respuesta humana. Formularios y backend se revisan bajo Tier 1.
 3. Completar contratos de membresías/beneficios/reprogramación y matriz de exportaciones en unidades acotadas; consultar reglas comerciales que no estén confirmadas.
-4. CI con integración/E2E requeridas; sincronizar evidencia de aceptación y realizar revisión humana.
+4. Revisar/publicar la configuración CI 013 con autorización y verificar integración/E2E remotos; sincronizar evidencia de aceptación y realizar revisión humana.
 5. Elegir y autorizar staging, desplegar con datos ficticios y verificar operación/restore; G2 solo tras su aceptación propia.
 
 Las rutas de pruebas citadas viven en apps/api/src, apps/web/src y tests/e2e. Resultados nuevos de 012 se registran en su spec, no se presumen por este inventario. Falta de evidencia no se rellena con un gate verde ni con una decisión Derivada/Pendiente de Notion.

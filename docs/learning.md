@@ -2,6 +2,10 @@
 
 > Formato mínimo: fecha, ID de unidad, hallazgo, evidencia, aplicación futura.
 
+## Unidad 013 — Integración de CI requiere variable y migración
+
+Tener PostgreSQL de servicio y DATABASE_URL no ejecutaba integración: las suites requieren TEST_DATABASE_URL y quedaban omitidas. El workflow ahora prepara/migra esa BD y mantiene el gate raíz, instala Chromium y ejecuta E2E como pasos obligatorios. Ensayos del literal shell bloquearon URL ausente antes de instalar y propagaron salida 31 al fallar migración; preparación/gate reales en gym_test_ci013 dieron 157/157 sin omitidos. Son pruebas locales; Actions requiere publicación autorizada. Runner ubuntu-24.04 fijado para no seguir cambios de imagen implícitos. Evitar interpretar verde como cobertura de pasos que no se ejecutaron.
+
 ## 2026-10-14 — Unidad 012 — Métodos financieros, fixtures y aceptación
 
 Añadir un método manual exige extender los totales/proyecciones y etiquetas, no solo permitir un enum: antes el reporte sumaba únicamente cash+transfer. Contratos/API/UI fallaron por ausencia de Transbank antes de implementar; la nueva suite comprueba pago provisional, evidencia, roles/tenant, movimiento único y folio offline independiente. Conservar operación del terminal y folio de contingencia como evidencias distintas.

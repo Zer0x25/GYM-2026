@@ -50,7 +50,15 @@
 
 ## Meta actual — App GYM funcional (2026-10-14)
 
-Unidad activa: 012-transbank-manual
+Unidad activa: 013-ci-integracion-e2e
+
+## Unidad 013 — Integración y E2E en CI — Tier 1 — Implementada/verificada localmente; revisión humana/remota pendientes
+
+- Autoridad: continuación del usuario sobre las brechas del MVP; CAL-1 y delegación confirmada. Spec 013, sin push/despliegue; revisión humana de cierre pendiente.
+- Alcance propio: workflow, spec/STATE/aprendizaje/matriz/runbook. Scope-lock incluye rutas ya verificadas de 012 porque origin/main sigue en eac204f y 6c16597 está solo local; comparar esta unidad además contra 6c16597, sin modificar origin/main ni implementación anterior.
+- Checkpoint: preparar TEST_DATABASE_URL migrada y Chromium, conservar gate raíz y ejecutar E2E como paso obligatorio. Rojo/configuración/ensayos adversarios/gate y commit local. Preguntas de correo/política financiera y revisiones 010/012 pendientes. Falta de progreso: 0.
+- Evidencia: variable ausente rechazada antes de instalar/migrar, migración fallida propaga salida 31, orden/pasos obligatorios inspeccionados; preparación/gate literales del workflow sobre BD nueva gym_test_ci013 → salida 0, 157/157 sin omitidos, lint/build/typecheck verdes (/tmp/gym-013-ci-local.log). E2E del mismo código/runner: 8/8 en 012; ninguna modificación de aplicación después de 6c16597.
+- Checkpoint final: commit local de unidad 013 por ID, sin push. Unidad 012 en 6c16597, 013 como siguiente commit local, revisiones humanas Tier 1 pendientes. Siguientes datos necesarios: canal de correo y política de ajustes/devoluciones, consultas asíncronas aún sin respuesta. La matriz conserva además brechas de membresías/créditos/menores/reprogramación/exportaciones. Staging/G2 no autorizados; no se declara app completa. Contador 0.
 
 ## Unidad 012 — Transbank manual y matriz de aceptación — Tier 1 — Implementada/verificada; revisión humana pendiente
 
