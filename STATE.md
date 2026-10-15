@@ -50,7 +50,14 @@
 
 ## Meta actual — App GYM funcional (2026-10-14)
 
-Unidad activa: 013-ci-integracion-e2e
+Unidad activa: 014-ajustes-devoluciones
+
+## Unidad 014 — Ajustes y devoluciones — Tier 1 — Implementada/verificada; revisión humana pendiente
+
+- Autoridad 2026-10-15: usuario «1:C; 2:aprobado». Preparar identidad sin envío real ni proveedor; política financiera aceptada: solo admin online, motivo/compensación inmutables, límite al cobro, idempotencia y sin cambiar vigencia automáticamente. ADR 0008 y spec 014, revisión humana al cierre, commits locales sin push.
+- Checkpoint: primero contratos/tests rojos, ledger compensatorio/caja/reportes/UI, concurrencia y permisos, cobertura/E2E/gate, evidencia y commit local; después unidad 015 de recuperación/verificación con entrega deshabilitada por defecto. Base f34cf4d; comparar lote contra origin/main sin modificar referencias. Falta de progreso 0.
+- Evidencia final 014: integración 12 suites sin omitidos, módulo financiero 7/7, UI 2/2, E2E 9/9 con captura móvil inspeccionada, cobertura 96.71%, gate raíz 167/167 salida 0. Ledger inmutable/idempotente, límites, permisos, cierre concurrente y netos comprobados. Detalle por CA en spec 014 y aprendizaje actualizado. Commit local de unidad por ID, sin push; siguiente 015, primero spec y pruebas rojas. Contador 0.
+- Revisiones 010/012/013/014 pendientes; datos reales, correo externo, publicación y staging/G2 no autorizados. Brechas restantes en matriz de aceptación.
 
 ## Unidad 013 — Integración y E2E en CI — Tier 1 — Implementada/verificada localmente; revisión humana/remota pendientes
 

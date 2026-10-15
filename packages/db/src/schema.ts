@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 /**
  * Drizzle schema for App GYM (GYM-2026) — MVP v1.0 scaffolding.
  *
@@ -18,6 +19,7 @@ import {
   boolean,
   index,
   unique,
+  check,
 } from "drizzle-orm/pg-core";
 
 /** Organization (tenant). One venue per organization in v1.0. */
@@ -335,6 +337,44 @@ export const cashMovements = pgTable(
   ],
 );
 
+/** Append-only compensating outflows; the original payment/movement is immutable. */
+export const financialAdjustments = pgTable(
+  "financial_adjustments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id),
+    paymentId: uuid("payment_id")
+      .notNull()
+      .references(() => payments.id),
+    sessionId: uuid("session_id")
+      .notNull()
+      .references(() => cashSessions.id),
+    actorId: text("actor_id")
+      .notNull()
+      .references(() => authUsers.id),
+    idempotencyKey: uuid("idempotency_key").notNull(),
+    kind: text("kind", { enum: ["refund", "adjustment"] }).notNull(),
+    method: text("method", { enum: ["cash", "transfer", "transbank"] }).notNull(),
+    amountCents: integer("amount_cents").notNull(),
+    reason: text("reason").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check("financial_adjustments_kind_check", sql`${t.kind} IN ('refund','adjustment')`),
+    check(
+      "financial_adjustments_method_check",
+      sql`${t.method} IN ('cash','transfer','transbank')`,
+    ),
+    check("financial_adjustments_amount_cents_check", sql`${t.amountCents} > 0`),
+    check("financial_adjustments_reason_check", sql`length(trim(${t.reason})) BETWEEN 1 AND 1000`),
+    unique("financial_adjustments_org_key").on(t.organizationId, t.idempotencyKey),
+    index("financial_adjustments_payment_idx").on(t.organizationId, t.paymentId),
+    index("financial_adjustments_session_idx").on(t.sessionId),
+  ],
+);
+
 /**
  * Class template (plantilla de clase): defines a group or fixed class with
  * its capacity, reservation window, cancellation window and required
@@ -623,6 +663,7 @@ export const schema = {
   payments,
   cashSessions,
   cashMovements,
+  financialAdjustments,
   classTemplates,
   sessions,
   bookings,

@@ -2,6 +2,7 @@ import { and, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import {
   auditLog,
   cashMovements,
+  financialAdjustments,
   cashSessions,
   authUsers,
   bookings,
@@ -101,6 +102,22 @@ export class OperationsService {
         ),
       )
       .orderBy(cashSessions.openedAt);
+    const outflows = await this.db
+      .select({
+        kind: financialAdjustments.kind,
+        total: sql<number>`COALESCE(sum(${financialAdjustments.amountCents}),0)::bigint`,
+      })
+      .from(financialAdjustments)
+      .where(
+        and(
+          eq(financialAdjustments.organizationId, actor.organizationId),
+          gte(financialAdjustments.createdAt, start),
+          lt(financialAdjustments.createdAt, end),
+        ),
+      )
+      .groupBy(financialAdjustments.kind);
+    const refunds = Number(outflows.find((r) => r.kind === "refund")?.total ?? 0);
+    const adjustments = Number(outflows.find((r) => r.kind === "adjustment")?.total ?? 0);
     const cash = rows.find((r) => r.method === "cash")?.total ?? 0,
       transfer = rows.find((r) => r.method === "transfer")?.total ?? 0,
       transbank = rows.find((r) => r.method === "transbank")?.total ?? 0;
@@ -111,6 +128,10 @@ export class OperationsService {
       transfer,
       transbank,
       income: cash + transfer + transbank,
+      refunds,
+      adjustments,
+      outflow: refunds + adjustments,
+      net: cash + transfer + transbank - refunds - adjustments,
       movements: rows.reduce((v, r) => v + r.count, 0),
       shifts,
     };

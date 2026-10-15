@@ -1,3 +1,4 @@
+import { PaymentAdjustmentDialog } from "../components/PaymentAdjustmentDialog.js";
 import { paymentMethodLabel } from "../lib/payment-method.js";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
@@ -14,6 +15,7 @@ import { Input, Label } from "../components/ui/input.js";
 import { Confirm } from "../components/ui/confirm.js";
 export function Payments() {
   const { session } = useSession();
+  const [adjustmentPayment, setAdjustmentPayment] = useState<Payment | null>(null);
   const [tab, setTab] = useState<PaymentState>("provisional"),
     [query, setQuery] = useState(""),
     [decision, setDecision] = useState<{ payment: Payment; type: "validate" | "reject" } | null>(
@@ -121,6 +123,23 @@ export function Payments() {
           },
         ]
       : []),
+    ...(admin && tab === "validated"
+      ? [
+          {
+            id: "compensate",
+            header: "Compensaciones",
+            cell: ({ row }: { row: { original: Payment } }) => (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setAdjustmentPayment(row.original)}
+              >
+                Devolver / ajustar
+              </Button>
+            ),
+          },
+        ]
+      : []),
   ];
   return (
     <section>
@@ -169,6 +188,15 @@ export function Payments() {
         <p className="mt-4 text-xs text-muted-foreground">
           Los pagos registrados permanecen pendientes hasta la revisión de administración.
         </p>
+      )}
+      {adjustmentPayment && (
+        <PaymentAdjustmentDialog
+          payment={adjustmentPayment}
+          onClose={() => setAdjustmentPayment(null)}
+          onDone={() => {
+            void reload();
+          }}
+        />
       )}
       <Confirm
         open={decision !== null}

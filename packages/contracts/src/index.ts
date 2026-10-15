@@ -178,6 +178,29 @@ export const DecidePaymentRequest = z.object({
 });
 export type DecidePaymentRequest = z.infer<typeof DecidePaymentRequest>;
 
+export const RegisterFinancialAdjustmentRequest = z.object({
+  idempotencyKey: z.string().uuid(),
+  kind: z.enum(["refund", "adjustment"]),
+  amountCents: z.number().int().positive().max(2147483647),
+  reason: z.string().trim().min(1).max(1000),
+});
+export type RegisterFinancialAdjustmentRequest = z.infer<typeof RegisterFinancialAdjustmentRequest>;
+
+export const FinancialAdjustmentRef = z.object({
+  id: z.string().uuid(),
+  organizationId: z.string().uuid(),
+  paymentId: z.string().uuid(),
+  sessionId: z.string().uuid(),
+  actorId: z.string(),
+  idempotencyKey: z.string().uuid(),
+  kind: z.enum(["refund", "adjustment"]),
+  method: PaymentMethod,
+  amountCents: z.number().int().positive(),
+  reason: z.string(),
+  createdAt: z.string(),
+});
+export type FinancialAdjustmentRef = z.infer<typeof FinancialAdjustmentRef>;
+
 export const OpenCashSessionRequest = z.object({
   openingCents: z.number().int().nonnegative(),
 });

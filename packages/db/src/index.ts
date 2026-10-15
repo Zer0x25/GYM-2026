@@ -17,6 +17,7 @@ export {
   payments,
   cashSessions,
   cashMovements,
+  financialAdjustments,
   classTemplates,
   sessions,
   bookings,

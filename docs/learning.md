@@ -2,6 +2,10 @@
 
 > Formato mínimo: fecha, ID de unidad, hallazgo, evidencia, aplicación futura.
 
+## 2026-10-15 — Unidad 014 — Compensación financiera concurrente
+
+Conservar el pago y su ingreso único exige ledger de salidas separado. Serializar clave de intención y saldo del pago, y compartir lock del turno con el cierre, evita duplicados, exceso acumulado y egresos sobre turnos cerrados. Siete pruebas PostgreSQL comprobaron las carreras, replay posterior al cierre, roles/tenant y conservación exacta de pago/movimiento/membresía. UI conserva clave y cuerpo tras fallo de transporte. Reportes mantienen bruto y añaden salidas/neto, sin reinterpretar campos históricos. Evidencia en spec 014; no inferir que devolver dinero revoca derechos.
+
 ## Unidad 013 — Integración de CI requiere variable y migración
 
 Tener PostgreSQL de servicio y DATABASE_URL no ejecutaba integración: las suites requieren TEST_DATABASE_URL y quedaban omitidas. El workflow ahora prepara/migra esa BD y mantiene el gate raíz, instala Chromium y ejecuta E2E como pasos obligatorios. Ensayos del literal shell bloquearon URL ausente antes de instalar y propagaron salida 31 al fallar migración; preparación/gate reales en gym_test_ci013 dieron 157/157 sin omitidos. Son pruebas locales; Actions requiere publicación autorizada. Runner ubuntu-24.04 fijado para no seguir cambios de imagen implícitos. Evitar interpretar verde como cobertura de pasos que no se ejecutaron.

@@ -49,6 +49,7 @@ run(
     "src/cash.integration.test.ts",
     "src/bookings.integration.test.ts",
     "src/transbank.integration.test.ts",
+    "src/financial-adjustments.integration.test.ts",
     "--no-file-parallelism",
     "--coverage",
   ],

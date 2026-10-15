@@ -1,3 +1,4 @@
+import { FinancialAdjustmentsService } from "./services/financial-adjustments.js";
 /**
  * Fastify application for App GYM (GYM-2026).
  *
@@ -31,6 +32,7 @@ import {
   OpenCashSessionRequest,
   RegisterDeviceRequest,
   RegisterPaymentRequest,
+  RegisterFinancialAdjustmentRequest,
   ReconstructRequest,
   ListSessionsQuery,
   RevokeSessionRequest,
@@ -466,6 +468,37 @@ export async function buildServer(opts: AppOptions) {
     return reply.send({ data: row });
   });
 
+  const financialService = new FinancialAdjustmentsService(opts.db);
+  app.post<{ Params: { id: string } }>("/api/v1/payments/:id/adjustments", async (req, reply) => {
+    requireRole(req.session, ["admin"]);
+    assertTenantContext(req.session);
+    const parsed = RegisterFinancialAdjustmentRequest.safeParse(req.body);
+    if (!parsed.success) throw validationError({ issues: parsed.error.issues });
+    const data = await financialService.register(
+      {
+        organizationId: req.session.organizationId,
+        accountId: req.session.accountId,
+        role: req.session.role,
+      },
+      req.params.id,
+      parsed.data,
+    );
+    return reply.send({ data });
+  });
+  app.get<{ Params: { id: string } }>("/api/v1/payments/:id/adjustments", async (req, reply) => {
+    requireRole(req.session, ["admin", "recepcion"]);
+    assertTenantContext(req.session);
+    const data = await financialService.list(
+      {
+        organizationId: req.session.organizationId,
+        accountId: req.session.accountId,
+        role: req.session.role,
+      },
+      req.params.id,
+    );
+    return reply.send({ data });
+  });
+
   // --- Cash (REQ-3) ------------------------------------------------------------
   const cashService = new CashService(opts.db);
 
@@ -514,7 +547,8 @@ export async function buildServer(opts: AppOptions) {
     assertTenantContext(req.session);
     const session = await cashService.getById(req.session.organizationId, req.params.id);
     const movements = await cashService.movements(req.session.organizationId, req.params.id);
-    return reply.send({ data: { session, movements } });
+    const adjustments = await cashService.adjustments(req.session.organizationId, req.params.id);
+    return reply.send({ data: { session, movements, adjustments } });
   });
 
   app.get("/api/v1/cash/consolidation", async (req: FastifyRequest, reply: FastifyReply) => {

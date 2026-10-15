@@ -6,9 +6,31 @@ import {
   ErrorCode,
   SessionResponse,
   RegisterPaymentRequest,
+  RegisterFinancialAdjustmentRequest,
 } from "./index.js";
 
 describe("contracts", () => {
+  it("SPEC 014 exige intención, motivo e importe positivo de compensación", () => {
+    const base = {
+      idempotencyKey: "11111111-1111-4111-8111-111111111111",
+      kind: "refund",
+      amountCents: 5000,
+      reason: " Corrección autorizada ",
+    };
+    expect(RegisterFinancialAdjustmentRequest.parse(base).reason).toBe("Corrección autorizada");
+    for (const invalid of [
+      { reason: " " },
+      { amountCents: 0 },
+      { amountCents: -1 },
+      { amountCents: 1.5 },
+      { amountCents: 2147483648 },
+      { idempotencyKey: "bad" },
+      { kind: "income" },
+    ])
+      expect(RegisterFinancialAdjustmentRequest.safeParse({ ...base, ...invalid }).success).toBe(
+        false,
+      );
+  });
   it("SPEC 012 CA-1 acepta Transbank externo con operación y comentario", () => {
     expect(
       RegisterPaymentRequest.safeParse({

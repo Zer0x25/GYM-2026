@@ -10,11 +10,18 @@ import { DataTable } from "../components/ui/data-table.js";
 import { Button } from "../components/ui/button.js";
 import { Input, Label } from "../components/ui/input.js";
 import { Confirm } from "../components/ui/confirm.js";
+type CashLedgerEntry = Omit<CashMovement, "type"> & { type: "income" | "refund" | "adjustment" };
 export function Cash() {
   const loader = useCallback(async () => {
     const session = await api.currentCashSession();
-    const movements = session ? (await api.getCashSession(session.id)).movements : [];
-    return { session, movements };
+    if (!session) return { session, movements: [] as CashLedgerEntry[] };
+    const detail = await api.getCashSession(session.id);
+    const outflows = (detail.adjustments ?? []).map((row) => ({
+      ...row,
+      type: row.kind,
+      amountCents: -row.amountCents,
+    }));
+    return { session, movements: [...detail.movements, ...outflows] as CashLedgerEntry[] };
   }, []);
   const { data, error, loading, reload } = useResource(loader);
   const [dialog, setDialog] = useState<"open" | "close" | null>(null),
@@ -59,13 +66,22 @@ export function Cash() {
       setBusy(false);
     }
   }
-  const columns: ColumnDef<CashMovement>[] = [
+  const columns: ColumnDef<CashLedgerEntry>[] = [
     {
       accessorKey: "createdAt",
       header: "Hora",
       cell: ({ getValue }) => new Date(getValue() as string).toLocaleTimeString("es-CL"),
     },
-    { accessorKey: "type", header: "Movimiento", cell: () => "Ingreso validado" },
+    {
+      accessorKey: "type",
+      header: "Movimiento",
+      cell: ({ row }) =>
+        row.original.type === "income"
+          ? "Ingreso validado"
+          : row.original.type === "refund"
+            ? "Devolución"
+            : "Ajuste de salida",
+    },
     {
       accessorKey: "method",
       header: "Método",
@@ -121,17 +137,17 @@ export function Cash() {
                 }
               />
               <Stat
-                label="Efectivo validado"
+                label="Neto en efectivo"
                 value={formatCLP(cash)}
                 note={`${data.movements.filter((m) => m.method === "cash").length} movimientos`}
               />
               <Stat
-                label="Transferencias validadas"
+                label="Neto por transferencia"
                 value={formatCLP(transfer)}
                 note={`${data.movements.filter((m) => m.method === "transfer").length} movimientos`}
               />
               <Stat
-                label="Transbank externo"
+                label="Neto Transbank externo"
                 value={formatCLP(transbank)}
                 note="Cobros registrados y validados manualmente"
               />

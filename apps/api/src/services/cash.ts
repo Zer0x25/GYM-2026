@@ -18,7 +18,7 @@
  */
 import { and, eq, gte, sql } from "drizzle-orm";
 import type { Database } from "@gym/db";
-import { cashMovements, cashSessions } from "@gym/db";
+import { cashMovements, cashSessions, financialAdjustments } from "@gym/db";
 import { conflict, forbidden, notFound } from "../errors.js";
 import { AuditService } from "./audit.js";
 
@@ -172,6 +172,20 @@ export class CashService {
       .orderBy(cashMovements.createdAt);
   }
 
+  async adjustments(organizationId: string, sessionId: string) {
+    await this.getById(organizationId, sessionId);
+    return this.db
+      .select()
+      .from(financialAdjustments)
+      .where(
+        and(
+          eq(financialAdjustments.organizationId, organizationId),
+          eq(financialAdjustments.sessionId, sessionId),
+        ),
+      )
+      .orderBy(financialAdjustments.createdAt);
+  }
+
   /**
    * Daily consolidation: validated movements of the day, by method.
    * Reads across all sessions of the organization for the given day.
@@ -205,6 +219,20 @@ export class CashService {
       movementCount += Number(r.count);
     }
     const totalCents = byMethod.cash + byMethod.transfer + byMethod.transbank;
+    const [outflow] = await this.db
+      .select({
+        total: sql<number>`COALESCE(sum(${financialAdjustments.amountCents}),0)::bigint`,
+        count: sql<number>`count(*)::int`,
+      })
+      .from(financialAdjustments)
+      .where(
+        and(
+          eq(financialAdjustments.organizationId, organizationId),
+          gte(financialAdjustments.createdAt, start),
+          sql`${financialAdjustments.createdAt} <= ${end.toISOString()}`,
+        ),
+      );
+    const adjustmentTotalCents = Number(outflow?.total ?? 0);
 
     const session = await this.findOpenSession(organizationId);
     return {
@@ -212,6 +240,9 @@ export class CashService {
       date: day.toISOString().slice(0, 10),
       openingCents: session?.openingCents ?? 0,
       totalCents,
+      adjustmentTotalCents,
+      netCents: totalCents - adjustmentTotalCents,
+      adjustmentCount: Number(outflow?.count ?? 0),
       byMethod,
       movementCount,
     };
@@ -224,7 +255,11 @@ export class CashService {
       .select({ total: sql<number>`COALESCE(SUM(${cashMovements.amountCents}), 0)::int` })
       .from(cashMovements)
       .where(eq(cashMovements.sessionId, sessionId));
-    return Number(rows[0]?.total ?? 0);
+    const [outflow] = await db
+      .select({ total: sql<number>`COALESCE(sum(${financialAdjustments.amountCents}),0)::bigint` })
+      .from(financialAdjustments)
+      .where(eq(financialAdjustments.sessionId, sessionId));
+    return Number(rows[0]?.total ?? 0) - Number(outflow?.total ?? 0);
   }
 }
 

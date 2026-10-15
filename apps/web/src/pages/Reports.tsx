@@ -51,8 +51,8 @@ export function Reports() {
   function exportCsv() {
     if (!data) return;
     const csv = [
-      "Fecha,Efectivo CLP,Transferencias CLP,Transbank externo CLP,Total CLP,Movimientos",
-      `${data.date},${data.cash},${data.transfer},${data.transbank ?? 0},${data.income},${data.movements}`,
+      "Fecha,Efectivo CLP,Transferencias CLP,Transbank externo CLP,Total CLP,Movimientos,Devoluciones CLP,Ajustes CLP,Neto CLP",
+      `${data.date},${data.cash},${data.transfer},${data.transbank ?? 0},${data.income},${data.movements},${data.refunds ?? 0},${data.adjustments ?? 0},${data.net ?? data.income}`,
     ].join("\r\n");
     const url = URL.createObjectURL(
         new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" }),
@@ -115,6 +115,18 @@ export function Reports() {
                 label="Movimientos"
                 value={data.movements}
                 note="Sin duplicados de pagos validados"
+              />
+            </div>
+            <div className="mb-6 grid gap-4 sm:grid-cols-2">
+              <Stat
+                label="Salidas compensatorias"
+                value={formatCLP(data.outflow ?? 0)}
+                note="Devoluciones y ajustes registrados"
+              />
+              <Stat
+                label="Neto del día"
+                value={formatCLP(data.net ?? data.income)}
+                note="Ingresos confirmados menos salidas compensatorias"
               />
             </div>
             <h2 className="mb-4 font-semibold">Turnos abiertos en esta fecha</h2>

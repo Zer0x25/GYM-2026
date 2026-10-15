@@ -1,4 +1,8 @@
-import type { OfflineLeaseResponse } from "@gym/contracts";
+import type {
+  OfflineLeaseResponse,
+  RegisterFinancialAdjustmentRequest,
+  FinancialAdjustmentRef,
+} from "@gym/contracts";
 /**
  * Minimal API client for the GYM API.
  *
@@ -91,6 +95,8 @@ export interface Membership {
   /** Derived state, computed by the backend on every read. */
   state?: "pending_payment" | "active" | "expired";
 }
+
+export type FinancialAdjustment = FinancialAdjustmentRef;
 
 export type PaymentState = "provisional" | "validated" | "rejected";
 
@@ -365,6 +371,13 @@ export const api = {
   listPayments: (state?: PaymentState) =>
     request<Payment[]>("GET", `/payments${state ? `?state=${state}` : ""}`),
   getPayment: (id: string) => request<Payment>("GET", `/payments/${id}`),
+  getFinancialAdjustments: (paymentId: string) =>
+    request<{ items: FinancialAdjustment[]; compensatedCents: number; remainingCents: number }>(
+      "GET",
+      `/payments/${paymentId}/adjustments`,
+    ),
+  adjustPayment: (paymentId: string, input: RegisterFinancialAdjustmentRequest) =>
+    request<FinancialAdjustment>("POST", `/payments/${paymentId}/adjustments`, input),
   validatePayment: (id: string) => request<Payment>("POST", `/payments/${id}/validate`),
   rejectPayment: (id: string, reason: string) =>
     request<Payment>("POST", `/payments/${id}/reject`, { reason }),
@@ -375,7 +388,11 @@ export const api = {
   closeCashSession: (id: string, declaredClosingCents: number) =>
     request<CashSession>("POST", `/cash/sessions/${id}/close`, { declaredClosingCents }),
   getCashSession: (id: string) =>
-    request<{ session: CashSession; movements: CashMovement[] }>("GET", `/cash/sessions/${id}`),
+    request<{
+      session: CashSession;
+      movements: CashMovement[];
+      adjustments?: FinancialAdjustment[];
+    }>("GET", `/cash/sessions/${id}`),
   consolidation: (date?: string) =>
     request<Consolidation>("GET", `/cash/consolidation${date ? `?date=${date}` : ""}`),
 
@@ -505,6 +522,10 @@ export interface DailyReport {
   transfer: number;
   transbank?: number;
   income: number;
+  refunds?: number;
+  adjustments?: number;
+  outflow?: number;
+  net?: number;
   movements: number;
   shifts: CashSession[];
 }

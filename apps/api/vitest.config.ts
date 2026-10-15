@@ -16,6 +16,7 @@ export default defineConfig({
       // CAL-2 scope: money & booking modules (PRD REQ-2/3/4/5).
       include: [
         "src/services/payments.ts",
+        "src/services/financial-adjustments.ts",
         "src/services/cash.ts",
         "src/services/bookings.ts",
         "src/services/memberships.ts",
