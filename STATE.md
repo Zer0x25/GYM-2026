@@ -51,7 +51,18 @@
 
 ## Meta actual — App GYM funcional (2026-10-14)
 
-Unidad activa: 010-app-operativa
+Unidad activa: 011-caja-test-asincrono
+
+## Unidad 011 — Espera del estado de Caja — Tier 3 — Cerrada
+
+- Fuente/resultado: spec 010 CA-5/CA-8; el smoke test debe esperar el estado cargado de Caja. CI 38661089570 rojo por lectura inmediata de «Abierto» tras el título.
+- Autoridad: reporte del usuario «dio rojo», 2026-10-14; corrección/commit según PROMPT-MAESTRO y continuidad de la publicación solicitada. Spec breve para mantener el scope-lock del gate existente.
+- Alcance: specs/011-caja-test-asincrono.md, apps/web/src/shell.test.tsx, STATE.md y docs/learning.md; sin cambios de producto, dependencias ni controles.
+- Verificación: rojo reproducible con promesa diferida (/tmp/gym-011-red.log), verde con espera del estado final; suite web 26/26, gate raíz salida 0 con 148/148 pruebas reales sin omitidos, lint/build/typecheck/scope y diff correctos (/tmp/gym-011-gate-final.log). Aprendizaje en docs/learning.md.
+- Checkpoint: commit de corrección identificado por unidad 011, sin segundo commit para anotar su propio hash; publicación como continuación del push solicitado. Siguiente paso: comprobar CI del commit corregido, luego revisión humana de 010. Falta de progreso: 0. Unidad 010 publicada en 7852239, revisión humana Tier 1 todavía pendiente.
+
+### Unidad 010 — Implementación publicada; revisión humana pendiente
+
 - Tier 1; spec: specs/010-app-operativa.md. Implementación autorizada por petición actual del usuario, reemplaza la congelación del frente. Revisión humana al cierre según PROMPT-MAESTRO.
 - Objetivo: flujos completos online por rol y contingencia controlada del PRD; arranque y verificación real. Las recomendaciones previas se convierten en implementación.
 - Decisión confirmada: permiso offline máximo 72 horas con revalidación al reconectar (respuesta explícita del usuario 2026-10-14). Cifrado/gestión de claves aceptados por el usuario en ADR 0007: AES-GCM con frase local, permiso firmado y bloqueo al salir.

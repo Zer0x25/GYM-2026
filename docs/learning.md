@@ -2,6 +2,10 @@
 
 > Formato mínimo: fecha, ID de unidad, hallazgo, evidencia, aplicación futura.
 
+## 2026-10-14 — Unidad 011 — Sincronización del test de Caja
+
+El título de una página no acredita que hayan terminado sus peticiones. CI 38661089570 y el primer gate previo al push fallaron leyendo «Abierto» antes de cargar la caja; un reintento verde solo ocultó la carrera. Fixture con promesa diferida reproduce el mismo fallo sin sleeps; findByText conserva la expectativa y espera el estado observable. Suite web: 26/26 en /tmp/gym-011-web.log. Para futuras pruebas de datos asíncronos, esperar el resultado y controlar la resolución del fixture en lugar de usar el título como señal de carga completa.
+
 ## 2026-10-11 — Unidad: Hito 0 (bootstrap Modo A)
 
 - **Hallazgo:** el arranque en Modo A (enriquecido desde Notion) permite trasladar 55 decisiones (44 Confirmada, 8 Pendiente, 2 Derivada, 1 Diferida) y el documento de alcance MVP v1.0 aprobado sin entrevista de descubrimiento; la entrevista se reduce a validación y a cerrar las 4 puertas G1 abiertas (auth, hosting, tests, offline).

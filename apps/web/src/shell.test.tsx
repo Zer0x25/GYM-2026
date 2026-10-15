@@ -252,9 +252,21 @@ describe("UI smoke (ADR-0003 shell + money pages)", () => {
   });
 
   it("renders the cash page at /cash", async () => {
+    // SPEC 011 CA-1: the heading can render before the cash request completes.
+    const cashDetail = await mockApi.getCashSession();
+    let resolveCashDetail!: (value: typeof cashDetail) => void;
+    mockApi.getCashSession.mockImplementationOnce(
+      () =>
+        new Promise<typeof cashDetail>((resolve) => {
+          resolveCashDetail = resolve;
+        }),
+    );
     renderAppAt("/cash");
     await waitFor(() => expect(screen.getByRole("heading", { name: "Caja" })).toBeTruthy());
-    expect(screen.getByText("Abierto")).toBeTruthy();
+    await waitFor(() => expect(mockApi.getCashSession).toHaveBeenCalledWith("s1"));
+    expect(screen.queryByText("Abierto")).toBeNull();
+    resolveCashDetail(cashDetail);
+    expect(await screen.findByText("Abierto")).toBeTruthy();
   });
 
   it("validating a payment calls the API (admin authority)", async () => {
