@@ -255,18 +255,20 @@ export class MembersService {
             ),
           );
       }
-      await new AuditService(this.db).record(
-        {
-          organizationId: actor.organizationId,
-          actorId: actor.accountId ?? actor.role,
-          actorRole: actor.role,
-          action: "member.update",
-          entity: "member",
-          entityId: memberId,
-          metadata: { ...input },
-        },
-        tx,
-      );
+      if (actor.accountId) {
+        await new AuditService(this.db).record(
+          {
+            organizationId: actor.organizationId,
+            actorId: actor.accountId,
+            actorRole: actor.role,
+            action: "member.update",
+            entity: "member",
+            entityId: memberId,
+            metadata: { ...input },
+          },
+          tx,
+        );
+      }
       if (!row) throw notFound("Socio no encontrado");
       return toMemberRow(row);
     });
@@ -312,11 +314,11 @@ export class MembersService {
             isNull(contactVerifications.cancelledAt),
           ),
         );
-      if (actor.role !== "socio") {
+      if (actor.role !== "socio" && actor.accountId) {
         await new AuditService(this.db).record(
           {
             organizationId: actor.organizationId,
-            actorId: actor.accountId ?? actor.role,
+            actorId: actor.accountId,
             actorRole: actor.role,
             action: "member.contact_update",
             entity: "member",
