@@ -1,6 +1,6 @@
 # Spec 020 — Matriz de exportaciones operativas CSV (socios, vigencias y asistencia)
 
-Estado: Aprobada — base validada por el usuario; lista para fase roja e implementación tras Unidad 019
+Estado: Cerrada — implementada y verificada (Tier 2)
 Nivel: Tier 2 — proyecciones de lectura y exportación CSV con control de permisos por rol y aislamiento multi-tenant.
 Autoridad: validación explícita del usuario 2026-10-19 (`A4`); [PRD.md](../PRD.md) `REQ-1`, `REQ-2`, `REQ-4`, `REQ-5`, `REQ-7`, `CAL-3`; [ADR 0002](../docs/adr/0002-arquitectura-base.md) y [ADR 0010](../docs/adr/0010-ciclo-comercial-agenda-exportaciones.md). Autoaceptación Tier 2 dentro del PRD y la base confirmada; commits locales autorizados.
 Contexto (Notion): https://app.notion.com/p/3f529b8ebe2981d6a2e8dce35e0920c3
@@ -71,6 +71,7 @@ Escenario BDD-2: Rechazo a instructor y socio
 - apps/web/src/api.ts
 - apps/web/src/components/CreditPeriods.tsx
 - apps/web/src/components/QuickPay.tsx
+- apps/web/src/guards.test.tsx
 - apps/web/src/memberships-lifecycle.test.tsx
 - apps/web/src/pages/Cash.tsx
 - apps/web/src/pages/Classes.tsx
@@ -113,4 +114,8 @@ Escenario BDD-2: Rechazo a instructor y socio
 
 ## 6. Evidencia y checkpoint
 
-- **Estado actual:** Spec validada y registrada en la sesión de planificación de base (2026-10-19). Pendiente de fase roja e implementación tras Unidad `019`.
+- **Fase roja inicial:** Verificada en `apps/web/src/reports-export.test.tsx` (ausencia de controles y métodos de descarga en `api.ts` y `Reports.tsx`) y `apps/api/src/operations.integration.test.ts`.
+- CA-1: `TEST_DATABASE_URL="postgres://gym:gym-local-dev@localhost:55432/gym_test_operations" pnpm --filter @gym/api test src/operations.integration.test.ts` → 19/19 pasados. `GET /api/v1/reports/members.csv` y `memberships.csv` devuelven `200 text/csv; charset=utf-8` estrictamente acotados a `actor.organizationId`, reflejando `contact_verified`, `adult_responsible_id`, `qr_state` (`activo | revocado | sin_emitir`), vigencias con fechas de período y saldos disponibles por modalidad (`grupal_available`, `fija_available`, `cita_available`), omitiendo `qrToken` y credenciales sensibles.
+- CA-2: misma suite (`operations.integration.test.ts`) → 19/19 pasados. `GET /api/v1/reports/attendance.csv?from=...&to=...` exporta reservas confirmadas, asistencias confirmadas (`asistio`), cancelaciones tempranas/tardías/ausencias con indicador `credit_returned`, acotadas al tenant; rechaza con `400 VALIDATION_ERROR` rangos con `from > to`, formatos inválidos y rangos superiores a 93 días corridos (`diffDays <= 93`).
+- CA-3: misma suite (`operations.integration.test.ts`) y `@gym/contracts` (`pnpm --filter @gym/contracts test` → 12/12 pasados) → roles `instructor` y `socio` reciben `403 FORBIDDEN` en los tres endpoints; solicitudes sin autenticar reciben `401 UNAUTHENTICATED`. Sanitización anti-inyección CSV neutraliza prefijos de fórmula (`=`, `+`, `-`, `@`, `\t`, `\r`) anteponiendo apóstrofo `'` y escapa celdas según RFC 4180.
+- CA-4: `pnpm --filter @gym/web test src/reports-export.test.tsx` (3/3 pasados), `pnpm test:e2e` (`node scripts/e2e.mjs`) → 12/12 pruebas Playwright pasan sobre preview de producción y PostgreSQL ficticio (`gym_e2e`), verificando la interfaz en `/reportes` para descarga de los 4 reportes CSV (financiero diario, socios, vigencias/créditos, reservas/asistencia) y validación de rango reactiva. Quality gate raíz `./scripts/verify.sh` superado en verde (lint, build, typecheck, tests y verify-scope sin advertencias ni omisiones).
