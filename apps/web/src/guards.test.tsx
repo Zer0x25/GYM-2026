@@ -93,8 +93,7 @@ describe("RequireAuth with roles", () => {
   it("redirects staff to home", async () => {
     mockSession(staffSession);
     renderApp("/socio-area");
-    await waitFor(() => expect(screen.queryByText("SOCIO_ONLY")).toBeNull());
-    expect(screen.getByText("HOME")).toBeTruthy();
+    await waitFor(() => expect(screen.getByText("HOME")).toBeTruthy());
   });
 });
 

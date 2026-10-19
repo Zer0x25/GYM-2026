@@ -50,19 +50,31 @@
 
 ## Meta actual — App GYM funcional (2026-10-19)
 
-Unidad activa: 017-catalogo-pausas-cambio-plan
+Unidad activa: 017-catalogo-pausas-cambio-plan (Cerrada)
+
+## Unidad 020 — Matriz de exportaciones operativas CSV — Tier 2 — CERRADA (2026-10-19)
+
+- **Autoridad:** petición directa del usuario «Resuelve la Issue #2 (specs/020-exportaciones-operativas-csv.md)»; PRD REQ-1, REQ-2, REQ-4, REQ-5, REQ-7, CAL-3; ADR 0010 §1.4. Nivel Tier 2 autoaceptado dentro del PRD y base aprobada.
+- **Alcance entregado:** contratos `AttendanceReportQuery` en `@gym/contracts`; métodos `membersCsv`, `membershipsCsv`, `attendanceCsv` con sanitización anti-fórmulas en `OperationsService`; rutas `GET /api/v1/reports/*.csv` con control de roles (`admin`, `recepcion` permitidos; `instructor`, `socio` 403; anónimo 401) y aislamiento estricto multi-tenant (`organizationId`); controles de descarga en `Reports.tsx` (`/reportes`) y cliente `api.ts`; pruebas en `contracts.test.ts`, `operations.integration.test.ts`, `reports-export.test.tsx` y suite E2E `tests/e2e/operation.spec.ts`.
+- **Verificación y evidencia (DoD completa):**
+  - CA-1: `GET /api/v1/reports/members.csv` y `memberships.csv` proyectan datos del tenant (`org`) con estado verificado de contacto, adulto responsable, `qr_state` (`activo|revocado|sin_emitir`), vigencias y créditos disponibles por modalidad, omitiendo `qrToken` (19/19 en `operations.integration.test.ts`).
+  - CA-2: `GET /api/v1/reports/attendance.csv?from=...&to=...` exporta reservas, asistencias y cancelaciones del rango, y rechaza con `400 VALIDATION_ERROR` rangos con `from > to` o superiores a 93 días corridos (19/19 en `operations.integration.test.ts`).
+  - CA-3: `instructor` y `socio` reciben `403 FORBIDDEN` en los 3 endpoints; anónimo recibe `401`; inyección de fórmulas neutralizada con apóstrofo `'` inicial y RFC 4180.
+  - CA-4: `Reports.tsx` (`/reportes`) permite descargar los 4 reportes CSV (financiero diario + socios, vigencias/créditos, reservas/asistencia) con validación de rango reactiva; 3/3 en `reports-export.test.tsx`, 12/12 en `pnpm test:e2e` (`node scripts/e2e.mjs`) sobre preview de producción y PostgreSQL ficticio (`gym_e2e`); `./scripts/verify.sh` superado en verde (lint, build, typecheck, tests y verify-scope sin advertencias).
+- **Contador de falta de progreso:** 0, sin bloqueos.
+- **Siguiente paso:** Crear commit local para la unidad 020 verificado contra `Archivos autorizados`.
 
 ## Ruta de cierre MVP validada (Unidades 017–022 y ADR 0010) — Lista para sesiones de codificación
 
 - **Autoridad (2026-10-19):** el usuario solicitó generar todas las specs restantes validando primero la base de negocio (`A1..A5`) para ejecutar la codificación en las siguientes sesiones. Decisiones registradas en `docs/adr/0010-ciclo-comercial-agenda-exportaciones.md`.
-- **Secuencia de specs aprobadas (en espera de fase roja e implementación):**
-  1. `specs/017-catalogo-pausas-cambio-plan.md` (`Tier 1`, **unidad activa**): edición/versionado de `plans` sin mutar `membership_periods` emitidos; pausas autorizadas por `admin` con motivo que extienden `endsAt` y cancelan reservas dentro del rango pausado (devolviendo crédito); cambio de plan (`nextPlanId`) para el siguiente período renovado.
+- **Secuencia de specs aprobadas:**
+  1. `specs/017-catalogo-pausas-cambio-plan.md` (`Tier 1`): edición/versionado de `plans` sin mutar `membership_periods` emitidos; pausas autorizadas por `admin` con motivo que extienden `endsAt` y cancelan reservas dentro del rango pausado (devolviendo crédito); cambio de plan (`nextPlanId`) para el siguiente período renovado.
   2. `specs/018-reprogramacion-agenda-citas.md` (`Tier 1`): reprogramación horaria de sesiones y citas (`TX-02` + `REVAL-01`), conservando reservas y créditos comprometidos si todos los inscritos mantienen cobertura en la nueva fecha (`409` en caso contrario).
   3. `specs/019-abonos-parciales-conciliacion.md` (`Tier 1`): abonos parciales que ingresan a caja al validarse pero activan el `membership_period` y sus créditos solo al completar el `100%` del precio del plan; estado explícito de conciliación (`abierta | cuadrada | con_diferencia`).
-  4. `specs/020-exportaciones-operativas-csv.md` (`Tier 2`): exportaciones CSV por tenant para `admin` y `recepcion` (`members.csv`, `memberships.csv`, `attendance.csv`), sin exponer `qrToken`.
+  4. `specs/020-exportaciones-operativas-csv.md` (`Tier 2`, **unidad activa**): exportaciones CSV por tenant para `admin` y `recepcion` (`members.csv`, `memberships.csv`, `attendance.csv`), sin exponer `qrToken`.
   5. `specs/021-menores-correo-contratos.md` (`Tier 1`): vínculo obligatorio de menor a `adultResponsibleId` del mismo tenant (`D-05`) sin autogestión de contacto por el menor; adaptador de correo configurable por entorno (apagado por defecto sin secretos); sincronización completa de contratos `CAL-3` en `docs/api/README.md`.
   6. `specs/022-aceptacion-ci-staging.md` (`Tier 1`): revisión humana del lote `010`–`021`, push autorizado para CI remota (`CAL-1`), despliegue en staging VPS con datos ficticios y prueba de backup/restore (`REQ-11`).
-- **Checkpoint actual:** unidad 017 (`017-catalogo-pausas-cambio-plan`) implementada y verificada (contratos, migración 0014, API, UI web, integración PostgreSQL, cobertura 97.09% y E2E Playwright 12/12). Lista para commit local. Revisión humana Tier 1 requerida. Siguiente unidad para codificar: `018-reprogramacion-agenda-citas`. Contador de falta de progreso: 0.
+- **Checkpoint actual:** unidad 017 (`017-catalogo-pausas-cambio-plan`) implementada y verificada (contratos, migración 0014, API, UI web, integración PostgreSQL, cobertura 97.09% y E2E Playwright 12/12). Lista para merge en PR #9. Revisión humana Tier 1 requerida. Siguiente unidad para codificar: `018-reprogramacion-agenda-citas`. Contador de falta de progreso: 0.
 
 ## Unidad 017 — Catálogo editable, pausas autorizadas y cambio de plan — Tier 1 — Implementada/verificada; revisión humana pendiente
 

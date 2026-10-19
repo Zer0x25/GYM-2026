@@ -9,6 +9,12 @@
 - **Evidencia:** 15 suites de integración (`memberships-lifecycle.integration.test.ts`), 12 tests E2E (`credits.spec.ts`), cobertura financiera en 97.09%.
 - **Aplicación futura:** preferir siempre operadores de columna de Drizzle (`gte`, `lte`) para ventanas de validez temporal y cerrar sesión al finalizar pruebas E2E multi-rol.
 
+## 2026-10-19 — Unidad 020 — Exportaciones operativas CSV con neutralización de fórmulas
+
+- **Hallazgo:** La generación de archivos CSV de padrones y registros operativos debe aislar estrictamente el tenant (`organizationId`) en base de datos, omitir tokens secretos (`qrToken`), y neutralizar ataques de inyección de fórmulas en hojas de cálculo (CSV formula injection / DDE). Prefijar celdas que comiencen con `=`, `+`, `-`, `@`, `\t` o `\r` con `'` y escapar según RFC 4180 protege contra ejecución arbitraria al abrir los reportes en Excel o LibreOffice Calc.
+- **Evidencia:** `apps/api/src/services/operations.ts` (`escapeCsvCell`), `contracts.test.ts` (12/12), `operations.integration.test.ts` (19/19), `reports-export.test.tsx` (3/3), `tests/e2e/operation.spec.ts` (12/12) y Quality Gate `./scripts/verify.sh` en verde.
+- **Aplicación futura:** Aplicar siempre sanitización anti-fórmulas al generar proyecciones CSV de texto libre y validar que las fechas de sesión de los fixtures de integración estén cubiertas por las ventanas de vigencia de las membresías para evitar cancelaciones imprevistas por falta de cobertura durante `markAttendance`.
+
 ## 2026-10-19 — Unidades 017–022 — Validación de base comercial y alcance acumulado de specs
 
 Separar una sesión de validación de reglas de negocio (`A1..A5` en `ADR 0010`) antes de codificar evita inventar políticas en pausas, reprogramaciones, abonos parciales, exportaciones y menores. Como `scripts/verify-scope.sh` compara el árbol de trabajo contra `origin/main` usando la sección `## 4. Archivos autorizados` de la `Unidad activa` en `STATE.md`, declarar en la unidad activa (`017`) y en las specs sucesivas (`018`–`022`) las rutas documentales del lote permite dejar todas las especificaciones creadas y verificadas con el gate en verde antes de escribir código.

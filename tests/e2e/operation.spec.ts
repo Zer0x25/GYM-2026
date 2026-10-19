@@ -226,4 +226,35 @@ test.describe.serial("SPEC 010 jornada de gimnasio", () => {
     ).toBe(100);
     await expect(page.getByRole("link", { name: "Caja cerrada" })).toBeVisible();
   });
+  test("administración descarga los 4 reportes CSV en reports", async ({ page }) => {
+    await login(page, "admin@pilot.cl");
+    await page.goto("/reportes");
+    await expect(page.getByRole("button", { name: /Exportar CSV/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Exportar socios CSV/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Exportar vigencias CSV/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Exportar asistencia CSV/i })).toBeVisible();
+
+    const membersRes = await page.request.get("/api/v1/reports/members.csv");
+    expect(membersRes.status()).toBe(200);
+    expect(membersRes.headers()["content-type"]).toContain("text/csv");
+    const membersCsv = await membersRes.text();
+    expect(membersCsv).toContain("member_id,full_name,contact_email");
+    expect(membersCsv).toContain("Camila E2E");
+    expect(membersCsv).not.toContain("qrToken");
+
+    const membershipsRes = await page.request.get("/api/v1/reports/memberships.csv");
+    expect(membershipsRes.status()).toBe(200);
+    expect(membershipsRes.headers()["content-type"]).toContain("text/csv");
+    const membershipsCsv = await membershipsRes.text();
+    expect(membershipsCsv).toContain("membership_id,member_id,member_name");
+
+    const today = new Date().toISOString().slice(0, 10);
+    const attendanceRes = await page.request.get(
+      `/api/v1/reports/attendance.csv?from=${today}&to=${today}`,
+    );
+    expect(attendanceRes.status()).toBe(200);
+    expect(attendanceRes.headers()["content-type"]).toContain("text/csv");
+    const attendanceCsv = await attendanceRes.text();
+    expect(attendanceCsv).toContain("booking_id,session_id,session_type");
+  });
 });

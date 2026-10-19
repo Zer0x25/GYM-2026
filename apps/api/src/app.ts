@@ -18,6 +18,7 @@ import { organizations } from "@gym/db";
 import type { Database } from "@gym/db";
 import {
   DailyReportQuery,
+  AttendanceReportQuery,
   ScheduleQuery,
   OfflineLeaseRequest,
   OfflineLeaseResponse,
@@ -1118,6 +1119,38 @@ export async function buildServer(opts: AppOptions) {
     const parsed = DailyReportQuery.safeParse(req.query);
     if (!parsed.success) throw validationError({ issues: parsed.error.issues });
     return reply.send({ data: await operations.dailyReport(req.session, parsed.data.date) });
+  });
+  app.get("/api/v1/reports/members.csv", async (req, reply) => {
+    requireRole(req.session, ["admin", "recepcion"]);
+    assertTenantContext(req.session);
+    const csv = await operations.membersCsv(req.session);
+    return reply
+      .header("content-type", "text/csv; charset=utf-8")
+      .header("content-disposition", 'attachment; filename="members.csv"')
+      .send(csv);
+  });
+  app.get("/api/v1/reports/memberships.csv", async (req, reply) => {
+    requireRole(req.session, ["admin", "recepcion"]);
+    assertTenantContext(req.session);
+    const csv = await operations.membershipsCsv(req.session);
+    return reply
+      .header("content-type", "text/csv; charset=utf-8")
+      .header("content-disposition", 'attachment; filename="memberships.csv"')
+      .send(csv);
+  });
+  app.get("/api/v1/reports/attendance.csv", async (req, reply) => {
+    requireRole(req.session, ["admin", "recepcion"]);
+    assertTenantContext(req.session);
+    const parsed = AttendanceReportQuery.safeParse(req.query);
+    if (!parsed.success) throw validationError({ issues: parsed.error.issues });
+    const csv = await operations.attendanceCsv(req.session, parsed.data.from, parsed.data.to);
+    return reply
+      .header("content-type", "text/csv; charset=utf-8")
+      .header(
+        "content-disposition",
+        `attachment; filename="attendance-${parsed.data.from}-${parsed.data.to}.csv"`,
+      )
+      .send(csv);
   });
   app.get("/api/v1/instructors", async (req, reply) => {
     requireRole(req.session, ["admin", "recepcion", "instructor", "socio"]);

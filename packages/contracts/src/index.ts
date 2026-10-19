@@ -634,6 +634,43 @@ export const DailyReportQuery = z.object({
       return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
     }, "Fecha inválida"),
 });
+export const AttendanceReportQuery = z
+  .object({
+    from: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, "Formato inválido (se esperaba YYYY-MM-DD)")
+      .refine((value) => {
+        const parsed = new Date(`${value}T00:00:00Z`);
+        return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+      }, "Fecha 'from' inválida"),
+    to: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, "Formato inválido (se esperaba YYYY-MM-DD)")
+      .refine((value) => {
+        const parsed = new Date(`${value}T00:00:00Z`);
+        return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+      }, "Fecha 'to' inválida"),
+  })
+  .superRefine((val, ctx) => {
+    const fromTime = new Date(`${val.from}T00:00:00Z`).getTime();
+    const toTime = new Date(`${val.to}T00:00:00Z`).getTime();
+    if (fromTime > toTime) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["from"],
+        message: "El rango es inválido: 'from' debe ser menor o igual a 'to'",
+      });
+    }
+    const diffDays = (toTime - fromTime) / (24 * 60 * 60 * 1000);
+    if (diffDays > 93) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["to"],
+        message: "El rango máximo permitido es de 93 días",
+      });
+    }
+  });
+export type AttendanceReportQuery = z.infer<typeof AttendanceReportQuery>;
 export const ScheduleQuery = z.object({
   from: z.string().datetime().optional(),
   to: z.string().datetime().optional(),
