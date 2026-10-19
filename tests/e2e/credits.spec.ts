@@ -94,3 +94,100 @@ test("SPEC016 cuotas explícitas, saldo por período y cancelación real en port
   expect(periods[0].credits.fija.available).toBe(2);
   expect(periods[0].credits.cita.available).toBe(0);
 });
+
+test("SPEC017 catálogo editable, pausa de membresía y cambio de plan programado", async ({
+  page,
+}) => {
+  await login(page, "admin@pilot.cl");
+  await page.goto("/planes");
+
+  // Create plan to edit
+  await page.getByRole("button", { name: "Nuevo plan" }).click();
+  await page.getByLabel("Nombre del plan").fill("Plan Base E2E");
+  await page.getByLabel("Precio (CLP)").fill("25000");
+  await page.getByLabel("Duración en días").fill("30");
+  await page.getByRole("button", { name: "Crear plan", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Plan Base E2E" })).toBeVisible();
+
+  // Edit the plan
+  const planArticle = page.locator("article", { hasText: "Plan Base E2E" });
+  await planArticle.getByRole("button", { name: "Editar" }).click();
+  await page.getByLabel("Precio (CLP)").fill("28000");
+  await page.getByRole("button", { name: "Guardar cambios" }).click();
+  await expect(planArticle.getByText("$28.000")).toBeVisible();
+
+  // Create target plan for scheduled change
+  await page.getByRole("button", { name: "Nuevo plan" }).click();
+  await page.getByLabel("Nombre del plan").fill("Plan Futuro E2E");
+  await page.getByLabel("Precio (CLP)").fill("35000");
+  await page.getByLabel("Duración en días").fill("30");
+  await page.getByRole("button", { name: "Crear plan", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Plan Futuro E2E" })).toBeVisible();
+
+  const plans = (await (await page.request.get("/api/v1/plans")).json()).data as {
+    id: string;
+    name: string;
+  }[];
+  const basePlan = plans.find((p) => p.name === "Plan Base E2E")!;
+  const futurePlan = plans.find((p) => p.name === "Plan Futuro E2E")!;
+
+  // Switch to reception to register payment (segregation of duties)
+  await page.getByRole("button", { name: "Salir", exact: true }).click();
+  await login(page, "recepcion@pilot.cl");
+
+  // Create member and membership
+  const socio = await post<{ memberId: string }>(page, "socios", {
+    email: "pausa.e2e@pilot.cl",
+    password,
+    name: "Socio Pausas E2E",
+  });
+  const ms = await post<{ id: string }>(page, "memberships", {
+    memberId: socio.memberId,
+    planId: basePlan.id,
+  });
+  const payment = await post<{ id: string }>(page, "payments", {
+    membershipId: ms.id,
+    method: "cash",
+    amountCents: 28000,
+  });
+
+  // Switch back to admin to validate payment, pause and schedule plan change
+  await page.getByRole("button", { name: "Salir", exact: true }).click();
+  await login(page, "admin@pilot.cl");
+  const current = (await (await page.request.get("/api/v1/cash/sessions/current")).json()).data;
+  if (!current) await post(page, "cash/sessions", { openingCents: 0 });
+  await post(page, `payments/${payment.id}/validate`, {});
+
+  // Go to member detail page to pause and schedule plan change
+  await page.goto(`/panel/${socio.memberId}`);
+  await expect(page.getByRole("heading", { name: "Socio Pausas E2E" })).toBeVisible();
+
+  // Schedule plan change
+  await page.getByRole("button", { name: "Programar cambio" }).click();
+  await page.getByLabel("Siguiente plan para renovación").selectOption(futurePlan.id);
+  await page.getByRole("button", { name: "Guardar cambio" }).click();
+  await expect(page.getByText(`Próximo plan programado: ${futurePlan.name}`)).toBeVisible();
+
+  // Pause membership
+  const now = new Date();
+  const startsAt = new Date(now.getTime() + 24 * 3600_000).toISOString().slice(0, 16);
+  const endsAt = new Date(now.getTime() + 8 * 24 * 3600_000).toISOString().slice(0, 16);
+  await page.getByRole("button", { name: "Pausar" }).click();
+  await page.getByLabel("Motivo de la pausa").fill("Reposo médico E2E");
+  await page.getByLabel("Fecha de inicio").fill(startsAt);
+  await page.getByLabel("Fecha de fin").fill(endsAt);
+  await page.getByRole("button", { name: "Registrar pausa" }).click();
+  await expect(page.getByText(/Pausa activa hasta/)).toBeVisible();
+
+  // Login as socio and check portal
+  await page.getByRole("button", { name: "Salir", exact: true }).click();
+  await login(page, "pausa.e2e@pilot.cl");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByText("Mi membresía")).toBeVisible();
+  await expect(page.getByText("Membresía pausada (pausa activa)")).toBeVisible();
+  await expect(page.getByText("Reposo médico E2E")).toBeVisible();
+  await expect(page.getByText("Plan Futuro E2E")).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: "/tmp/gym-017-pauses-mobile.png", fullPage: true });
+  await page.getByRole("button", { name: "Salir", exact: true }).click();
+});

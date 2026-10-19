@@ -1,6 +1,6 @@
 # Spec 017 — Edición de catálogo, pausas autorizadas y cambio de plan
 
-Estado: Aprobada — base validada por el usuario; lista para fase roja e implementación en siguiente sesión
+Estado: Cerrada — contratos, migración 0014, API, UI web, integración PostgreSQL, cobertura 97% y E2E Playwright verificados
 Nivel: Tier 1 — derechos de membresía, vigencia temporal, revalidación de reservas con créditos y migración aditiva.
 Autoridad: validación explícita del usuario 2026-10-19 (`A1`); [PRD.md](../PRD.md) `REQ-1`, `REQ-2`, `REQ-5`, `REQ-7`, `CAL-2`, `CAL-3`; [ADR 0002](../docs/adr/0002-arquitectura-base.md), [ADR 0009](../docs/adr/0009-creditos-por-modalidad-periodo.md) y [ADR 0010](../docs/adr/0010-ciclo-comercial-agenda-exportaciones.md). Commits locales autorizados por unidad verificada; revisión humana al cierre.
 Contexto (Notion): https://app.notion.com/p/3f529b8ebe2981d6a2e8dce35e0920c3
@@ -104,4 +104,11 @@ Escenario BDD-2: Pausa autorizada por admin extiende fin y libera reservas dentr
 
 ## 6. Evidencia y checkpoint
 
-- **Estado actual:** Spec validada y registrada en la sesión de planificación de base (2026-10-19). Pendiente de fase roja e implementación en la siguiente sesión de codificación.
+- CA-1: `TEST_DATABASE_URL=postgres://gym:gym-local-dev@localhost:55432/gym_test_memberships_lifecycle pnpm --filter @gym/api exec vitest run src/memberships-lifecycle.integration.test.ts` → 4/4; `pnpm --filter @gym/contracts test` → 14/14; PATCH /api/v1/plans/:id incrementa versión, valida cuotas completas en planes limitados y no altera membership_periods previos ni recalcula créditos; plan inactivo rechaza nuevas membresías con 409.
+- CA-2: `TEST_DATABASE_URL=postgres://gym:gym-local-dev@localhost:55432/gym_test_memberships_lifecycle pnpm --filter @gym/api exec vitest run src/memberships-lifecycle.integration.test.ts` → 4/4; POST /api/v1/memberships/:id/schedule-plan-change programa nextPlanId sin alterar el período en curso y lo materializa al validar la siguiente renovación, asignando las nuevas condiciones y limpiando nextPlanId.
+- CA-3: `TEST_DATABASE_URL=postgres://gym:gym-local-dev@localhost:55432/gym_test_memberships_lifecycle pnpm --filter @gym/api exec vitest run src/memberships-lifecycle.integration.test.ts` → 4/4; POST /api/v1/memberships/:id/pauses es idempotente por (organizationId, idempotencyKey), extiende endsAt y endAt por los días pausados, deniega check-in con 'membership_paused', bloquea reservas dentro del intervalo pausado y cancela reservas futuras dentro de la pausa restituyendo créditos.
+- CA-4: `TEST_DATABASE_URL=postgres://gym:gym-local-dev@localhost:55432/gym_test_memberships_lifecycle pnpm --filter @gym/api exec vitest run src/memberships-lifecycle.integration.test.ts` → 4/4; aislamiento tenant devuelve 404 ante planes o membresías de otra organización; control de roles devuelve 403 a roles no autorizados (solo admin edita planes y pausa membresías; solo admin y recepción programan cambio de plan).
+- CA-5: `pnpm --filter @gym/web test` → 39/39 (incluye src/memberships-lifecycle.test.tsx 3/3); UI en Plans.tsx (editar y activar/archivar), MemberDetail.tsx (modal de pausa y selector de cambio de plan) y Portal.tsx (alerta de pausa activa con motivo y aviso de próximo plan programado); `node scripts/e2e.mjs` → 12/12 en Playwright, incluyendo prueba E2E completa de SPEC017 y viewport móvil sin overflow horizontal (screenshot /tmp/gym-017-pauses-mobile.png).
+- CA-6: fase roja documentada con fallos de rutas/contratos no implementados; `node scripts/coverage.mjs` → 68/68, 97.09% statements/lines (umbral >= 80% superado); `./scripts/verify.sh` → salida 0 en lint, typecheck, build y tests; documentación actualizada en docs/api/README.md, STATE.md y docs/learning.md.
+
+Checkpoint: revisión propia del diff y alcance, aprendizaje/matriz/runbook/API docs actualizados. Revisión humana del usuario al cierre (Tier 1). Commit local de unidad 017 con Conventional Commits. Próxima unidad planificada: 018-reprogramacion-agenda-citas. Contador de falta de progreso en 0.

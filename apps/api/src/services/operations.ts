@@ -12,6 +12,7 @@ import {
   members,
   membershipPeriods,
   memberships,
+  membershipPauses,
   payments,
   plans,
   sessions,
@@ -264,14 +265,46 @@ export class OperationsService {
       )
       .orderBy(desc(memberships.createdAt));
     const paymentsService = new PaymentsService(this.db);
+    const now = new Date();
     return {
       member,
       memberships: await Promise.all(
-        rows.map(async (r) => ({
-          ...r.membership,
-          plan: r.plan,
-          state: await paymentsService.membershipState(organizationId, r.membership.id),
-        })),
+        rows.map(async (r) => {
+          let nextPlan = null;
+          if (r.membership.nextPlanId) {
+            const [np] = await this.db
+              .select({ id: plans.id, name: plans.name })
+              .from(plans)
+              .where(
+                and(eq(plans.id, r.membership.nextPlanId), eq(plans.organizationId, organizationId)),
+              );
+            nextPlan = np ?? null;
+          }
+          const pauses = await this.db
+            .select()
+            .from(membershipPauses)
+            .where(
+              and(
+                eq(membershipPauses.organizationId, organizationId),
+                eq(membershipPauses.membershipId, r.membership.id),
+              ),
+            )
+            .orderBy(desc(membershipPauses.createdAt));
+
+          const activePause =
+            pauses.find((p) => p.state === "active" && p.startsAt <= now && p.endsAt > now) ??
+            pauses.find((p) => p.state === "active" && p.endsAt > now) ??
+            null;
+
+          return {
+            ...r.membership,
+            plan: r.plan,
+            nextPlan,
+            pauses,
+            activePause,
+            state: await paymentsService.membershipState(organizationId, r.membership.id),
+          };
+        }),
       ),
     };
   }

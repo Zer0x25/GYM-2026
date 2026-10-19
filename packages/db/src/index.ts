@@ -16,6 +16,7 @@ export {
   plans,
   memberships,
   membershipPeriods,
+  membershipPauses,
   creditMovements,
   payments,
   cashSessions,

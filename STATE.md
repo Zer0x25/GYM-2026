@@ -50,7 +50,7 @@
 
 ## Meta actual — App GYM funcional (2026-10-19)
 
-Unidad activa: 020-exportaciones-operativas-csv (Cerrada)
+Unidad activa: 017-catalogo-pausas-cambio-plan (Cerrada)
 
 ## Unidad 020 — Matriz de exportaciones operativas CSV — Tier 2 — CERRADA (2026-10-19)
 
@@ -74,6 +74,22 @@ Unidad activa: 020-exportaciones-operativas-csv (Cerrada)
   4. `specs/020-exportaciones-operativas-csv.md` (`Tier 2`, **unidad activa**): exportaciones CSV por tenant para `admin` y `recepcion` (`members.csv`, `memberships.csv`, `attendance.csv`), sin exponer `qrToken`.
   5. `specs/021-menores-correo-contratos.md` (`Tier 1`): vínculo obligatorio de menor a `adultResponsibleId` del mismo tenant (`D-05`) sin autogestión de contacto por el menor; adaptador de correo configurable por entorno (apagado por defecto sin secretos); sincronización completa de contratos `CAL-3` en `docs/api/README.md`.
   6. `specs/022-aceptacion-ci-staging.md` (`Tier 1`): revisión humana del lote `010`–`021`, push autorizado para CI remota (`CAL-1`), despliegue en staging VPS con datos ficticios y prueba de backup/restore (`REQ-11`).
+- **Checkpoint actual:** unidad 017 (`017-catalogo-pausas-cambio-plan`) implementada y verificada (contratos, migración 0014, API, UI web, integración PostgreSQL, cobertura 97.09% y E2E Playwright 12/12). Lista para merge en PR #9. Revisión humana Tier 1 requerida. Siguiente unidad para codificar: `018-reprogramacion-agenda-citas`. Contador de falta de progreso: 0.
+
+## Unidad 017 — Catálogo editable, pausas autorizadas y cambio de plan — Tier 1 — Implementada/verificada; revisión humana pendiente
+
+- Autoridad: resolución de Issue #1 (`specs/017-catalogo-pausas-cambio-plan.md`); validación explícita del usuario (`A1`, ADR 0010); PRD REQ-1, REQ-2, REQ-5, REQ-7, CAL-2, CAL-3. Commits locales autorizados por unidad verificada; revisión humana al cierre.
+- Entregado:
+  - Migración aditiva Drizzle `0014_catalog_pauses_plan_changes.sql` (`plans.version`, `memberships.nextPlanId`, `membershipPeriods.planVersion`, tabla `membershipPauses`).
+  - Contratos Zod en `@gym/contracts`: `UpdatePlanRequest`, `SchedulePlanChangeRequest`, `CreateMembershipPauseRequest`, `MembershipPauseRef`, `PlanRef.version`, `MembershipRef.nextPlanId`.
+  - Backend API: `PlansService.update` (versionado inmutable y toggle activo/archivado), `MembershipsService.schedulePlanChange` (aislamiento y validación de plan activo), `MembershipsService.createPause` (idempotencia por clave, extensión de fin de vigencia, cancelación de reservas con restitución de créditos), `CheckinService` (denegación de ingreso por membresía pausada con motivo `membership_paused`), `BookingCreditsService` (bloqueo de reservas dentro de intervalos pausados) y `PaymentsService` (consumo de `nextPlanId` y snapshot de `planVersion` en renovaciones).
+  - Web UI: edición de catálogo y versión en `Plans.tsx`, modal de pausa y selector de cambio de plan en `MemberDetail.tsx`, alerta de pausa activa con motivo y aviso de plan futuro en `Portal.tsx`.
+- Evidencia final:
+  - Gate raíz `./scripts/verify.sh`: salida 0 (lint, typecheck, build, unit tests 149/149).
+  - Integración PostgreSQL `TEST_DATABASE_URL`: 15 suites de integración completas sin omitidos; `memberships-lifecycle.integration.test.ts` 4/4 pasando.
+  - Cobertura financiera (`node scripts/coverage.mjs`): 68/68 pruebas, 97.09% statements/lines (umbral >= 80% superado holgadamente).
+  - Suite E2E Playwright (`node scripts/e2e.mjs`): 12/12 pasando en 24.4s, incluyendo prueba completa de SPEC017 y viewport móvil sin overflow (screenshot `/tmp/gym-017-pauses-mobile.png`).
+- Checkpoint: unidad 017 lista para commit local con Conventional Commits. Revisión humana Tier 1 requerida. Siguiente unidad en ruta: `018-reprogramacion-agenda-citas`. Contador de falta de progreso: 0.
 
 ## Unidad 016 — Períodos y créditos por modalidad — Tier 1 — Implementada/verificada; revisión humana pendiente
 

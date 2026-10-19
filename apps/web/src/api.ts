@@ -110,7 +110,22 @@ export interface Plan {
   grupalCredits?: number | null;
   fijaCredits?: number | null;
   citaCredits?: number | null;
+  version?: number;
   active: boolean;
+  createdAt: string;
+}
+
+export interface MembershipPause {
+  id: string;
+  organizationId: string;
+  membershipId: string;
+  periodId: string;
+  actorId: string;
+  startsAt: string;
+  endsAt: string;
+  extendedDays: number;
+  reason: string;
+  state: "active" | "lifted";
   createdAt: string;
 }
 
@@ -119,12 +134,23 @@ export interface Membership {
   organizationId: string;
   memberId: string;
   planId: string;
+  nextPlanId?: string | null;
+  nextPlan?: { id: string; name: string } | null;
   startAt: string | null;
   endAt: string | null;
   lastPaymentId: string | null;
   createdAt: string;
   /** Derived state, computed by the backend on every read. */
   state?: "pending_payment" | "active" | "expired";
+  plan?: Plan;
+  pauses?: MembershipPause[];
+  activePause?: {
+    id: string;
+    startsAt: string;
+    endsAt: string;
+    reason: string;
+    extendedDays: number;
+  } | null;
 }
 
 export type FinancialAdjustment = FinancialAdjustmentRef;
@@ -425,11 +451,39 @@ export const api = {
     coverage: "none" | "unlimited" | "limited";
     classCredits?: { grupal: number; fija: number; cita: number };
   }) => request<Plan>("POST", "/plans", input),
+  updatePlan: (
+    id: string,
+    input: {
+      name?: string;
+      priceCents?: number;
+      durationDays?: number;
+      coverage?: "none" | "unlimited" | "limited";
+      classCredits?: { grupal: number; fija: number; cita: number } | null;
+      active?: boolean;
+    },
+  ) => request<Plan>("PATCH", `/plans/${id}`, input),
 
   listMemberships: () => request<Membership[]>("GET", "/memberships"),
   getMembership: (id: string) => request<Membership>("GET", `/memberships/${id}`),
   createMembership: (input: { memberId: string; planId: string }) =>
     request<Membership>("POST", "/memberships", input),
+  schedulePlanChange: (membershipId: string, input: { nextPlanId: string | null }) =>
+    request<Membership>("POST", `/memberships/${membershipId}/schedule-plan-change`, input),
+  createMembershipPause: (
+    membershipId: string,
+    input: {
+      idempotencyKey?: string;
+      startsAt: string;
+      endsAt: string;
+      reason: string;
+    },
+  ) =>
+    request<MembershipPause>("POST", `/memberships/${membershipId}/pauses`, {
+      idempotencyKey: input.idempotencyKey ?? crypto.randomUUID(),
+      startsAt: input.startsAt,
+      endsAt: input.endsAt,
+      reason: input.reason,
+    }),
   myMemberships: () => request<Membership[]>("GET", "/memberships/mine"),
 
   registerPayment: (input: {
