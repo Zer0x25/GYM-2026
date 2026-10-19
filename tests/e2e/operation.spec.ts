@@ -278,13 +278,16 @@ test.describe.serial("SPEC 010 jornada de gimnasio", () => {
       new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
     await page.getByLabel("Inicio", { exact: true }).fill(local(start));
     await page.getByLabel("Fin", { exact: true }).fill(local(end));
-    await page.getByRole("button", { name: "Crear sesión", exact: true }).click();
-
-    const sessions = await get<{ id: string; startsAt: string; type: string }[]>(page, "schedule");
-    const newSession = sessions.find(
-      (s) => s.type === "cita" && new Date(s.startsAt).getTime() === start.getTime(),
-    )!;
-    expect(newSession).toBeTruthy();
+    const [resCreate] = await Promise.all([
+      page.waitForResponse(
+        (res) => res.url().includes("/api/v1/sessions") && res.request().method() === "POST",
+      ),
+      page.getByRole("button", { name: "Crear sesión", exact: true }).click(),
+    ]);
+    expect(resCreate.ok()).toBe(true);
+    const newSession = (await resCreate.json()).data as { id: string };
+    expect(newSession?.id).toBeTruthy();
+    await expect(page.getByRole("dialog")).not.toBeVisible();
 
     // 2. Entrar al detalle y reservar para Camila
     await page.goto(`/clases/${newSession.id}`);
@@ -299,7 +302,14 @@ test.describe.serial("SPEC 010 jornada de gimnasio", () => {
     await page.getByLabel("Nuevo inicio").fill(local(newStart));
     await page.getByLabel("Nuevo fin").fill(local(newEnd));
     await page.getByLabel("Motivo (opcional)").fill("Cambio de turno convenido");
-    await page.getByRole("button", { name: "Confirmar reprogramación" }).click();
+    const [resReschedule] = await Promise.all([
+      page.waitForResponse(
+        (res) => res.url().includes("/reschedule") && res.request().method() === "POST",
+      ),
+      page.getByRole("button", { name: "Confirmar reprogramación" }).click(),
+    ]);
+    expect(resReschedule.ok()).toBe(true);
+    await expect(page.getByRole("dialog")).not.toBeVisible();
 
     // 4. Verificar distintivo en detalle y en agenda
     await expect(page.getByText("Horario reprogramado")).toBeVisible();
