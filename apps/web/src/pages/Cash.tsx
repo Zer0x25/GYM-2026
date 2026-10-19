@@ -8,6 +8,7 @@ import { useResource } from "../hooks/use-resource.js";
 import { PageHead, ErrorNotice, Loading, Stat } from "../components/ui/page.js";
 import { DataTable } from "../components/ui/data-table.js";
 import { Button } from "../components/ui/button.js";
+import { Badge } from "../components/ui/badge.js";
 import { Input, Label } from "../components/ui/input.js";
 import { Confirm } from "../components/ui/confirm.js";
 type CashLedgerEntry = Omit<CashMovement, "type"> & { type: "income" | "refund" | "adjustment" };
@@ -159,7 +160,22 @@ export function Cash() {
             </div>
             {lastClosed && (
               <article className="mb-6 rounded-xl border bg-card p-5">
-                <h2 className="font-semibold">Último cierre</h2>
+                <div className="flex items-center justify-between">
+                  <h2 className="font-semibold">Último cierre</h2>
+                  <Badge
+                    variant={
+                      lastClosed.reconciliationState === "con_diferencia" ||
+                      (lastClosed.discrepancyCents !== null && lastClosed.discrepancyCents !== 0)
+                        ? "destructive"
+                        : "success"
+                    }
+                  >
+                    {lastClosed.reconciliationState === "con_diferencia" ||
+                    (lastClosed.discrepancyCents !== null && lastClosed.discrepancyCents !== 0)
+                      ? "Con diferencia"
+                      : "Cuadrada"}
+                  </Badge>
+                </div>
                 <div className="mt-3 flex flex-wrap gap-6 text-sm">
                   <span>Esperado: {formatCLP(lastClosed.expectedClosingCents ?? 0)}</span>
                   <span>Declarado: {formatCLP(lastClosed.declaredClosingCents ?? 0)}</span>

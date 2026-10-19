@@ -16,6 +16,10 @@ import {
   RegisterPaymentRequest,
   RegisterFinancialAdjustmentRequest,
   AttendanceReportQuery,
+  ReconciliationState,
+  CashSessionRef,
+  MembershipRef,
+  PaymentRef,
 } from "./index.js";
 
 describe("contracts", () => {
@@ -313,4 +317,62 @@ describe("contracts", () => {
       AttendanceReportQuery.safeParse({ from: "2026-02-30", to: "2026-03-01" }).success,
     ).toBe(false);
   });
+
+  it("SPEC 019 CA-3 CashSessionRef y ReconciliationState exponen estados explícitos de conciliación", () => {
+    expect(ReconciliationState.options).toEqual(["abierta", "cuadrada", "con_diferencia"]);
+    const session = {
+      id: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      organizationId: "3fa85f64-5717-4562-b3fc-2c963f66afa7",
+      openedBy: "usr-1",
+      closedBy: "usr-2",
+      state: "closed" as const,
+      reconciliationState: "cuadrada" as const,
+      openingCents: 10000,
+      declaredClosingCents: 20000,
+      expectedClosingCents: 20000,
+      discrepancyCents: 0,
+      openedAt: "2026-10-19T10:00:00.000Z",
+      closedAt: "2026-10-19T18:00:00.000Z",
+    };
+    expect(CashSessionRef.safeParse(session).success).toBe(true);
+    expect(
+      CashSessionRef.safeParse({ ...session, reconciliationState: "invalido" }).success,
+    ).toBe(false);
+  });
+
+  it("SPEC 019 CA-1/CA-2 MembershipRef y PaymentRef soportan ciclo de abonos parciales y vinculación a período", () => {
+    const membership = {
+      id: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      organizationId: "3fa85f64-5717-4562-b3fc-2c963f66afa7",
+      memberId: "3fa85f64-5717-4562-b3fc-2c963f66afa8",
+      planId: "3fa85f64-5717-4562-b3fc-2c963f66afa9",
+      state: "pending_payment" as const,
+      startAt: null,
+      endAt: null,
+      cycleTargetCents: 30000,
+      cyclePaidCents: 10000,
+      cycleRemainingCents: 20000,
+    };
+    expect(MembershipRef.safeParse(membership).success).toBe(true);
+
+    const payment = {
+      id: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      organizationId: "3fa85f64-5717-4562-b3fc-2c963f66afa7",
+      memberId: "3fa85f64-5717-4562-b3fc-2c963f66afa8",
+      membershipId: "3fa85f64-5717-4562-b3fc-2c963f66afa9",
+      planId: "3fa85f64-5717-4562-b3fc-2c963f66afb0",
+      periodId: "3fa85f64-5717-4562-b3fc-2c963f66afb1",
+      amountCents: 10000,
+      method: "cash" as const,
+      reference: null,
+      state: "validated" as const,
+      registeredBy: "usr-1",
+      decidedBy: "usr-2",
+      reason: null,
+      createdAt: "2026-10-19T10:00:00.000Z",
+    };
+    expect(PaymentRef.safeParse(payment).success).toBe(true);
+    expect(PaymentRef.safeParse({ ...payment, periodId: null }).success).toBe(true);
+  });
 });
+

@@ -155,6 +155,11 @@ export function MemberDetail() {
                       ? `Vence el ${new Date(m.endAt).toLocaleDateString("es-CL")}`
                       : "El período comienza al validar el primer pago."}
                   </p>
+                  {(m.cyclePaidCents ?? 0) > 0 && (
+                    <p className="mt-1 text-xs font-medium text-amber-600 dark:text-amber-400">
+                      Abono: {formatCLP(m.cyclePaidCents!)} pagado / {formatCLP(m.cycleRemainingCents ?? (m.plan.priceCents - m.cyclePaidCents!))} pendiente
+                    </p>
+                  )}
                   {m.nextPlan && (
                     <p className="mt-1 text-xs font-medium text-primary">
                       Próximo plan programado: {m.nextPlan.name}

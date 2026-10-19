@@ -2,6 +2,14 @@
 
 > Formato mínimo: fecha, ID de unidad, hallazgo, evidencia, aplicación futura.
 
+## 2026-10-19 — Unidad 019 — Abonos parciales con activación al 100% y conciliación de turnos
+
+- **Hallazgo (Ciclo de abonos y concurrencia):** Un abono parcial debe ingresar inmediatamente al flujo de caja abierta (`cash_movements`), pero bajo ninguna circunstancia emitir período de membresía, extender vigencia ni habilitar créditos antes del 100% del valor del plan. Para evitar sobrepagos bajo concurrencia (múltiples terminales validando abonos simultáneamente), la validación debe serializarse adquiriendo un lock pesimista `FOR UPDATE` sobre la membresía y verificando la suma de pagos validados del ciclo antes de autorizar el movimiento.
+- **Hallazgo (Diferenciación entre abono parcial tardío y renovación anticipada):** Al emitir un período, los pagos del ciclo quedan vinculados (`payments.periodId = period.id`). Si un pago provisional menor al precio del plan llega cuando el ciclo ya fue cerrado por un período posterior (`membershipPeriods.createdAt >= payment.createdAt`), el abono no puede sobrepagar el período ya cerrado y debe rechazarse con `409 AMOUNT_EXCEEDS_CYCLE_BALANCE`. En cambio, si el pago cubre el 100% del precio del plan, se trata de una renovación legítima y emite un período futuro consecutivo sin colisión.
+- **Evidencia:** `apps/api/src/partial-payments.integration.test.ts` (5/5 pruebas de concurrencia y roles en Postgres real), `apps/web/src/partial-payments.test.tsx` (4/4 pruebas de interfaz), y `node scripts/coverage.mjs` (73 tests, 96.96% cobertura en módulos financieros).
+- **Aplicación futura:** Para cualquier entidad que acumule pagos en cuotas o abonos, congelar el monto objetivo en la entidad (`cycleTargetCents`), vincular los pagos al completar el ciclo con una clave foránea (`periodId`), y serializar siempre con `FOR UPDATE` sobre el padre.
+
+
 ## 2026-10-19 — Unidad 021 — Menores de edad, entrega segura de correo y sincronización de contratos
 
 - **Menores y adulto responsable:** Un socio menor en el gimnasio requiere obligatoriamente un tutor adulto del mismo tenant; la autogestión de contacto debe denegarse al menor autenticado (`403 MINOR_CONTACT_MANAGED_BY_GUARDIAN`) y recaer exclusivamente en staff/adulto con registro en `audit_log`. Evidencia: `members.integration.test.ts` y `account-recovery.integration.test.ts`.

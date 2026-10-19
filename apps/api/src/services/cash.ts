@@ -30,6 +30,14 @@ export interface CashActor {
 
 type Tx = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
+export function deriveReconciliationState(session: {
+  state: "open" | "closed";
+  discrepancyCents?: number | null;
+}): "abierta" | "cuadrada" | "con_diferencia" {
+  if (session.state === "open") return "abierta";
+  return (session.discrepancyCents ?? 0) === 0 ? "cuadrada" : "con_diferencia";
+}
+
 export class CashService {
   private readonly audit: AuditService;
 
@@ -67,7 +75,7 @@ export class CashService {
         tx,
       );
 
-      return row;
+      return { ...row, reconciliationState: "abierta" as const };
     });
   }
 
@@ -132,7 +140,7 @@ export class CashService {
         tx,
       );
 
-      return closed;
+      return { ...closed, reconciliationState: deriveReconciliationState(closed) };
     });
   }
 
@@ -143,7 +151,8 @@ export class CashService {
       .from(cashSessions)
       .where(and(eq(cashSessions.organizationId, organizationId), eq(cashSessions.state, "open")))
       .limit(1);
-    return rows[0];
+    const row = rows[0];
+    return row ? { ...row, reconciliationState: "abierta" as const } : undefined;
   }
 
   async getById(organizationId: string, sessionId: string) {
@@ -154,7 +163,20 @@ export class CashService {
       .limit(1);
     const row = rows[0];
     if (!row) throw notFound("Turno no encontrado");
-    return row;
+    return { ...row, reconciliationState: deriveReconciliationState(row) };
+  }
+
+  /** Lists cash sessions of the organization (newest first). */
+  async list(organizationId: string) {
+    const rows = await this.db
+      .select()
+      .from(cashSessions)
+      .where(eq(cashSessions.organizationId, organizationId))
+      .orderBy(sql`${cashSessions.openedAt} DESC`);
+    return rows.map((r) => ({
+      ...r,
+      reconciliationState: deriveReconciliationState(r),
+    }));
   }
 
   /** Immutable movement feed of a session (newest first). */

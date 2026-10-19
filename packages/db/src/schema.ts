@@ -252,6 +252,8 @@ export const memberships = pgTable(
       .references(() => plans.id),
     /** Scheduled plan change for the next renewal period (SPEC 017). */
     nextPlanId: uuid("next_plan_id").references(() => plans.id),
+    /** Frozen target price for an ongoing partial payment cycle (SPEC 019). */
+    cycleTargetCents: integer("cycle_target_cents"),
     /** Start of the current validity window (set at first validated payment). */
     startAt: timestamp("start_at", { withTimezone: true }),
     /** End of the current validity window (start + plan.durationDays). */
@@ -289,6 +291,8 @@ export const payments = pgTable(
     planId: uuid("plan_id")
       .notNull()
       .references(() => plans.id),
+    /** Confirmed period to which this payment belongs (SPEC 019). Null while provisional or partial. */
+    periodId: uuid("period_id").references((): AnyPgColumn => membershipPeriods.id),
     /** Amount in CLP cents (integer). Must match plan.priceCents (warn on diff). */
     amountCents: integer("amount_cents").notNull(),
     method: text("method", { enum: ["cash", "transfer", "transbank"] }).notNull(),
@@ -314,6 +318,7 @@ export const payments = pgTable(
     index("payments_org_idx").on(t.organizationId),
     index("payments_state_idx").on(t.organizationId, t.state),
     index("payments_member_idx").on(t.memberId),
+    index("payments_period_idx").on(t.periodId),
   ],
 );
 

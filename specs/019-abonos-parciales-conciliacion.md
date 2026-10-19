@@ -1,6 +1,6 @@
 # Spec 019 — Abonos parciales con activación al 100% y estados de conciliación
 
-Estado: Aprobada — base validada por el usuario; lista para fase roja e implementación tras Unidad 018
+Estado: Cerrada (2026-10-19) — Implementada y verificada; revisión humana Tier 1 pendiente al cierre
 Nivel: Tier 1 — dinero, activación de derechos, caja/conciliación, concurrencia y migración aditiva.
 Autoridad: validación explícita del usuario 2026-10-19 (`A3`); [PRD.md](../PRD.md) `REQ-1`, `REQ-2`, `REQ-3`, `REQ-8`, `CAL-2`, `CAL-3`; [ADR 0002](../docs/adr/0002-arquitectura-base.md), [ADR 0008](../docs/adr/0008-ajustes-devoluciones.md), [ADR 0009](../docs/adr/0009-creditos-por-modalidad-periodo.md) y [ADR 0010](../docs/adr/0010-ciclo-comercial-agenda-exportaciones.md). Commits locales autorizados; revisión humana al cierre.
 Contexto (Notion): https://app.notion.com/p/3f529b8ebe2981d6a2e8dce35e0920c3
@@ -24,7 +24,7 @@ Trazabilidad: SPEC:003-planes-pagos-caja, SPEC:014-ajustes-devoluciones, SPEC:01
     4. Si `paidValidatedCents + payment.amountCents < targetPriceCents`: la membresía permanece sin nuevo `membership_period` (si era primera compra sigue `pending_payment`; si era renovación anticipada conserva su ventana anterior sin extenderla aún) y expone `cyclePaidCents` y `cycleRemainingCents`.
     5. Si `paidValidatedCents + payment.amountCents === targetPriceCents`: crea el `membership_period` inmutable en la misma transacción (vinculando los pagos del ciclo al período mediante `payments.periodId` y `membership_periods.paymentId` al pago completador), extiende `[startAt, endAt)` y habilita las cuotas de créditos del período.
 - **Estados explícitos de conciliación (`CashService` y `OperationsService`):**
-  - En `cash_sessions` y sus proyecciones de lectura (`GET /api/v1/cash-sessions`, `GET /api/v1/reports/daily`):
+  - En `cash_sessions` y sus proyecciones de lectura (`GET /api/v1/cash/sessions`, `GET /api/v1/reports/daily`):
     - Si `state === 'open'` → `reconciliationState = 'abierta'`.
     - Si `state === 'closed'` y `discrepancyCents === 0` → `reconciliationState = 'cuadrada'`.
     - Si `state === 'closed'` y `discrepancyCents !== 0` → `reconciliationState = 'con_diferencia'`.
@@ -118,4 +118,11 @@ Escenario BDD-2: Bloqueo de sobrepago concurrente y estado de conciliación de c
 
 ## 6. Evidencia y checkpoint
 
-- **Estado actual:** Spec validada y registrada en la sesión de planificación de base (2026-10-19). Pendiente de fase roja e implementación tras Unidad `018`.
+- **Estado final:** Implementada, verificada y cerrada (2026-10-19). Revisión humana Tier 1 requerida antes del despliegue.
+- CA-1: `pnpm --filter @gym/api exec vitest run src/partial-payments.integration.test.ts -t "CA-1"` ejecutado con éxito (1 passed). Abonos parciales generan movimiento en caja abierta inmediatamente pero no emiten `membership_period` ni conceden check-in ni créditos.
+- CA-2: `pnpm --filter @gym/api exec vitest run src/partial-payments.integration.test.ts -t "CA-2"` ejecutado con éxito (1 passed). El abono que cubre el 100% de `targetPriceCents` emite exactamente un período inmutable, vincula todos los pagos del ciclo vía `payments.periodId`, y los sobrepagos concurrentes se rechazan con `409 AMOUNT_EXCEEDS_CYCLE_BALANCE`.
+- CA-3: `pnpm --filter @gym/api exec vitest run src/partial-payments.integration.test.ts -t "CA-3"` ejecutado con éxito (1 passed) y `pnpm --filter @gym/contracts test` (17 passed). Cierre de turno y reportes exponen `reconciliationState` (`abierta`, `cuadrada`, `con_diferencia`) y métricas de abonos acumulados.
+- CA-4: `pnpm --filter @gym/api exec vitest run src/partial-payments.integration.test.ts -t "CA-4"` ejecutado con éxito (1 passed). Separación de funciones estricta (admin no valida pagos propios, rechazo 400), recepción/instructor/socio reciben 403, y aislamiento cross-tenant 404.
+- CA-5: `pnpm --filter @gym/web test src/partial-payments.test.tsx` ejecutado con éxito (4 passed). Componentes `QuickPay.tsx`, `MemberDetail.tsx`, `Cash.tsx` y `Reports.tsx` muestran saldo pendiente, progreso de abonos y etiquetas de conciliación.
+- CA-6: `./scripts/verify.sh` salida 0 (lint, typecheck, build y tests de 4 workspaces) y `node scripts/coverage.mjs` con 73 tests pasando y 96.96% statements / 96.96% lines en módulos financieros (umbral >= 80% superado).
+

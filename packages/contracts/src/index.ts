@@ -272,6 +272,9 @@ export const MembershipRef = z.object({
   state: z.enum(["pending_payment", "active", "expired"]),
   startAt: z.string().nullable(),
   endAt: z.string().nullable(),
+  cycleTargetCents: z.number().int().nonnegative().nullable().optional(),
+  cyclePaidCents: z.number().int().nonnegative().optional(),
+  cycleRemainingCents: z.number().int().nonnegative().optional(),
 });
 export type MembershipRef = z.infer<typeof MembershipRef>;
 
@@ -309,6 +312,7 @@ export const PaymentRef = z.object({
   memberId: z.string().uuid(),
   membershipId: z.string().uuid(),
   planId: z.string().uuid(),
+  periodId: z.string().uuid().nullable().optional(),
   amountCents: z.number().int(),
   method: PaymentMethod,
   reference: z.string().nullable(),
@@ -316,6 +320,7 @@ export const PaymentRef = z.object({
   state: z.enum(["provisional", "validated", "rejected"]),
   registeredBy: z.string(),
   decidedBy: z.string().nullable(),
+  decidedAt: z.string().nullable().optional(),
   reason: z.string().nullable(),
   createdAt: z.string(),
 });
@@ -361,12 +366,16 @@ export const CloseCashSessionRequest = z.object({
 });
 export type CloseCashSessionRequest = z.infer<typeof CloseCashSessionRequest>;
 
+export const ReconciliationState = z.enum(["abierta", "cuadrada", "con_diferencia"]);
+export type ReconciliationState = z.infer<typeof ReconciliationState>;
+
 export const CashSessionRef = z.object({
   id: z.string().uuid(),
   organizationId: z.string().uuid(),
   openedBy: z.string(),
   closedBy: z.string().nullable(),
   state: z.enum(["open", "closed"]),
+  reconciliationState: ReconciliationState.optional(),
   openingCents: z.number().int(),
   declaredClosingCents: z.number().int().nullable(),
   expectedClosingCents: z.number().int().nullable(),
