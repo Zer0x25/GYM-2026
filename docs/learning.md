@@ -2,6 +2,13 @@
 
 > Formato mínimo: fecha, ID de unidad, hallazgo, evidencia, aplicación futura.
 
+## 2026-10-19 — Unidad 022 — Cierre G1, verificación en CI remota y prueba de backup/restore
+
+- **Hallazgo (Paridad en verificación de backup/restore):** La ejecución de `pg_dump -Fc` y `pg_restore` sobre una base de datos limpia (`gym_restore_check`) debe contrastar no solo el código de salida de PostgreSQL sino una verificación de paridad relacional completa (conteos por tabla en `organizations`, `members`, `payments`, `sessions`, `user` y consulta de humo de agregados de negocio como socios con pagos vinculados). Ejecutar el restore sin propietarios (`--no-owner`) previene errores de asignación de roles de sistema entre entornos con distintos usuarios administradores.
+- **Hallazgo (CI remota con base de datos de servicio):** En GitHub Actions, asegurar que el contenedor de servicio de PostgreSQL aplique el ciclo completo de migraciones Drizzle (`0000..0017`) antes del Quality Gate (`./scripts/verify.sh`) y que la suite Playwright instale Chromium y sus dependencias de sistema garantiza la reproducibilidad exacta entre entornos locales y el runner remoto sin falsos positivos de entorno.
+- **Evidencia:** Ejecución de `pg_dump`/`pg_restore` sobre contenedor Docker `gym-2026-local-postgres-1` con paridad 1:1 (`organizations 1, members 2, payments 3, sessions 1, users 5`), query de humo por dominio coincidente, y GitHub Actions workflow `GYM-2026 quality gate` sobre `origin/main` finalizado en verde (run ID `39323982842`, job `118305030133`, 14/14 tests Playwright E2E).
+- **Aplicación futura:** Para despliegues en VPS de staging y piloto, automatizar la prueba de integridad post-restore en scripts de verificación periódica y utilizar imágenes de base homogéneas (`postgres:16-alpine`, `node:22-alpine` o `caddy:2-alpine`).
+
 ## 2026-10-19 — Unidad 019 — Abonos parciales con activación al 100% y conciliación de turnos
 
 - **Hallazgo (Ciclo de abonos y concurrencia):** Un abono parcial debe ingresar inmediatamente al flujo de caja abierta (`cash_movements`), pero bajo ninguna circunstancia emitir período de membresía, extender vigencia ni habilitar créditos antes del 100% del valor del plan. Para evitar sobrepagos bajo concurrencia (múltiples terminales validando abonos simultáneamente), la validación debe serializarse adquiriendo un lock pesimista `FOR UPDATE` sobre la membresía y verificando la suma de pagos validados del ciclo antes de autorizar el movimiento.

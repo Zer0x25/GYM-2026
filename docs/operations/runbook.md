@@ -104,16 +104,124 @@ TEST_DATABASE_URL=postgres://gym:gym-local-dev@localhost:55432/gym_test \
   pnpm --filter @gym/api test
 ```
 
-## Staging / piloto en VPS
+## Staging / piloto en VPS (datos ficticios, ambiente controlado)
 
-1. Aprovisionar el VPS (Linux) con Docker y Docker Compose.
-2. Clonar el repo y fijar el tag de la versión.
-3. Configurar `.env` **en el servidor** (fuera del repo) con los valores reales.
-4. `pnpm install --frozen-lockfile && pnpm -r build`.
-5. `pnpm -r db:migrate` contra la base de staging.
-6. Levantar `apps/api` (p. ej. systemd unit o servicio Compose) y servir
-   `apps/web/dist` tras el proxy.
-7. Health check: `curl https://<host>/health` → `{"status":"ok"}`.
+Despliegue reproducible con Docker Compose y proxy inverso en VPS Linux dedicado para pruebas de aceptación y contingencia previa a G2.
+
+### 1. Requisitos previos en el servidor
+- Servidor Linux (Ubuntu 22.04 / 24.04 LTS recomendado) con Docker y Docker Compose v2 instalados.
+- Puertos `80` y `443` abiertos para HTTPS (o puerto local detrás de VPN/túnel de staging).
+- Secretos y variables configurados **exclusivamente en el servidor** (archivo `/etc/gym/.env.staging` o `.env` fuera del árbol de Git con permisos `0600`), **NUNCA en el repositorio**.
+
+### 2. Plantilla de Docker Compose para Staging (`compose.staging.yaml`)
+
+```yaml
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-gym}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-gym_staging}
+    volumes:
+      - postgres_staging_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-gym} -d ${POSTGRES_DB:-gym_staging}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    image: gym-api:staging
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3000
+      DATABASE_URL: postgres://${POSTGRES_USER:-gym}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-gym_staging}
+      AUTH_SECRET: ${AUTH_SECRET}
+      AUTH_URL: https://${STAGING_HOST}
+      TRUSTED_ORIGINS: https://${STAGING_HOST}
+      EMAIL_DELIVERY_MODE: ${EMAIL_DELIVERY_MODE:-disabled}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  postgres_staging_data:
+  caddy_data:
+  caddy_config:
+```
+
+### 3. Caddyfile de Staging (terminación TLS automática y proxy inverso)
+
+```caddyfile
+{$STAGING_HOST} {
+    # API endpoints
+    handle /api/* {
+        reverse_proxy api:3000
+    }
+    handle /health {
+        reverse_proxy api:3000
+    }
+
+    # SPA / PWA Frontend
+    handle {
+        root * /var/www/html/dist
+        try_files {path} /index.html
+        file_server
+    }
+}
+```
+
+### 4. Secuencia de despliegue en Staging
+
+```bash
+# 1) Clonar repositorio y seleccionar SHA o tag auditado
+git clone https://github.com/Zer0x25/GYM-2026.git /opt/gym-staging
+cd /opt/gym-staging
+git checkout origin/main
+
+# 2) Instalar y compilar
+pnpm install --frozen-lockfile
+pnpm -r build
+
+# 3) Aplicar migraciones (Drizzle 0000..0017)
+DATABASE_URL="postgres://gym:${POSTGRES_PASSWORD}@localhost:5432/gym_staging" pnpm db:migrate
+
+# 4) Sembrar datos ficticios (NO datos reales de producción)
+DATABASE_URL="postgres://gym:${POSTGRES_PASSWORD}@localhost:5432/gym_staging" pnpm seed:dev
+
+# 5) Iniciar servicios
+docker compose -f compose.staging.yaml up -d --wait
+
+# 6) Health check
+curl -fsS https://${STAGING_HOST}/health
+# Respuesta esperada: {"status":"ok"}
+```
 
 ## Backup y restore (REQ-11, SPEC:BACKUP)
 

@@ -50,7 +50,30 @@
 
 ## Meta actual — App GYM funcional (2026-10-19)
 
-Unidad activa: 019-abonos-parciales-conciliacion — CERRADA (2026-10-19)
+Unidad activa: 022-aceptacion-ci-staging — Verificada; lista para revisión humana y cierre G1 (2026-10-19)
+
+## Unidad 022 — Revisión humana Tier 1, CI remota, staging VPS y cierre G1 — Tier 1 — Verificada (2026-10-19)
+
+- **Autoridad:** Petición directa del usuario «resuelve la issues #6 · Revisión humana Tier 1, CI remota, staging VPS y cierre G1» (`specs/022-aceptacion-ci-staging.md`); PRD `REQ-1..REQ-11`, `CAL-1..CAL-3`; [PROMPT-MAESTRO.md](PROMPT-MAESTRO.md) §Cierre de meta; [ADR 0002](docs/adr/0002-arquitectura-base.md), [ADR 0007](docs/adr/0007-parametros-offline-cifrado.md) y [ADR 0010](docs/adr/0010-ciclo-comercial-agenda-exportaciones.md). Nivel: `Tier 1`.
+- **Entregado y Verificado (CA-1..CA-4):**
+  1. *CA-1 (Suite local completa y exclusión de sauna):*
+     - `./scripts/verify.sh`: superado con código 0 (109 tests unitarios API + 46 web, typecheck, lint, build sin errores).
+     - `pnpm test:coverage`: 77 tests pasados, 96.96% statements/lines (supera umbral del 80%).
+     - `pnpm test:e2e`: 14/14 tests Playwright completados en 46.7s sobre preview de producción.
+     - `grep -ri sauna apps/ packages/`: cero rutas ni tablas en código de producto (`REQ-10` verificado).
+     - Lista de chequeo interactiva para revisión humana de unidades Tier 1 (`010`, `012`..`021`).
+  2. *CA-2 (CI remota en GitHub Actions — CAL-1):*
+     - Ejecución real en verde de `.github/workflows/verify.yml` sobre `origin/main` (commit `8c9168d109ba7cbbe8ee94ac810e61b112e6214e`, run ID `39323982842`, job ID `118305030133`).
+     - Pasos ejecutados: preparación de BD PostgreSQL migrada con Drizzle `0000..0017`, ejecución de `./scripts/verify.sh` e instalación/ejecución completa de 14 pruebas E2E de Playwright.
+  3. *CA-3 (Staging VPS, Backup/Restore y Contingencia Offline — REQ-9, REQ-11):*
+     - Procedimiento de backup y restore ejecutado con éxito: `pg_dump -Fc` de base de datos local y `pg_restore` sobre base limpia de verificación `gym_restore_check`. Conteos 1:1 verificados (`organizations 1, members 2, payments 3, sessions 1, users 5`) y query de humo por dominio (`Miembro Sin Cuenta -> 1 pago`, `Socio Piloto -> 2 pagos`) con limpieza posterior.
+     - Flujo de contingencia offline (`REQ-9`): validado con pruebas unitarias (`offline.test.ts`, `contingency-protocol.test.ts`), integración (`offline.integration.test.ts`), bóveda cifrada AES-GCM con frase local (`offline-vault.test.ts`) y E2E de 2 dispositivos offline que conservan cobros y sincronizan de forma idempotente (`operation.spec.ts:167`).
+     - Runbook de staging con Docker Compose y Caddy reverse proxy documentado en `docs/operations/runbook.md`.
+  4. *CA-4 (Sello de matriz G1):*
+     - `docs/product/aceptacion-mvp.md` y `STATE.md` actualizados con el 100% de los criterios `MVP-AC-01..AC-10` verificados en G1.
+     - Frontera con G2 explícitamente delimitada (inicio del piloto en terreno con socios y datos reales sujeto a autorización separada y validaciones jurídicas `D-05`/`D-06`).
+- **Contador de falta de progreso:** 0, sin bloqueos.
+- **Siguiente paso:** Presentar al usuario la lista de chequeo de revisión humana Tier 1 para confirmación explícita de cierre.
 
 ## Unidad 019 — Abonos parciales con activación al 100% y estados de conciliación — Tier 1 — Cerrada (2026-10-19)
 
