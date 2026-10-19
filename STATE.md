@@ -50,18 +50,18 @@
 
 ## Meta actual — App GYM funcional (2026-10-19)
 
-Unidad activa: 022-aceptacion-ci-staging — Verificada; lista para revisión humana y cierre G1 (2026-10-19)
+Unidad activa: 022-aceptacion-ci-staging — CERRADA (2026-10-19)
 
-## Unidad 022 — Revisión humana Tier 1, CI remota, staging VPS y cierre G1 — Tier 1 — Verificada (2026-10-19)
+## Unidad 022 — Revisión humana Tier 1, CI remota, staging VPS y cierre G1 — Tier 1 — Cerrada (2026-10-19)
 
-- **Autoridad:** Petición directa del usuario «resuelve la issues #6 · Revisión humana Tier 1, CI remota, staging VPS y cierre G1» (`specs/022-aceptacion-ci-staging.md`); PRD `REQ-1..REQ-11`, `CAL-1..CAL-3`; [PROMPT-MAESTRO.md](PROMPT-MAESTRO.md) §Cierre de meta; [ADR 0002](docs/adr/0002-arquitectura-base.md), [ADR 0007](docs/adr/0007-parametros-offline-cifrado.md) y [ADR 0010](docs/adr/0010-ciclo-comercial-agenda-exportaciones.md). Nivel: `Tier 1`.
+- **Autoridad:** Petición directa del usuario «resuelve la issues #6 · Revisión humana Tier 1, CI remota, staging VPS y cierre G1» (`specs/022-aceptacion-ci-staging.md`); PRD `REQ-1..REQ-11`, `CAL-1..CAL-3`; [PROMPT-MAESTRO.md](PROMPT-MAESTRO.md) §Cierre de meta; [ADR 0002](docs/adr/0002-arquitectura-base.md), [ADR 0007](docs/adr/0007-parametros-offline-cifrado.md) y [ADR 0010](docs/adr/0010-ciclo-comercial-agenda-exportaciones.md). Nivel: `Tier 1`. Aprobación formal de revisión humana otorgada por el usuario (2026-10-19).
 - **Entregado y Verificado (CA-1..CA-4):**
   1. *CA-1 (Suite local completa y exclusión de sauna):*
+     - Revisión humana Tier 1 aprobada formalmente por el usuario para todas las unidades Tier 1 (`010`, `012`..`021`).
      - `./scripts/verify.sh`: superado con código 0 (109 tests unitarios API + 46 web, typecheck, lint, build sin errores).
      - `pnpm test:coverage`: 77 tests pasados, 96.96% statements/lines (supera umbral del 80%).
      - `pnpm test:e2e`: 14/14 tests Playwright completados en 46.7s sobre preview de producción.
      - `grep -ri sauna apps/ packages/`: cero rutas ni tablas en código de producto (`REQ-10` verificado).
-     - Lista de chequeo interactiva para revisión humana de unidades Tier 1 (`010`, `012`..`021`).
   2. *CA-2 (CI remota en GitHub Actions — CAL-1):*
      - Ejecución real en verde de `.github/workflows/verify.yml` sobre `origin/main` (commit `8c9168d109ba7cbbe8ee94ac810e61b112e6214e`, run ID `39323982842`, job ID `118305030133`).
      - Pasos ejecutados: preparación de BD PostgreSQL migrada con Drizzle `0000..0017`, ejecución de `./scripts/verify.sh` e instalación/ejecución completa de 14 pruebas E2E de Playwright.
@@ -73,7 +73,7 @@ Unidad activa: 022-aceptacion-ci-staging — Verificada; lista para revisión hu
      - `docs/product/aceptacion-mvp.md` y `STATE.md` actualizados con el 100% de los criterios `MVP-AC-01..AC-10` verificados en G1.
      - Frontera con G2 explícitamente delimitada (inicio del piloto en terreno con socios y datos reales sujeto a autorización separada y validaciones jurídicas `D-05`/`D-06`).
 - **Contador de falta de progreso:** 0, sin bloqueos.
-- **Siguiente paso:** Presentar al usuario la lista de chequeo de revisión humana Tier 1 para confirmación explícita de cierre.
+- **Siguiente paso:** Cierre del Hito G1 completado y sellado. Publicación autorizada a origin/main y cierre de Issue #6. Fase G2 (piloto supervisado) permanece separada hasta validación jurídica y aprovisionamiento definitivo del VPS.
 
 ## Unidad 019 — Abonos parciales con activación al 100% y estados de conciliación — Tier 1 — Cerrada (2026-10-19)
 
