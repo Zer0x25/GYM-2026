@@ -245,7 +245,14 @@ export function Portal() {
                     className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t pt-4"
                   >
                     <div>
-                      <p className="font-medium">{s.title}</p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-medium">{s.title}</p>
+                        {(s.rescheduledCount ?? 0) > 0 && (
+                          <span className="inline-flex items-center gap-1 rounded bg-amber-500/10 px-1.5 py-0.5 text-[11px] font-medium text-amber-600 dark:text-amber-400">
+                            Horario reprogramado
+                          </span>
+                        )}
+                      </div>
                       <p className="mt-1 text-sm text-muted-foreground">{s.instructorName}</p>
                       <p className="mt-1 text-xs text-muted-foreground">
                         {new Date(s.startsAt).toLocaleString("es-CL", {

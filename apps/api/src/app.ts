@@ -36,6 +36,7 @@ import {
   SchedulePlanChangeRequest,
   CreateMembershipPauseRequest,
   CreateSessionRequest,
+  RescheduleSessionRequest,
   DecidePaymentRequest,
   MarkAttendanceRequest,
   OpenCashSessionRequest,
@@ -799,6 +800,28 @@ export async function buildServer(opts: AppOptions) {
     );
     return reply.send({ data: row });
   });
+
+  app.post<{ Params: { id: string } }>("/api/v1/sessions/:id/reschedule", async (req, reply) => {
+    requireRole(req.session, ["admin", "recepcion", "instructor"]);
+    assertTenantContext(req.session);
+    const parsed = RescheduleSessionRequest.safeParse(req.body);
+    if (!parsed.success) throw validationError({ issues: parsed.error.issues });
+    const row = await sessionsService.reschedule(
+      {
+        organizationId: req.session.organizationId,
+        accountId: req.session.accountId,
+        role: req.session.role,
+      },
+      req.params.id,
+      {
+        startsAt: new Date(parsed.data.startsAt),
+        endsAt: new Date(parsed.data.endsAt),
+        reason: parsed.data.reason,
+      },
+    );
+    return reply.send({ data: row });
+  });
+
 
   // Unified instructor agenda (REQ-6, TX-02)
   app.get("/api/v1/agenda", async (req: FastifyRequest, reply: FastifyReply) => {

@@ -53,6 +53,7 @@ run(
     "src/financial-adjustments.integration.test.ts",
     "src/memberships-lifecycle.integration.test.ts",
     "src/partial-payments.integration.test.ts",
+    "src/sessions-reschedule.integration.test.ts",
     "--no-file-parallelism",
     "--coverage",
   ],

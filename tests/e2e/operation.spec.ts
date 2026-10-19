@@ -257,4 +257,71 @@ test.describe.serial("SPEC 010 jornada de gimnasio", () => {
     const attendanceCsv = await attendanceRes.text();
     expect(attendanceCsv).toContain("booking_id,session_id,session_type");
   });
+
+  test("SPEC 018 reprogramación de sesión actualiza horario, muestra distintivo y se refleja en portal", async ({
+    page,
+    browser,
+  }) => {
+    // 1. Recepción publica una cita y reserva para Camila
+    await login(page, "recepcion@pilot.cl");
+    await page.goto("/clases");
+    await page.getByRole("button", { name: "Programar sesión", exact: true }).click();
+    await page.getByLabel("Modalidad").selectOption("cita");
+    await page
+      .getByRole("dialog", { name: "Programar sesión" })
+      .getByLabel("Instructor", { exact: true })
+      .selectOption({ label: "Instructor Piloto" });
+    const start = new Date(Date.now() + 10 * 3600000);
+    start.setMinutes(0, 0, 0);
+    const end = new Date(start.getTime() + 3600000);
+    const local = (d: Date) =>
+      new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    await page.getByLabel("Inicio", { exact: true }).fill(local(start));
+    await page.getByLabel("Fin", { exact: true }).fill(local(end));
+    const [resCreate] = await Promise.all([
+      page.waitForResponse(
+        (res) => res.url().includes("/api/v1/sessions") && res.request().method() === "POST",
+      ),
+      page.getByRole("button", { name: "Crear sesión", exact: true }).click(),
+    ]);
+    expect(resCreate.ok()).toBe(true);
+    const newSession = (await resCreate.json()).data as { id: string };
+    expect(newSession?.id).toBeTruthy();
+    await expect(page.getByRole("dialog")).not.toBeVisible();
+
+    // 2. Entrar al detalle y reservar para Camila
+    await page.goto(`/clases/${newSession.id}`);
+    await page.getByLabel("Reservar para un socio").selectOption({ label: "Camila E2E" });
+    await page.getByRole("button", { name: "Confirmar reserva" }).click();
+    await expect(page.getByText("Camila E2E")).toBeVisible();
+
+    // 3. Reprogramar la cita 2 horas después
+    await page.getByRole("button", { name: "Reprogramar sesión" }).click();
+    const newStart = new Date(start.getTime() + 2 * 3600000);
+    const newEnd = new Date(newStart.getTime() + 3600000);
+    await page.getByLabel("Nuevo inicio").fill(local(newStart));
+    await page.getByLabel("Nuevo fin").fill(local(newEnd));
+    await page.getByLabel("Motivo (opcional)").fill("Cambio de turno convenido");
+    const [resReschedule] = await Promise.all([
+      page.waitForResponse(
+        (res) => res.url().includes("/reschedule") && res.request().method() === "POST",
+      ),
+      page.getByRole("button", { name: "Confirmar reprogramación" }).click(),
+    ]);
+    expect(resReschedule.ok()).toBe(true);
+    await expect(page.getByRole("dialog")).not.toBeVisible();
+
+    // 4. Verificar distintivo en detalle y en agenda
+    await expect(page.getByText("Horario reprogramado")).toBeVisible();
+    await page.goto("/clases");
+    await expect(page.getByText("Horario reprogramado").first()).toBeVisible();
+
+    // 5. Socio entra al portal y ve su reserva con Horario reprogramado
+    const memberCtx = await browser.newContext();
+    const memberPage = await memberCtx.newPage();
+    await login(memberPage, "camila.e2e@pilot.cl");
+    await expect(memberPage.getByText("Horario reprogramado").first()).toBeVisible();
+    await memberCtx.close();
+  });
 });
+

@@ -208,12 +208,14 @@ Rutas v1:
 | `GET /api/v1/sessions?from=&to=` | todos | Sesiones reservables |
 | `GET /api/v1/sessions/:id` | todos | Detalle |
 | `POST /api/v1/sessions/:id/cancel` | admin, recepcion | Cancela la sesión |
+| `POST /api/v1/sessions/:id/reschedule` | admin, recepcion, instructor (propias citas/bloqueos) | Reprograma horario futuro; valida no solape de agenda (TX-02) y cobertura de inscritos (REVAL-01); conserva reservas y créditos sin segundo descuento |
 | `GET /api/v1/agenda?instructorId=&from=&to=` | admin, recepcion, instructor | Agenda unificada del instructor (REQ-6) |
 | `POST /api/v1/bookings` | admin, recepcion, socio | Reserva; última plaza bajo concurrencia (TX-01) |
 | `GET /api/v1/bookings/mine` | socio | Reservas propias |
 | `GET /api/v1/bookings?sessionId=` | admin, recepcion, instructor | Reservas de una sesión |
 | `POST /api/v1/bookings/:id/cancel` | admin, recepcion, socio | Cancela; crédito una vez (TX-04) |
 | `POST /api/v1/bookings/:id/attendance` | admin, recepcion, instructor | Marca asistencia/ausencia |
+
 
 Invariantes (verificadas con tests de integración contra Postgres real, `apps/api/scripts/test-integration.sh`):
 
@@ -348,6 +350,7 @@ nunca del cliente) y el cross-tenant es **404** (no 403: sin fuga de existencia)
 | GET /sessions | ✓ | ✓ | ✓ | ✓ |
 | GET /sessions/:id | ✓ | ✓ | ✓ | ✓ |
 | POST /sessions/:id/cancel | ✓ | ✓ | — | — |
+| POST /sessions/:id/reschedule | ✓ | ✓ | citas/bloqueos propios | — |
 | GET /agenda | ✓ | ✓ | ✓ | — |
 | POST /bookings | ✓ | ✓ | — | propio |
 | GET /bookings/mine | — | — | — | propio |

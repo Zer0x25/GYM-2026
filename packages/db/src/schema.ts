@@ -561,6 +561,9 @@ export const sessions = pgTable(
       .notNull()
       .default("programada"),
     createdBy: text("created_by").notNull(),
+    rescheduledAt: timestamp("rescheduled_at", { withTimezone: true }),
+    rescheduledFromStartsAt: timestamp("rescheduled_from_starts_at", { withTimezone: true }),
+    rescheduledCount: integer("rescheduled_count").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [

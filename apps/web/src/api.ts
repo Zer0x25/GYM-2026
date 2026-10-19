@@ -265,6 +265,9 @@ export interface Session {
   state: SessionState;
   createdBy: string;
   createdAt: string;
+  rescheduledAt?: string | null;
+  rescheduledFromStartsAt?: string | null;
+  rescheduledCount?: number;
 }
 
 export interface CreateSessionInput {
@@ -557,6 +560,11 @@ export const api = {
   getSession: (id: string) => request<Session>("GET", `/sessions/${id}`),
   createSession: (input: CreateSessionInput) => request<Session>("POST", "/sessions", input),
   cancelSession: (id: string) => request<Session>("POST", `/sessions/${id}/cancel`),
+  rescheduleSession: (
+    id: string,
+    input: { startsAt: string; endsAt: string; reason?: string },
+  ) => request<Session>("POST", `/sessions/${id}/reschedule`, input),
+
 
   agenda: (instructorId: string, from?: string, to?: string) =>
     request<Session[]>(

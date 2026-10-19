@@ -240,7 +240,14 @@ export function Classes() {
                       </p>
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="font-semibold">{s.title}</p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-semibold">{s.title}</p>
+                        {(s.rescheduledCount ?? 0) > 0 && (
+                          <span className="inline-flex items-center gap-1 rounded bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400">
+                            Horario reprogramado
+                          </span>
+                        )}
+                      </div>
                       <p className="mt-1 text-sm text-muted-foreground">
                         {s.instructorName} · {types[s.type]}
                       </p>
