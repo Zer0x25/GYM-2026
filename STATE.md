@@ -48,15 +48,27 @@
 
 - Falta de progreso: contador 0, sin bloqueo.
 
-## Meta actual — App GYM funcional (2026-10-14)
+## Meta actual — App GYM funcional (2026-10-19)
 
-Unidad activa: 016-periodos-creditos
+Unidad activa: 017-catalogo-pausas-cambio-plan
+
+## Ruta de cierre MVP validada (Unidades 017–022 y ADR 0010) — Lista para sesiones de codificación
+
+- **Autoridad (2026-10-19):** el usuario solicitó generar todas las specs restantes validando primero la base de negocio (`A1..A5`) para ejecutar la codificación en las siguientes sesiones. Decisiones registradas en `docs/adr/0010-ciclo-comercial-agenda-exportaciones.md`.
+- **Secuencia de specs aprobadas (en espera de fase roja e implementación):**
+  1. `specs/017-catalogo-pausas-cambio-plan.md` (`Tier 1`, **unidad activa**): edición/versionado de `plans` sin mutar `membership_periods` emitidos; pausas autorizadas por `admin` con motivo que extienden `endsAt` y cancelan reservas dentro del rango pausado (devolviendo crédito); cambio de plan (`nextPlanId`) para el siguiente período renovado.
+  2. `specs/018-reprogramacion-agenda-citas.md` (`Tier 1`): reprogramación horaria de sesiones y citas (`TX-02` + `REVAL-01`), conservando reservas y créditos comprometidos si todos los inscritos mantienen cobertura en la nueva fecha (`409` en caso contrario).
+  3. `specs/019-abonos-parciales-conciliacion.md` (`Tier 1`): abonos parciales que ingresan a caja al validarse pero activan el `membership_period` y sus créditos solo al completar el `100%` del precio del plan; estado explícito de conciliación (`abierta | cuadrada | con_diferencia`).
+  4. `specs/020-exportaciones-operativas-csv.md` (`Tier 2`): exportaciones CSV por tenant para `admin` y `recepcion` (`members.csv`, `memberships.csv`, `attendance.csv`), sin exponer `qrToken`.
+  5. `specs/021-menores-correo-contratos.md` (`Tier 1`): vínculo obligatorio de menor a `adultResponsibleId` del mismo tenant (`D-05`) sin autogestión de contacto por el menor; adaptador de correo configurable por entorno (apagado por defecto sin secretos); sincronización completa de contratos `CAL-3` en `docs/api/README.md`.
+  6. `specs/022-aceptacion-ci-staging.md` (`Tier 1`): revisión humana del lote `010`–`021`, push autorizado para CI remota (`CAL-1`), despliegue en staging VPS con datos ficticios y prueba de backup/restore (`REQ-11`).
+- **Checkpoint para la próxima sesión:** iniciar codificación en `specs/017-catalogo-pausas-cambio-plan.md` comenzando por los tests rojos en `packages/contracts/src/contracts.test.ts`, `apps/api/src/memberships-lifecycle.integration.test.ts` y `apps/web/src/memberships-lifecycle.test.tsx`. Contador de falta de progreso: 0.
 
 ## Unidad 016 — Períodos y créditos por modalidad — Tier 1 — Implementada/verificada; revisión humana pendiente
 
 - Autoridad: «continua» y respuesta explícita a cuotas separadas por modalidad/período, sin acumulación; ADR 0009 registrado antes de código. Spec 016, revisión humana al cierre y commits locales sin push.
 - Evidencia final: gate raíz salida 0, 197/197 (145 API, 36 web, 11 contratos, 5 db), sin omitidos; integración completa 14 suites sin omitidos, E2E 11/11, cobertura 64 pruebas/97.23% statements-lines, booking-credits 100%. Trece casos de créditos prueban límite concurrente entre sesiones, última plaza, cancelación multi-clase/multi-socio sin deadlock, restitución/reclamo único, snapshot y renovación consecutiva sin perder inicio. Migración desde 0012 probada en BDs ficticias limitada/ilimitada, sin saldos inventados ni pérdida de reservas; captura móvil inspeccionada. Detalle por CA en spec 016.
-- Checkpoint final: unidad 016 como commit local por ID, base fe715cd; sin push. Revisiones humanas 010/012/013/014/015/016 pendientes. Fuente/decisión cuantitativa en ADR 0009; no alterar históricos. Siguiente unidad: pausas autorizadas/cambio al siguiente período y versiones editables de catálogo, concretar reglas antes de editar; abonos/conciliación, exportaciones, menores, correo real y staging/G2 siguen pendientes. Matriz actualizada; meta abierta y contador 0.
+- Checkpoint final: unidad 016 en `c4c07de`. Revisiones humanas 010/012/013/014/015/016 pendientes. Fuente/decisión cuantitativa en ADR 0009; no alterar históricos. Siguiente unidad activa para codificar: `017-catalogo-pausas-cambio-plan` según ADR 0010 y ruta 017–022. Matriz actualizada; meta abierta y contador 0.
 
 ## Unidad 015 — Recuperación y contacto verificado — Tier 1 — Implementada/verificada; revisión humana y entrega real pendientes
 

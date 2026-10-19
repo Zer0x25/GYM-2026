@@ -2,6 +2,10 @@
 
 > Formato mínimo: fecha, ID de unidad, hallazgo, evidencia, aplicación futura.
 
+## 2026-10-19 — Unidades 017–022 — Validación de base comercial y alcance acumulado de specs
+
+Separar una sesión de validación de reglas de negocio (`A1..A5` en `ADR 0010`) antes de codificar evita inventar políticas en pausas, reprogramaciones, abonos parciales, exportaciones y menores. Como `scripts/verify-scope.sh` compara el árbol de trabajo contra `origin/main` usando la sección `## 4. Archivos autorizados` de la `Unidad activa` en `STATE.md`, declarar en la unidad activa (`017`) y en las specs sucesivas (`018`–`022`) las rutas documentales del lote permite dejar todas las especificaciones creadas y verificadas con el gate en verde antes de escribir código.
+
 ## 2026-10-15 — Unidad 016 — Saldo por período y locks entre operaciones
 
 Una marca booleana de reserva no acredita saldo cuantitativo. Cuotas capturadas al validar, ledger append-only y locks de membresía/período permiten último crédito entre sesiones distintas y no prestan sobrantes de renovación. Mantener inicio agregado vigente al renovar evita perder ingreso/cobertura actual al crear período futuro. Rechazar duplicado bajo lock de sesión antes de tomar saldo evita invertir locks con cancelación; cancelación de clase bloquea membresías en orden estable antes de devolver múltiples créditos. Pruebas PostgreSQL verifican carreras, restitución única, snapshots y reclamo AC-215 sin traslado. Fuente histórica 004 conservada; política cuantitativa explícitamente confirmada en ADR 0009. Evidencia por CA en spec 016.

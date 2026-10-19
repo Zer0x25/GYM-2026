@@ -21,21 +21,22 @@ Actualizada por unidades 012–016. Fuente ejecutable: PRD.md, ADR aceptados y s
 | CAL-2: cobertura financiera | pnpm test:coverage, unidad 016: 64 tests reales, 97.23% statements/lines | Umbral ≥80% conservado, suites Transbank, compensaciones y créditos incluidas. Ramas 75% informativas según decisión registrada. |
 | CAL-3: contratos | packages/contracts y docs/api/README.md; nuevos contratos 012 | Revisar correspondencia completa rutas/errores/request/response e idempotencia al cierre; un índice de endpoints por sí solo no acredita todos sus contratos. |
 
-## Detalles del alcance que siguen abiertos
+## Detalles del alcance que siguen abiertos (planificados en ADR 0010 y specs 017–022)
 
-- Identidad: núcleo de recuperación/verificación por enlace de un solo uso implementado en 015 y probado con transporte ficticio; falta canal de entrega elegido/habilitado, control de fallos de BD del reset en la versión instalada y prueba de entrega externa (runbook 015). Nunca devolver tokens al solicitante anónimo ni registrar enlaces en logs de producción.
-- Menores: existe adultResponsibleId en el esquema, pero create/update no lo gestiona; no hay flujo validado de representación. No inventar requisitos jurídicos ni habilitar datos reales/portal delegado.
-- Membresías: no hay comandos de pausa/cambio para siguiente período ni versión de condiciones contratadas. 016 añade cuotas/ledger por período y snapshot de condiciones. Edición/versionado del catálogo, pausa y cambio ordinario para siguiente período siguen pendientes.
-- Dinero: abonos parciales y estados de conciliación siguen requiriendo contratos/evidencia. La política de compensaciones ya fue aprobada e implementada en 014/ADR 0008; no se reescribe spec 003 histórica. Validación de cobros sigue exigiendo admin distinto del registrador; compensaciones solo admin según nueva decisión, sin una segunda aprobación añadida.
-- Reportes/exportaciones: existe CSV financiero diario; no demuestra aún exportaciones de vigencias, reservas/asistencia y socios con permisos/campos definidos.
-- Cierre: revisión humana 010/012, staging/VPS/HTTPS/secretos, restore en destino, aceptación operativa y autorización G2 siguen pendientes.
+- **Membresías (`specs/017-catalogo-pausas-cambio-plan.md`, Tier 1):** base validada el 2026-10-19 (`A1` en `docs/adr/0010-ciclo-comercial-agenda-exportaciones.md`). Editar catálogo incrementa versión para nuevas contrataciones sin mutar `membership_periods` emitidos; solo `admin` registra pausas con motivo extendiendo `endsAt` y cancelando reservas dentro del rango pausado (con devolución de crédito); cambio de plan (`nextPlanId`) aplica al siguiente período renovado. Pendiente de codificación.
+- **Reprogramación de agenda y citas (`specs/018-reprogramacion-agenda-citas.md`, Tier 1):** base validada el 2026-10-19 (`A2`). `admin`/`recepcion` (e `instructor` para sus `cita`/`bloqueo`) reprograman horario futuro sin solape (`TX-02`); las reservas confirmadas conservan su crédito comprometido si todos los inscritos tienen cobertura en la nueva fecha (`409` si alguno no cubre). Pendiente de codificación.
+- **Abonos parciales y conciliación (`specs/019-abonos-parciales-conciliacion.md`, Tier 1):** base validada el 2026-10-19 (`A3`). Cada abono parcial validado entra de inmediato a caja, pero el `membership_period` y sus créditos se activan únicamente al completar el `100%` del precio del plan; la caja expone estado explícito (`abierta`, `cuadrada`, `con_diferencia`). Pendiente de codificación.
+- **Reportes/exportaciones (`specs/020-exportaciones-operativas-csv.md`, Tier 2):** base validada el 2026-10-19 (`A4`). `admin` y `recepcion` exportan CSV del tenant (socios, vigencias/créditos, reservas/asistencia por fechas) sin exponer tokens QR; `instructor` y `socio` reciben `403`. Pendiente de codificación.
+- **Menores, correo configurable y contratos (`specs/021-menores-correo-contratos.md`, Tier 1):** base validada el 2026-10-19 (`A5`). Alta/edición de menor exige `adultResponsibleId` adulto del mismo tenant y bloquea autogestión de contacto por menor (`403`); adaptador de correo configurable por entorno en `email-delivery.ts` (apagado por defecto sin secretos); cierre completo de `docs/api/README.md` (`CAL-3`). Pendiente de codificación.
+- **Cierre G1 y staging (`specs/022-aceptacion-ci-staging.md`, Tier 1):** revisión humana del lote `010`–`021`, push autorizado para CI remota, despliegue en VPS de staging con datos ficticios y backup/restore en destino (`REQ-11`). Autorización `G2` (datos reales) sigue separada.
 
-## Orden de continuación
+## Orden de continuación (Ruta de sesiones de codificación)
 
-1. Unidad 012: Transbank manual y esta matriz; conservar evidencia roja/verde, migración, cobertura y E2E reales.
-2. Identidad/contacto tras confirmar canal de correo; política financiera tras respuesta humana. Formularios y backend se revisan bajo Tier 1.
-3. Períodos/créditos separados implementados en 016, revisión humana pendiente. Completar contratos restantes de membresías/beneficios/reprogramación y matriz de exportaciones en unidades acotadas; consultar reglas comerciales que no estén confirmadas.
-4. Revisar/publicar la configuración CI 013 con autorización y verificar integración/E2E remotos; sincronizar evidencia de aceptación y realizar revisión humana.
-5. Elegir y autorizar staging, desplegar con datos ficticios y verificar operación/restore; G2 solo tras su aceptación propia.
+1. **Unidad 017 (`specs/017-catalogo-pausas-cambio-plan.md`):** fase roja → migración `0014` + servicios/UI de catálogo editable, pausas autorizadas y cambio de plan → gate + cobertura + E2E.
+2. **Unidad 018 (`specs/018-reprogramacion-agenda-citas.md`):** fase roja → migración `0015` + reprogramación de sesiones/citas (`TX-02` + `REVAL-01`) → gate + cobertura + E2E.
+3. **Unidad 019 (`specs/019-abonos-parciales-conciliacion.md`):** fase roja → migración `0016` + abonos parciales con activación al `100%` y estados de conciliación → gate + cobertura + E2E.
+4. **Unidad 020 (`specs/020-exportaciones-operativas-csv.md`):** fase roja → exportaciones CSV de socios, vigencias y asistencia en `OperationsService` y `Reports.tsx` → gate + E2E.
+5. **Unidad 021 (`specs/021-menores-correo-contratos.md`):** fase roja → migración `0017` + vínculo de adulto responsable (`D-05`), adaptador de correo configurable y auditoría `CAL-3` en `docs/api/README.md` → gate + E2E.
+6. **Unidad 022 (`specs/022-aceptacion-ci-staging.md`):** revisión humana Tier 1, push autorizado para verificar GitHub Actions (`CAL-1`), despliegue en staging VPS con datos ficticios y backup/restore (`REQ-11`).
 
-Las rutas de pruebas citadas viven en apps/api/src, apps/web/src y tests/e2e. Resultados nuevos de 012 se registran en su spec, no se presumen por este inventario. Falta de evidencia no se rellena con un gate verde ni con una decisión Derivada/Pendiente de Notion.
+Las rutas de pruebas citadas viven en `apps/api/src`, `apps/web/src` y `tests/e2e`. Falta de evidencia no se rellena con un gate verde ni con una decisión Derivada/Pendiente de Notion.
