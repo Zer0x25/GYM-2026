@@ -1,5 +1,5 @@
 import { safeRequest } from "./safe-request.js";
-import type { EmailDelivery } from "./email-delivery.js";
+import { type EmailDelivery, createEmailDeliveryFromEnv } from "./email-delivery.js";
 import { ContactVerificationService } from "./services/contact-verification.js";
 import { BookingCreditsService } from "./services/booking-credits.js";
 import { FinancialAdjustmentsService } from "./services/financial-adjustments.js";
@@ -28,6 +28,7 @@ import {
   CancelBookingRequest,
   CreateClassTemplateRequest,
   CreateMemberRequest,
+  UpdateMemberRequest,
   CreateMembershipRequest,
   CreateOrganizationRequest,
   CreatePlanRequest,
@@ -153,17 +154,19 @@ export async function buildServer(opts: AppOptions) {
     }
   });
 
+  const emailDelivery = opts.emailDelivery ?? createEmailDeliveryFromEnv();
+
   app.get("/health", async () => ({ status: "ok" }));
 
   app.get("/api/v1/account/email-capabilities", async () => ({
     data: {
-      passwordReset: Boolean(opts.auth?.emailDeliveryEnabled),
-      contactVerification: Boolean(opts.emailDelivery),
+      passwordReset: Boolean(opts.auth?.emailDeliveryEnabled || emailDelivery),
+      contactVerification: Boolean(emailDelivery),
     },
   }));
   const contactVerification = new ContactVerificationService(
     opts.db,
-    opts.emailDelivery,
+    emailDelivery,
     opts.appOrigin,
   );
   app.post<{ Params: { id: string } }>(
@@ -336,7 +339,12 @@ export async function buildServer(opts: AppOptions) {
     const parsed = CreateMemberRequest.safeParse(req.body);
     if (!parsed.success) throw validationError({ issues: parsed.error.issues });
     const row = await members.create(
-      { organizationId: req.session.organizationId, role: req.session.role },
+      {
+        organizationId: req.session.organizationId,
+        role: req.session.role,
+        memberId: req.session.memberId,
+        accountId: req.session.accountId,
+      },
       parsed.data,
     );
     return reply.status(201).send({ data: row });
@@ -350,8 +358,27 @@ export async function buildServer(opts: AppOptions) {
         organizationId: req.session.organizationId,
         role: req.session.role,
         memberId: req.session.memberId,
+        accountId: req.session.accountId,
       },
       req.params.id,
+    );
+    return reply.send({ data: row });
+  });
+
+  app.patch<{ Params: { id: string } }>("/api/v1/members/:id", async (req, reply) => {
+    requireRole(req.session, ["admin", "recepcion", "socio"]);
+    assertTenantContext(req.session);
+    const parsed = UpdateMemberRequest.safeParse(req.body);
+    if (!parsed.success) throw validationError({ issues: parsed.error.issues });
+    const row = await members.update(
+      {
+        organizationId: req.session.organizationId,
+        role: req.session.role,
+        memberId: req.session.memberId,
+        accountId: req.session.accountId,
+      },
+      req.params.id,
+      parsed.data,
     );
     return reply.send({ data: row });
   });
@@ -366,6 +393,7 @@ export async function buildServer(opts: AppOptions) {
         organizationId: req.session.organizationId,
         role: req.session.role,
         memberId: req.session.memberId,
+        accountId: req.session.accountId,
       },
       req.params.id,
       parsed.data.contactEmail ?? null,

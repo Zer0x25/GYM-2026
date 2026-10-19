@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { createDb, organizations, identityAccounts, members, staffAssignments } from "@gym/db";
 import { buildServer } from "./app.js";
 import { createAuth } from "./auth.js";
@@ -339,4 +339,123 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("SPEC 015 — identidad sin corr
         .contact_email,
     ).toBe("anterior@identity.test");
   });
+
+  it("SPEC 021 CA-2: socio menor autenticado recibe 403 al solicitar verificación de contacto o editarlo", async () => {
+    // Vincular al socio actual como menor con adulto responsable (otherMember)
+    await db
+      .update(members)
+      .set({ adultResponsibleId: otherMember })
+      .where(eq(members.id, member));
+
+    // Intento de solicitar verificación de contacto -> 403
+    const reqRes = await request(contact(), { email: "menor-nuevo@identity.test" });
+    expect(reqRes.statusCode).toBe(403);
+    expect(reqRes.json().error.code).toBe("FORBIDDEN");
+    expect(reqRes.json().error.message).toContain("MINOR_CONTACT_MANAGED_BY_GUARDIAN");
+
+    // Intento de borrar contacto vía PATCH -> 403
+    const patchRes = await request(
+      `/api/v1/members/${member}/contact`,
+      { contactEmail: null },
+      "socio",
+      app,
+      "PATCH",
+    );
+    expect(patchRes.statusCode).toBe(403);
+    expect(patchRes.json().error.message).toContain("MINOR_CONTACT_MANAGED_BY_GUARDIAN");
+  });
+
+  it("SPEC 021 CA-3: adaptador de correo configurable activa capacidades y maneja timeout y fallos de forma segura (503)", async () => {
+    const { createEmailDeliveryFromEnv } = await import("./email-delivery.js");
+    // Por defecto apagado
+    expect(createEmailDeliveryFromEnv({ EMAIL_DELIVERY_MODE: "disabled" })).toBeUndefined();
+    expect(createEmailDeliveryFromEnv({})).toBeUndefined();
+
+    // Configuración completa HTTP
+    let receivedPayload: unknown = null;
+    const mockHttpServer = await (await import("fastify")).default();
+    mockHttpServer.post("/webhook", async (req, reply) => {
+      receivedPayload = req.body;
+      return reply.send({ ok: true });
+    });
+    mockHttpServer.post("/fail", async (_req, reply) => {
+      return reply.code(500).send({ error: "server error" });
+    });
+    const port = 34567;
+    await mockHttpServer.listen({ port, host: "127.0.0.1" });
+
+    try {
+      const adapter = createEmailDeliveryFromEnv({
+        EMAIL_DELIVERY_MODE: "http",
+        EMAIL_TRANSPORT_URL: `http://127.0.0.1:${port}/webhook`,
+        EMAIL_FROM: "gym@test.cl",
+      });
+      expect(adapter).toBeDefined();
+
+      const configuredApp = await buildServer({
+        db,
+        auth,
+        emailDelivery: adapter!,
+        appOrigin: "http://localhost:5173",
+      });
+      await configuredApp.ready();
+
+      const cap = await configuredApp.inject({
+        method: "GET",
+        url: "/api/v1/account/email-capabilities",
+      });
+      expect(cap.statusCode).toBe(200);
+      expect(cap.json().data).toEqual({ passwordReset: true, contactVerification: true });
+
+      // Enviar verificación con adapter funcional
+      const okRes = await configuredApp.inject({
+        method: "POST",
+        url: contact(),
+        payload: { email: "probadora@test.cl" },
+        headers: {
+          origin: "http://localhost:3000",
+          cookie: people.socio!.cookie,
+        },
+      });
+      expect(okRes.statusCode).toBe(202);
+      expect(receivedPayload).toMatchObject({
+        from: "gym@test.cl",
+        to: "probadora@test.cl",
+        purpose: "contact-verification",
+      });
+
+      await configuredApp.close();
+
+      // Fallo de transporte responde 503 sin filtrar URL ni datos sensibles
+      const failingAdapter = createEmailDeliveryFromEnv({
+        EMAIL_DELIVERY_MODE: "http",
+        EMAIL_TRANSPORT_URL: `http://127.0.0.1:${port}/fail`,
+        EMAIL_FROM: "gym@test.cl",
+      });
+      const failingApp = await buildServer({
+        db,
+        auth,
+        emailDelivery: failingAdapter!,
+        appOrigin: "http://localhost:5173",
+      });
+      await failingApp.ready();
+
+      const failRes = await failingApp.inject({
+        method: "POST",
+        url: contact(),
+        payload: { email: "otra@test.cl" },
+        headers: {
+          origin: "http://localhost:3000",
+          cookie: people.socio!.cookie,
+        },
+      });
+      expect(failRes.statusCode).toBe(503);
+      expect(failRes.body).not.toContain("127.0.0.1");
+      expect(failRes.body).not.toContain("/fail");
+      await failingApp.close();
+    } finally {
+      await mockHttpServer.close();
+    }
+  });
 });
+

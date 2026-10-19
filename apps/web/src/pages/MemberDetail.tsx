@@ -124,7 +124,7 @@ export function MemberDetail() {
         Todos los socios
       </Link>
       <PageHead
-        eyebrow="Ficha del socio"
+        eyebrow={profile.member.isMinor ? "Ficha del socio (Menor)" : "Ficha del socio"}
         title={profile.member.fullName}
         description={`${profile.member.contactEmail ?? "Sin email de contacto"} · alta ${new Date(profile.member.createdAt).toLocaleDateString("es-CL")}`}
         actions={
@@ -232,6 +232,17 @@ export function MemberDetail() {
         <aside className="space-y-5">
           <div className="rounded-2xl border bg-card p-5">
             <h2 className="font-semibold">Contacto</h2>
+            {profile.member.isMinor && (
+              <div className="mt-3 rounded-lg bg-muted/60 p-3 text-xs space-y-1">
+                <p className="font-medium text-foreground">Socio menor de edad</p>
+                <p className="text-muted-foreground">
+                  Adulto responsable:{" "}
+                  <span className="font-semibold text-foreground">
+                    {profile.member.adultResponsibleName ?? "Sin asignar"}
+                  </span>
+                </p>
+              </div>
+            )}
             <form
               className="mt-4 space-y-3"
               onSubmit={(e) => {

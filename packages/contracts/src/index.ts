@@ -67,15 +67,73 @@ export const MemberRef = z.object({
   id: z.string().uuid(),
   organizationId: z.string().uuid(),
   fullName: z.string().min(1),
-  contactEmail: z.string().email().optional(),
+  contactEmail: z.string().email().nullable().optional(),
+  isMinor: z.boolean().optional(),
+  adultResponsibleId: z.string().uuid().nullable().optional(),
 });
 export type MemberRef = z.infer<typeof MemberRef>;
 
-export const CreateMemberRequest = z.object({
-  fullName: z.string().min(1).max(200),
-  contactEmail: z.string().email().optional(),
-});
+export const CreateMemberRequest = z
+  .object({
+    fullName: z.string().min(1).max(200),
+    contactEmail: z.string().email().nullable().optional(),
+    isMinor: z.boolean().optional(),
+    adultResponsibleId: z.string().uuid().nullable().optional(),
+  })
+  .superRefine((val, ctx) => {
+    if (val.isMinor && !val.adultResponsibleId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["adultResponsibleId"],
+        message: "adultResponsibleId es obligatorio para un menor",
+      });
+    }
+    if (val.isMinor === false && val.adultResponsibleId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["adultResponsibleId"],
+        message: "Un socio no menor no puede tener adultResponsibleId",
+      });
+    }
+  });
 export type CreateMemberRequest = z.infer<typeof CreateMemberRequest>;
+
+export const UpdateMemberRequest = z
+  .object({
+    fullName: z.string().min(1).max(200).optional(),
+    contactEmail: z.string().email().nullable().optional(),
+    isMinor: z.boolean().optional(),
+    adultResponsibleId: z.string().uuid().nullable().optional(),
+  })
+  .superRefine((val, ctx) => {
+    if (val.isMinor && !val.adultResponsibleId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["adultResponsibleId"],
+        message: "adultResponsibleId es obligatorio para un menor",
+      });
+    }
+    if (val.isMinor === false && val.adultResponsibleId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["adultResponsibleId"],
+        message: "Un socio no menor no puede tener adultResponsibleId",
+      });
+    }
+  });
+export type UpdateMemberRequest = z.infer<typeof UpdateMemberRequest>;
+
+export const MemberDetail = z.object({
+  id: z.string().uuid(),
+  organizationId: z.string().uuid(),
+  fullName: z.string().min(1),
+  contactEmail: z.string().email().nullable().optional(),
+  isMinor: z.boolean(),
+  adultResponsibleId: z.string().uuid().nullable(),
+  adultResponsibleName: z.string().nullable().optional(),
+  createdAt: z.string(),
+});
+export type MemberDetail = z.infer<typeof MemberDetail>;
 
 /** Plan (membership plan) definition, configurable per gym (P-MEM-02.1/B). */
 export const PlanRef = z.object({

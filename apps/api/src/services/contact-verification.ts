@@ -32,6 +32,9 @@ export class ContactVerificationService {
     const challenge = await this.db.transaction(async (tx) => {
       const [member] = await tx.select().from(members).where(scope).for("update");
       if (!member) throw notFound("Socio no encontrado");
+      if (member.adultResponsibleId !== null) {
+        throw forbidden("MINOR_CONTACT_MANAGED_BY_GUARDIAN");
+      }
       await tx
         .update(contactVerifications)
         .set({ cancelledAt: new Date() })

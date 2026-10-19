@@ -95,6 +95,9 @@ export interface Member {
   organizationId: string;
   fullName: string;
   contactEmail: string | null;
+  isMinor?: boolean;
+  adultResponsibleId?: string | null;
+  adultResponsibleName?: string | null;
   createdAt: string;
 }
 
@@ -434,8 +437,21 @@ export const api = {
     }),
   listMembers: (q?: string) =>
     request<Member[]>("GET", `/members${q ? `?q=${encodeURIComponent(q)}` : ""}`),
-  createMember: (input: { fullName: string; contactEmail?: string | null }) =>
-    request<Member>("POST", "/members", input),
+  createMember: (input: {
+    fullName: string;
+    contactEmail?: string | null;
+    isMinor?: boolean;
+    adultResponsibleId?: string | null;
+  }) => request<Member>("POST", "/members", input),
+  updateMember: (
+    id: string,
+    input: {
+      fullName?: string;
+      contactEmail?: string | null;
+      isMinor?: boolean;
+      adultResponsibleId?: string | null;
+    },
+  ) => request<Member>("PATCH", `/members/${id}`, input),
   createSocio: (input: { email: string; password: string; name: string }) =>
     request<{ accountId: string; memberId: string }>("POST", "/socios", input),
   me: () => request<Member>("GET", "/members/me"),

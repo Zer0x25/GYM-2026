@@ -2,6 +2,12 @@
 
 > Formato mínimo: fecha, ID de unidad, hallazgo, evidencia, aplicación futura.
 
+## 2026-10-19 — Unidad 021 — Menores de edad, entrega segura de correo y sincronización de contratos
+
+- **Menores y adulto responsable:** Un socio menor en el gimnasio requiere obligatoriamente un tutor adulto del mismo tenant; la autogestión de contacto debe denegarse al menor autenticado (`403 MINOR_CONTACT_MANAGED_BY_GUARDIAN`) y recaer exclusivamente en staff/adulto con registro en `audit_log`. Evidencia: `members.integration.test.ts` y `account-recovery.integration.test.ts`.
+- **Adaptador de correo seguro:** El adaptador debe permanecer deshabilitado por defecto en dev/CI (`capabilities: { passwordReset: false, contactVerification: false }`) y, al activarse con transporte HTTP/webhook, aplicar `AbortSignal.timeout(5000)` y redactar URLs/tokens en respuestas de error 503 para evitar fugas de datos sensibles. Evidencia: `account-recovery.integration.test.ts`.
+- **Sincronización documental mecánica:** Verificar mecánicamente que cada ruta `/api/v1/*` de `app.ts` esté documentada con su verbo HTTP y ruta en `docs/api/README.md` (`api-docs-sync.test.ts`) previene desfasajes silenciosos entre el código del servidor y los contratos publicados.
+
 ## 2026-10-19 — Unidad 017 — Comparaciones de fecha en Drizzle y aislamiento en E2E
 
 - **Hallazgo (Drizzle & postgres-js):** pasar instancias `Date` de JavaScript en fragmentos directos ``sql`... <= ${date}`` provoca errores de serialización (`could not determine data type of parameter`). Usar los operadores tipados de Drizzle (`lte`, `gt`, `gte`, `lt`) garantiza la coerción segura de fechas ISO en PostgreSQL.

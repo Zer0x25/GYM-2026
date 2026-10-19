@@ -83,14 +83,16 @@ Errores: 401/403/409/400 como arriba.
 | `GET /api/v1/members?q=` | admin, recepcion, instructor | Listado filtrado por tenant; `q` busca en nombre/email |
 | `POST /api/v1/members` | admin, recepcion | Alta de socio (sin login) en la organización de la sesión |
 | `GET /api/v1/members/:id` | admin, recepcion, instructor, socio | Socio solo su propio id (otros → 404/403) |
+| `PATCH /api/v1/members/:id` | admin, recepcion, socio | Edición de socio (nombre, email, menor, adulto responsable) |
 | `GET /api/v1/members/me` | socio | Perfil propio (memberId de la sesión) |
 | `PATCH /api/v1/members/:id/contact` | admin, recepcion, socio | Socio propio: solo eliminar (null); nuevo correo requiere verificación (015) |
 
-Request `CreateMemberRequest`: `{ "fullName", "contactEmail"? }`
+Request `CreateMemberRequest`: `{ "fullName", "contactEmail"?, "isMinor"?, "adultResponsibleId"? }`
+Request `UpdateMemberRequest`: `{ "fullName"?, "contactEmail"?, "isMinor"?, "adultResponsibleId"? }`
 Request `PATCH .../contact`: `{ "contactEmail": "<email>" | null }`
-Respuesta: `{ "data": { "id", "organizationId", "fullName", "contactEmail", "createdAt" } }`
-Errores: 401 sin sesión; 403 rol insuficiente o socio sobre ajeno;
-404 recurso inexistente o de otro tenant; 400 validación.
+Respuesta: `{ "data": { "id", "organizationId", "fullName", "contactEmail", "isMinor", "adultResponsibleId", "adultResponsibleName"?, "createdAt" } }`
+Errores: 401 sin sesión; 403 rol insuficiente, socio sobre ajeno o menor autogestionando contacto (`MINOR_CONTACT_MANAGED_BY_GUARDIAN`);
+404 recurso inexistente, de otro tenant, o adulto responsable de otro tenant; 400 validación o auto-referencia; 409 conflicto o encadenamiento de menores tutor.
 
 ## Plans (Entrega 2)
 
@@ -452,7 +454,7 @@ Verificación: `transbank.integration.test.ts` prueba almacenamiento, falta de e
 
 Política confirmada en ADR 0008. `POST /api/v1/payments/:id/adjustments` requiere admin online. Body: `{idempotencyKey: UUID, kind: "refund"|"adjustment", amountCents: entero positivo <=2147483647, reason: texto 1..1000 tras trim}`. Son salidas manuales compensatorias; no se ejecutan transferencias. Método heredado del pago original. Respuesta `200 {data: FinancialAdjustmentRef}`; un reenvío conserva el ID/actor/fecha originales y no crea otra fila ni auditoría. Cambiar pago, tipo, importe o motivo bajo la misma clave devuelve 409.
 
-`GET` de esa ruta permite admin/recepción: `{data:{items,compensatedCents,remainingCents}}`. Cada fila lleva id, organizationId, paymentId, sessionId, actorId, idempotencyKey, kind, method, amountCents positivo, reason y createdAt. Pago ajeno/ausente 404; rol no permitido 403; forma/importe/motivo inválido 400; pago no validado, turno no abierto o saldo excedido 409. La suma de devoluciones y ajustes de salida nunca supera el cobro validado, incluso bajo concurrencia. Reintento de operación ya confirmada funciona aunque su turno haya cerrado.
+`GET /api/v1/payments/:id/adjustments` permite admin/recepción: `{data:{items,compensatedCents,remainingCents}}`. Cada fila lleva id, organizationId, paymentId, sessionId, actorId, idempotencyKey, kind, method, amountCents positivo, reason y createdAt. Pago ajeno/ausente 404; rol no permitido 403; forma/importe/motivo inválido 400; pago no validado, turno no abierto o saldo excedido 409. La suma de devoluciones y ajustes de salida nunca supera el cobro validado, incluso bajo concurrencia. Reintento de operación ya confirmada funciona aunque su turno haya cerrado.
 
 El pago, movimiento de ingreso y membresía no cambian; se agrega financial_adjustments y audit_log en una transacción. Nuevos cobros adicionales usan el flujo de pago provisional vigente. No existe PATCH/DELETE de compensaciones ni operación offline para crearlas.
 
@@ -478,8 +480,25 @@ Validar un pago crea período y snapshot de condiciones/cobertura/cuotas en la m
 
 Crear reserva exige cobertura al inicio de sesión [start,end), sesión futura/programada, cupo y saldo de modalidad/período. Reserva y asiento `commit:-1` se confirman atómicamente. Duplicado conserva rechazo 409, sin segundo descuento; último crédito entre sesiones distintas se serializa. Asistencia/ausencia no consumen otro crédito. Cancelación temprana o del gimnasio crea `return:+1` al período original una vez; tardía/ausencia retienen. Si venció, `review:0`, `creditReturned:false`, `creditReviewRequired:true`, sin prórroga/traslado (AC-215). Socio no puede declarar gimnasio/ausencia para forzar devolución (403). Cancelación de clase por staff cancela reservas y restituye/reclama créditos en su misma transacción.
 
-GET `/api/v1/me/credit-periods` (socio propio) y `/api/v1/members/:id/credit-periods` (admin/recepción o socio propio) responden `{data:[{id,startsAt,endsAt,coverage,planName,credits:{grupal,fija,cita},reviewCount,reviewBookingIds}]}`; cada saldo tiene `{quota,committed,available}`, null significa sin cuota numérica, distinguir por cobertura; limitado con quota null no configurado y no habilita reservas. Mismo campo `creditPeriods` en overview de ficha/portal. 401 anónimo, 403 instructor, 404 miembro/tenant ajeno. Fechas, snapshot y cada modalidad se muestran por período, sin saldo acumulado.
+`GET /api/v1/me/credit-periods` (socio propio) y `GET /api/v1/members/:id/credit-periods` (admin/recepción o socio propio) responden `{data:[{id,startsAt,endsAt,coverage,planName,credits:{grupal,fija,cita},reviewCount,reviewBookingIds}]}`; cada saldo tiene `{quota,committed,available}`, null significa sin cuota numérica, distinguir por cobertura; limitado con quota null no configurado y no habilita reservas. Mismo campo `creditPeriods` en overview de ficha/portal. 401 anónimo, 403 instructor, 404 miembro/tenant ajeno. Fechas, snapshot y cada modalidad se muestran por período, sin saldo acumulado.
 
-POST `/api/v1/members/:id/bookings/revalidate` (admin/recepción online) revisa reservas futuras confirmadas y responde `{data:{cancelled:n}}`; invalidez cancela/libera/audita una vez, recuperar derechos no restaura. Asistencia también revalida: pérdida persiste cancelación y devuelve 409 con `details:{cancelled:true,bookingId}`, sin registrar asistencia exitosa; UI recarga el estado. Los comandos futuros de pausa/cambio/revocación deben integrar la revalidación al confirmar pérdida; no hay un job/cron implícito ni se implementan esas mutaciones en 016.
+`POST /api/v1/members/:id/bookings/revalidate` (admin/recepción online) revisa reservas futuras confirmadas y responde `{data:{cancelled:n}}`; invalidez cancela/libera/audita una vez, recuperar derechos no restaura. Asistencia también revalida: pérdida persiste cancelación y devuelve 409 con `details:{cancelled:true,bookingId}`, sin registrar asistencia exitosa; UI recarga el estado. Los comandos futuros de pausa/cambio/revocación deben integrar la revalidación al confirmar pérdida; no hay un job/cron implícito ni se implementan esas mutaciones en 016.
 
 Migración preserva ventanas históricas como snapshots sin inventar créditos y deja reservas históricas intactas (sin fabricar compromisos). Compatibilidad acotada para ventanas ilimitadas de fixtures/seed sin períodos; planes limitados nunca reciben cuotas por esa vía. Ledger sin API de edición/borrado, checks de efecto y unique por reserva/tipo, lectura consistente en snapshot repeatable-read. No hay compensación comercial automática de reclamos vencidos.
+
+
+## Unidad 021 — Menores de edad, adaptadores de correo y sincronización de contratos
+
+- **Menores y adulto responsable (`D-05`):**
+  - Alta y edición (`POST /api/v1/members` y `PATCH /api/v1/members/:id`) aceptan `isMinor: boolean` y `adultResponsibleId: UUID`.
+  - Invariantes: un menor (`isMinor: true`) requiere `adultResponsibleId` no nulo de un socio existente en el mismo tenant. No se permite auto-referencia (400), adulto responsable de otro tenant (404) ni encadenamiento donde un menor sea adulto responsable de otro (409).
+  - Autogestión de contacto: un socio vinculado a un adulto responsable no puede solicitar verificación de contacto ni eliminar su correo (`PATCH /api/v1/members/:id/contact` y `POST /api/v1/members/:id/contact-verification` responden `403` con código `MINOR_CONTACT_MANAGED_BY_GUARDIAN`). Solo el staff (`admin`, `recepcion`) puede actualizar el contacto o el adulto responsable de un menor, generando registro en `audit_log`.
+
+- **Adaptador de correo (`REQ-7`, `015`):**
+  - Configurable vía variables de entorno: `EMAIL_DELIVERY_MODE=disabled|http|webhook`, `EMAIL_FROM`, `EMAIL_TRANSPORT_URL`, `EMAIL_WEBHOOK_URL`.
+  - En desarrollo y CI permanece en modo `disabled` por defecto (`capabilities: { passwordReset: false, contactVerification: false }`).
+  - Al configurarse con endpoint de prueba o webhook, aplica timeout de 5 segundos (`AbortSignal.timeout(5000)`) y en caso de fallo responde `503 SERVICE_UNAVAILABLE` de forma segura, redactando URL y tokens para evitar fugas en logs o respuestas de error.
+
+- **Sincronización de contratos (CAL-1, CAL-3):**
+  - 100% de las rutas `/api/v1/*` de `apps/api/src/app.ts` están documentadas con su método HTTP y ruta en este archivo y validadas mecánicamente por `apps/api/src/api-docs-sync.test.ts`.
+

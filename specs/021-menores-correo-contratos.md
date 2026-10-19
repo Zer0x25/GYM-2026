@@ -1,6 +1,6 @@
 # Spec 021 — Vínculo de menores a adulto responsable (D-05), adaptador de correo configurable y cierre de contratos (CAL-3)
 
-Estado: Aprobada — base validada por el usuario; lista para fase roja e implementación tras Unidad 020
+Estado: Cerrada — implementada y verificada (2026-10-19)
 Nivel: Tier 1 — privacidad y representación de menores (`D-05`), transporte de correo de identidad/contacto y auditoría completa de contratos HTTP (`CAL-3`).
 Autoridad: validación explícita del usuario 2026-10-19 (`A5`); [PRD.md](../PRD.md) `REQ-1`, `REQ-2`, `REQ-7`, `REQ-11`, `CAL-3`; [ADR 0002](../docs/adr/0002-arquitectura-base.md) y [ADR 0010](../docs/adr/0010-ciclo-comercial-agenda-exportaciones.md). Commits locales autorizados; revisión humana al cierre.
 Contexto (Notion): https://app.notion.com/p/3f529b8ebe2981d6a2e8dce35e0920c3
@@ -113,6 +113,7 @@ Escenario BDD-1: Alta de socio menor exige adulto responsable del mismo gimnasio
 - specs/021-menores-correo-contratos.md
 - specs/022-aceptacion-ci-staging.md
 - tests/e2e/account.spec.ts
+- tests/e2e/adjustments.spec.ts
 - tests/e2e/credits.spec.ts
 - tests/e2e/operation.spec.ts
 
@@ -124,4 +125,9 @@ Escenario BDD-1: Alta de socio menor exige adulto responsable del mismo gimnasio
 
 ## 6. Evidencia y checkpoint
 
-- **Estado actual:** Spec validada y registrada en la sesión de planificación de base (2026-10-19). Pendiente de fase roja e implementación tras Unidad `020`.
+- **Estado actual:** Cerrada (2026-10-19). Implementación completa, contratos sincronizados y calidades verificadas.
+- **CA-1:** `pnpm --filter @gym/api exec vitest run src/members.integration.test.ts -t "BDD-1 & CA-1"` (1 passed) y `pnpm --filter @gym/contracts test` (12 passed). Alta/edición de menor valida `adultResponsibleId` del mismo tenant, rechaza auto-referencia (400), cadena menor→menor (409) y tenant ajeno (404).
+- **CA-2:** `pnpm --filter @gym/api exec vitest run src/account-recovery.integration.test.ts -t "CA-2"` (1 passed) y `pnpm --filter @gym/api exec vitest run src/members.integration.test.ts -t "CA-2"` (1 passed). Menor autenticado no puede solicitar verificación ni eliminar contacto en autogestión (403 `MINOR_CONTACT_MANAGED_BY_GUARDIAN`); staff sí puede actualizar contacto del menor auditando el cambio en `audit_log`.
+- **CA-3:** `pnpm --filter @gym/api exec vitest run src/account-recovery.integration.test.ts -t "CA-3"` (1 passed). Adaptador de correo configurable en `email-delivery.ts` activo con capacidades reales al configurarse con HTTP/webhook, aplica timeout y falla de forma segura (503) sin filtrar URLs ni tokens.
+- **CA-4:** `pnpm --filter @gym/web test src/minors-guardian.test.tsx` (3 passed: Panel, MemberDetail, Portal). `node scripts/e2e.mjs` (11 passed). UI permite seleccionar adulto responsable en Panel, lo muestra en MemberDetail y oculta la autogestión de contacto en Portal para menores.
+- **CA-5:** `pnpm --filter @gym/api test src/api-docs-sync.test.ts` (1 passed: 100% de rutas v1 de `app.ts` documentadas en `docs/api/README.md`). `./scripts/verify.sh` verde (lint, typecheck, build, tests sin omisiones).

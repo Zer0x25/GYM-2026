@@ -248,11 +248,27 @@ export class OperationsService {
         organizationId: members.organizationId,
         fullName: members.fullName,
         contactEmail: members.contactEmail,
+        adultResponsibleId: members.adultResponsibleId,
         createdAt: members.createdAt,
       })
       .from(members)
       .where(and(eq(members.organizationId, organizationId), eq(members.id, memberId)));
     if (!member) throw notFound("Socio no encontrado");
+
+    let adultResponsibleName: string | null = null;
+    if (member.adultResponsibleId) {
+      const [guardian] = await this.db
+        .select({ fullName: members.fullName })
+        .from(members)
+        .where(
+          and(
+            eq(members.id, member.adultResponsibleId),
+            eq(members.organizationId, organizationId),
+          ),
+        );
+      adultResponsibleName = guardian?.fullName ?? null;
+    }
+
     const rows = await this.db
       .select({ membership: memberships, plan: plans })
       .from(memberships)
@@ -267,7 +283,11 @@ export class OperationsService {
     const paymentsService = new PaymentsService(this.db);
     const now = new Date();
     return {
-      member,
+      member: {
+        ...member,
+        isMinor: member.adultResponsibleId !== null,
+        adultResponsibleName,
+      },
       memberships: await Promise.all(
         rows.map(async (r) => {
           let nextPlan = null;
