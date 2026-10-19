@@ -113,6 +113,7 @@ Escenario BDD-1: Alta de socio menor exige adulto responsable del mismo gimnasio
 - specs/021-menores-correo-contratos.md
 - specs/022-aceptacion-ci-staging.md
 - tests/e2e/account.spec.ts
+- tests/e2e/adjustments.spec.ts
 - tests/e2e/credits.spec.ts
 - tests/e2e/operation.spec.ts
 

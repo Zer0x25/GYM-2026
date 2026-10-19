@@ -70,7 +70,9 @@ test("SPEC 014 devolución explícita conserva pago/membresía y caja neta", asy
     expect((await get(page, `payments/${payment.id}/adjustments`)).items).toHaveLength(0);
     await page.getByRole("button", { name: "Confirmar devolución", exact: true }).click();
     await expect(page.getByRole("dialog", { name: "Compensar pago validado" })).not.toBeVisible();
-    expect((await get(page, `payments/${payment.id}/adjustments`)).items).toHaveLength(1);
+    await expect
+      .poll(async () => (await get(page, `payments/${payment.id}/adjustments`)).items)
+      .toHaveLength(1);
     expect(await get(page, `payments/${payment.id}`)).toEqual(original);
     expect(
       (await get(page, "memberships")).find((row: { id: string }) => row.id === membership.id),
