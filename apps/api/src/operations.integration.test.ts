@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
-import { sql } from "drizzle-orm";
+import { sql, eq } from "drizzle-orm";
 import {
   createDb,
   organizations,
@@ -15,6 +15,9 @@ import {
   cashMovements,
   identityAccounts,
   payments,
+  membershipPeriods,
+  creditMovements,
+  bookingCancellations,
 } from "@gym/db";
 import { buildServer } from "./app.js";
 import { createAuth } from "./auth.js";
@@ -432,6 +435,321 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("SPEC 010 — superficies operat
         },
       });
       expect(ingress.statusCode).toBe(403);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("SPEC 020 CA-1 members.csv y memberships.csv exportan tenant propio sin tokens QR", async () => {
+    // Member in other tenant:
+    await db.insert(members).values({
+      id: randomUUID(),
+      organizationId: other,
+      fullName: "Socio Gym B",
+      qrToken: "qr-gym-b-sensitive",
+    });
+
+    // Member 2 in org:
+    const minorId = randomUUID();
+    await db.insert(members).values({
+      id: minorId,
+      organizationId: org,
+      fullName: "Menor Dos",
+      contactEmail: null,
+      adultResponsibleId: member,
+      qrToken: "qr-minor-sensitive",
+      qrRevokedAt: new Date(),
+    });
+
+    // Update member 1 with contactVerifiedAt
+    await db.execute(sql`UPDATE members SET contact_verified_at = now() WHERE id = ${member}`);
+
+    // Member 3 in org without QR
+    const noQrId = randomUUID();
+    await db.insert(members).values({
+      id: noQrId,
+      organizationId: org,
+      fullName: "Socio Sin QR",
+      contactEmail: "sinqr@op.test",
+    });
+
+    // Limited plan and period for minor
+    const limitedPlanId = randomUUID();
+    await db.insert(plans).values({
+      id: limitedPlanId,
+      organizationId: org,
+      name: "Plan Limitado",
+      priceCents: 20000,
+      durationDays: 30,
+      coverage: "limited",
+      grupalCredits: 10,
+      fijaCredits: 2,
+      citaCredits: 0,
+    });
+    const [minorMembership] = await db
+      .insert(memberships)
+      .values({
+        organizationId: org,
+        memberId: minorId,
+        planId: limitedPlanId,
+        startAt: new Date(Date.now() - 3600000),
+        endAt: new Date(Date.now() + 86400000),
+      })
+      .returning();
+    const [minorPeriod] = await db
+      .insert(membershipPeriods)
+      .values({
+        organizationId: org,
+        memberId: minorId,
+        membershipId: minorMembership!.id,
+        startsAt: new Date(Date.now() - 3600000),
+        endsAt: new Date(Date.now() + 86400000),
+        coverage: "limited",
+        planName: "Plan Limitado",
+        priceCents: 20000,
+        durationDays: 30,
+        grupalCredits: 10,
+        fijaCredits: 2,
+        citaCredits: 0,
+      })
+      .returning();
+
+    // Session and booking for minor with credit commitment
+    const [sess] = await db
+      .insert(sessions)
+      .values({
+        organizationId: org,
+        type: "grupal",
+        instructorId: "coach-op",
+        startsAt: new Date(Date.now() + 7200000),
+        endsAt: new Date(Date.now() + 10800000),
+        capacity: 10,
+        createdBy: actor.accountId,
+      })
+      .returning();
+    const [bkg] = await db
+      .insert(bookings)
+      .values({
+        organizationId: org,
+        sessionId: sess!.id,
+        memberId: minorId,
+        periodId: minorPeriod!.id,
+        state: "confirmada",
+        beneficioComprometido: true,
+        createdBy: actor.accountId,
+      })
+      .returning();
+    await db.insert(creditMovements).values({
+      organizationId: org,
+      memberId: minorId,
+      periodId: minorPeriod!.id,
+      bookingId: bkg!.id,
+      modality: "grupal",
+      kind: "commit",
+      quantity: -1,
+      actorId: actor.accountId,
+    });
+
+    const membersCsv = await svc.membersCsv(actor);
+    expect(membersCsv).toContain(
+      "member_id,full_name,contact_email,contact_verified,adult_responsible_id,qr_state,membership_status,created_at",
+    );
+    expect(membersCsv).toContain("Socio Uno");
+    expect(membersCsv).toContain("Menor Dos");
+    expect(membersCsv).toContain("Socio Sin QR");
+    expect(membersCsv).not.toContain("Socio Gym B");
+    expect(membersCsv).not.toContain("qr-test-operations");
+    expect(membersCsv).not.toContain("qr-minor-sensitive");
+    expect(membersCsv).not.toContain("qr-gym-b-sensitive");
+    expect(membersCsv).toContain(",true,");
+    expect(membersCsv).toContain(",activo,");
+    expect(membersCsv).toContain(",revocado,");
+    expect(membersCsv).toContain(",sin_emitir,");
+
+    const membershipsCsv = await svc.membershipsCsv(actor);
+    expect(membershipsCsv).toContain(
+      "membership_id,member_id,member_name,plan_name,coverage,state,period_starts_at,period_ends_at,grupal_available,fija_available,cita_available,pending_review_count,next_plan_id",
+    );
+    expect(membershipsCsv).toContain("Plan Limitado");
+    expect(membershipsCsv).toContain("Mensual");
+    expect(membershipsCsv).not.toContain("Socio Gym B");
+    expect(membershipsCsv).toMatch(/Plan Limitado,limited,active,[^,]+,[^,]+,9,2,0,0,/);
+  });
+
+  it("SPEC 020 CA-2 attendance.csv exporta asistencias y cancelaciones y rechaza rangos inválidos", async () => {
+    await db
+      .update(memberships)
+      .set({
+        startAt: new Date("2026-10-01T00:00:00Z"),
+        endAt: new Date("2026-10-31T23:59:59Z"),
+      })
+      .where(eq(memberships.memberId, member));
+
+    const [sess] = await db
+      .insert(sessions)
+      .values({
+        organizationId: org,
+        type: "grupal",
+        instructorId: "coach-op",
+        startsAt: new Date("2026-10-15T14:00:00Z"),
+        endsAt: new Date("2026-10-15T15:00:00Z"),
+        capacity: 10,
+        createdBy: actor.accountId,
+      })
+      .returning();
+    const [b1] = await db
+      .insert(bookings)
+      .values({
+        organizationId: org,
+        sessionId: sess!.id,
+        memberId: member,
+        state: "confirmada",
+        beneficioComprometido: true,
+        createdBy: actor.accountId,
+      })
+      .returning();
+    await new BookingsService(db).markAttendance(actor, b1!.id, "asistio");
+
+    const m2 = randomUUID();
+    await db.insert(members).values({ id: m2, organizationId: org, fullName: "Socio Dos" });
+    const [b2] = await db
+      .insert(bookings)
+      .values({
+        organizationId: org,
+        sessionId: sess!.id,
+        memberId: m2,
+        state: "cancelada",
+        beneficioComprometido: false,
+        createdBy: actor.accountId,
+      })
+      .returning();
+    await db.insert(bookingCancellations).values({
+      organizationId: org,
+      bookingId: b2!.id,
+      type: "temprana",
+      creditReturned: true,
+      reason: "Viaje",
+      actorId: actor.accountId,
+      actorRole: "admin",
+    });
+
+    // Session in other org
+    const [otherSess] = await db
+      .insert(sessions)
+      .values({
+        organizationId: other,
+        type: "grupal",
+        instructorId: "coach-other",
+        startsAt: new Date("2026-10-15T14:00:00Z"),
+        endsAt: new Date("2026-10-15T15:00:00Z"),
+        capacity: 10,
+        createdBy: "coach-other",
+      })
+      .returning();
+    const mOther = randomUUID();
+    await db.insert(members).values({ id: mOther, organizationId: other, fullName: "Socio Otro" });
+    await db.insert(bookings).values({
+      organizationId: other,
+      sessionId: otherSess!.id,
+      memberId: mOther,
+      state: "confirmada",
+      beneficioComprometido: true,
+      createdBy: "coach-other",
+    });
+
+    const csv = await svc.attendanceCsv(actor, "2026-10-15", "2026-10-15");
+    expect(csv).toContain(
+      "booking_id,session_id,session_type,template_name,instructor_id,starts_at,member_id,member_name,booking_state,attendance_outcome,cancellation_type,credit_returned",
+    );
+    expect(csv).toContain("Socio Uno");
+    expect(csv).toContain("confirmada,asistio,,");
+    expect(csv).toContain("Socio Dos");
+    expect(csv).toContain("cancelada,,temprana,true");
+    expect(csv).not.toContain("Socio Otro");
+
+    // Range checks
+    await expect(svc.attendanceCsv(actor, "2026-10-16", "2026-10-15")).rejects.toMatchObject({
+      code: "VALIDATION_ERROR",
+    });
+    await expect(svc.attendanceCsv(actor, "2026-01-01", "2026-05-01")).rejects.toMatchObject({
+      code: "VALIDATION_ERROR",
+    });
+  });
+
+  it("SPEC 020 CA-3 rechazo a instructor y socio (403), anónimo (401) y sanitización anti-fórmulas", async () => {
+    // Sanitization check with formula prefixes and quotes
+    const formulaMemberId = randomUUID();
+    await db.insert(members).values({
+      id: formulaMemberId,
+      organizationId: org,
+      fullName: '=CMD("calc")|calc\'!A0',
+      contactEmail: "+56999999999@test.cl",
+    });
+
+    const membersCsv = await svc.membersCsv(actor);
+    expect(membersCsv).toContain("'=CMD");
+    expect(membersCsv).toContain("'+56999999999@test.cl");
+
+    await expect(svc.membersCsv({ ...actor, role: "instructor" })).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    await expect(svc.membershipsCsv({ ...actor, role: "socio" })).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    await expect(
+      svc.attendanceCsv({ ...actor, role: "instructor" }, "2026-10-01", "2026-10-02"),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+
+    // HTTP endpoint injection check
+    const auth = createAuth({
+      db,
+      secret: "test-auth-secret-minimum-32-characters",
+      baseURL: "http://localhost:3000",
+    });
+    const coachAccount = await auth.api.createUser({
+      body: {
+        email: "coach-csv@test.cl",
+        password: "SuperSecret123!",
+        name: "Coach CSV",
+        data: { emailVerified: true },
+      },
+    });
+    await db
+      .insert(identityAccounts)
+      .values({ id: coachAccount.user.id, email: "coach-csv@test.cl", passwordHash: "better-auth" });
+    await db
+      .insert(staffAssignments)
+      .values({ organizationId: org, accountId: coachAccount.user.id, role: "instructor" });
+
+    const app = await buildServer({ db, auth });
+    try {
+      // 401 for anonymous
+      const anonRes = await app.inject({ method: "GET", url: "/api/v1/reports/members.csv" });
+      expect(anonRes.statusCode).toBe(401);
+
+      // Login as coach (instructor)
+      const login = await app.inject({
+        method: "POST",
+        url: "/api/auth/sign-in/email",
+        headers: { origin: "http://localhost:3000" },
+        payload: { email: "coach-csv@test.cl", password: "SuperSecret123!" },
+      });
+      const cookie = (login.headers["set-cookie"] as string[]).join("; ");
+
+      // 403 for instructor
+      const instMembers = await app.inject({
+        method: "GET",
+        url: "/api/v1/reports/members.csv",
+        headers: { cookie, origin: "http://localhost:3000" },
+      });
+      expect(instMembers.statusCode).toBe(403);
+
+      const instAttendance = await app.inject({
+        method: "GET",
+        url: "/api/v1/reports/attendance.csv?from=2026-10-01&to=2026-10-02",
+        headers: { cookie, origin: "http://localhost:3000" },
+      });
+      expect(instAttendance.statusCode).toBe(403);
     } finally {
       await app.close();
     }

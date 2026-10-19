@@ -45,6 +45,34 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   return payload.data as T;
 }
 
+async function downloadFile(path: string, defaultFilename: string): Promise<void> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "GET",
+    credentials: "include",
+  });
+  if (!res.ok) {
+    if (res.status === 401) window.dispatchEvent(new Event("gym:session-expired"));
+    const payload = (await res.json().catch(() => ({}))) as {
+      error?: { code: string; message: string; details?: unknown };
+    };
+    const err = payload.error ?? { code: "HTTP_ERROR", message: `HTTP ${res.status}` };
+    throw new ApiError(res.status, err.code, err.message, err.details);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  const disposition = res.headers.get("content-disposition");
+  let filename = defaultFilename;
+  if (disposition) {
+    const match = disposition.match(/filename="?([^";]+)"?/);
+    if (match?.[1]) filename = match[1];
+  }
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 export interface SessionUser {
   id: string;
   email: string;
@@ -296,6 +324,13 @@ export const api = {
     request<{ verified: boolean }>("POST", `/members/${id}/contact/verify`, { token }),
   roster: (id: string) => request<Booking[]>("GET", `/sessions/${id}/roster`),
   dailyReport: (date: string) => request<DailyReport>("GET", `/reports/daily?date=${date}`),
+  downloadMembersCsv: () => downloadFile("/reports/members.csv", "members.csv"),
+  downloadMembershipsCsv: () => downloadFile("/reports/memberships.csv", "memberships.csv"),
+  downloadAttendanceCsv: (from: string, to: string) =>
+    downloadFile(
+      `/reports/attendance.csv?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+      `attendance-${from}-${to}.csv`,
+    ),
   memberOverview: (id: string) => request<MemberOverview>("GET", `/members/${id}/overview`),
   portalOverview: () => request<PortalOverview>("GET", "/me/overview"),
   schedule: (from?: string, to?: string) =>

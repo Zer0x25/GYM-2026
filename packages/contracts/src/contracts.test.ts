@@ -10,6 +10,7 @@ import {
   SessionResponse,
   RegisterPaymentRequest,
   RegisterFinancialAdjustmentRequest,
+  AttendanceReportQuery,
 } from "./index.js";
 
 describe("contracts", () => {
@@ -150,5 +151,29 @@ describe("contracts", () => {
       role: "admin",
     });
     expect(parsed.success).toBe(true);
+  });
+
+  it("SPEC 020 CA-2 AttendanceReportQuery valida rango de fechas y límite de 93 días", () => {
+    expect(
+      AttendanceReportQuery.safeParse({ from: "2026-10-01", to: "2026-10-15" }).success,
+    ).toBe(true);
+    expect(
+      AttendanceReportQuery.safeParse({ from: "2026-10-15", to: "2026-10-15" }).success,
+    ).toBe(true);
+    // from > to
+    expect(
+      AttendanceReportQuery.safeParse({ from: "2026-10-16", to: "2026-10-15" }).success,
+    ).toBe(false);
+    // > 93 days
+    expect(
+      AttendanceReportQuery.safeParse({ from: "2026-01-01", to: "2026-04-10" }).success,
+    ).toBe(false);
+    // invalid date formats or non-existent dates
+    expect(
+      AttendanceReportQuery.safeParse({ from: "invalido", to: "2026-10-15" }).success,
+    ).toBe(false);
+    expect(
+      AttendanceReportQuery.safeParse({ from: "2026-02-30", to: "2026-03-01" }).success,
+    ).toBe(false);
   });
 });
