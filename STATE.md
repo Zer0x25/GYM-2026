@@ -50,26 +50,28 @@
 
 ## Meta actual — App GYM funcional (2026-10-19)
 
-Unidad activa: 021-menores-correo-contratos — CERRADA (2026-10-19)
+Unidad activa: 018-reprogramacion-agenda-citas — CERRADA (2026-10-19)
+
+## Unidad 018 — Reprogramación de agenda y citas personalizadas — Tier 1 — Cerrada (2026-10-19)
+
+- **Autoridad:** petición directa del usuario «resuelve la issue #4 · Reprogramación de sesiones y citas en agenda unificada»; PRD REQ-1, REQ-4, REQ-5, REQ-6, REQ-7, CAL-2, CAL-3; ADR 0002, ADR 0009 y ADR 0010 §1.2. Nivel Tier 1 con spec aprobada `specs/018-reprogramacion-agenda-citas.md`. Commits locales autorizados, sin push a remoto.
+- **Entregado:**
+  1. *Base de datos y contratos:* Migración `0018_session_reschedule.sql` añadiendo `rescheduled_at`, `rescheduled_from_starts_at` y `rescheduled_count` (default 0) en `sessions`. Contrato `RescheduleSessionRequest` con validación Zod de ventana temporal y motivo sanitizado opcional; extensión de `SessionDetail` y tipos de cliente.
+  2. *Servicios y backend:* Método `SessionsService.reschedule` con control de permisos por rol (admin/recepcion en cualquier sesión; instructor solo en citas o bloqueos propios; socio 403; cross-tenant 404). Concurrencia segura `TX-02` con advisory lock `pg_advisory_xact_lock` sobre `(organizationId, instructorId)` y `FOR UPDATE` sobre la fila de la sesión, evitando solapamientos concurrentes (409 `SESSION_OVERLAP`).
+  3. *Revalidación de cobertura (REVAL-01):* Validación atómica de que ningún socio inscrito quede descubierto en la nueva fecha (verifica expiración de vigencia, pausas activas de spec 017 y reservas duplicadas en sesiones simultáneas, retornando 409 `RESCHEDULE_MEMBER_UNCOVERED`). Conservación íntegra de `bookings` (`confirmada`) y `credit_movements` sin cobros ni reembolsos duplicados. Registro de evento `session.rescheduled` en `audit_log`.
+  4. *UI (apps/web):* Modal interactivo de reprogramación en `SessionDetail.tsx` con selector de fechas y motivo; distintivo visual «Horario reprogramado» en `SessionDetail.tsx`, agenda semanal `Classes.tsx` y portal del socio `Portal.tsx`.
+  5. *Documentación y sincronización (CAL-3):* Documentación de `POST /api/v1/sessions/:id/reschedule` en `docs/api/README.md` sincronizada con `api-docs-sync.test.ts`.
+- **Evidencia verificable:**
+  - `CA-1:` `POST /api/v1/sessions/:id/reschedule` mueve horario, audita `session.rescheduled`, conserva reservas confirmadas y no descuenta créditos adicionales (4/4 en `apps/api/src/sessions-reschedule.integration.test.ts`).
+  - `CA-2:` `TX-02` concurrencia real y permisos de rol (recepcion ok, instructor propio ok, ajeno 403, socio 403, cross-tenant 404, 2 reprogramaciones solapadas concurrentes = 1 ok 200 y 1 409).
+  - `CA-3:` `REVAL-01` rechaza con 409 si un socio inscrito no cubre la nueva fecha por período vencido, pausa activa de membresía o reserva concurrente en otra sesión (4/4 en `sessions-reschedule.integration.test.ts`).
+  - `CA-4:` `SessionDetail.tsx`, `Classes.tsx` y `Portal.tsx` muestran distintivo «Horario reprogramado»; 4/4 en `apps/web/src/sessions-reschedule.test.tsx` + 14/14 en `node scripts/e2e.mjs`.
+  - Cobertura financiera: `node scripts/coverage.mjs` (72 passed, 97.09% statements/lines, umbral >= 80% superado).
+  - Gate de calidad: `./scripts/verify.sh` superado en verde (lint, build, typecheck, tests en 4 workspaces y verify-scope verificado).
+- **Contador de falta de progreso:** 0, sin bloqueos.
+- **Siguiente paso:** Revisión humana de cierre de la unidad 018. Continuar según la ruta MVP con `019-abonos-parciales-conciliacion`.
 
 ## Unidad 021 — Menores de edad, adaptador de correo y contratos (CAL-3) — Tier 1 — Cerrada (2026-10-19)
-
-- **Autoridad:** Usuario «Resuelve la Issue #3 (specs/021-menores-correo-contratos.md)» (2026-10-19); PRD `REQ-1`, `REQ-2`, `REQ-7`, `REQ-11`, `CAL-3`; ADR 0002 y ADR 0010. Commits locales autorizados, sin push a remoto.
-- **Entregado:**
-  1. *Base de datos y contratos:* Migración `0017_minor_guardian_constraints.sql` con constraint foreign key `ON DELETE SET NULL` e índice `members_adult_responsible_idx`. Tipos `CreateMemberRequest`, `UpdateMemberRequest`, `MemberRef`, `MemberDetail` con soporte de `isMinor`, `adultResponsibleId` y `adultResponsibleName`.
-  2. *Servicios y backend:* Validación en `MembersService` de pertenencia de tutor al mismo tenant, bloqueo de auto-referencia (400), cadena menor→menor (409) y tutor de otro tenant (404). Restricción en `ContactVerificationService` y `MembersService` impidiendo autogestión de contacto por menores (403 `MINOR_CONTACT_MANAGED_BY_GUARDIAN`), permitiendo actualización por staff con registro en `audit_log`. Endpoint `PATCH /api/v1/members/:id` montado en Fastify.
-  3. *Adaptador de correo:* Adaptador configurable en `email-delivery.ts` (`EMAIL_DELIVERY_MODE=disabled|http|webhook`, `EMAIL_FROM`, `EMAIL_TRANSPORT_URL`, `EMAIL_WEBHOOK_URL`). Deshabilitado por defecto en dev/CI (`capabilities: { passwordReset: false, contactVerification: false }`). Con transporte configurado activa capacidades, aplica timeout de 5s (`AbortSignal.timeout(5000)`) y maneja fallos respondiendo de forma segura 503 sin exponer URLs ni tokens.
-  4. *UI (apps/web):* `Panel.tsx` con checkbox de menor y selector de adulto responsable; `MemberDetail.tsx` mostrando ficha de menor con adulto responsable asociado; `Portal.tsx` ocultando botón y formulario de edición de contacto para menores con aviso informativo.
-  5. *Documentación y sincronización (CAL-3):* `docs/api/README.md` documenta el 100% de las rutas `/api/v1/*` de `app.ts` verificado mecánicamente por `apps/api/src/api-docs-sync.test.ts`. `.env.example` actualizado con variables de correo.
-- **Evidencia verificable:**
-  - `CA-1:` `pnpm --filter @gym/api exec vitest run src/members.integration.test.ts -t "BDD-1 & CA-1"` (1 passed) + `pnpm --filter @gym/contracts test` (12 passed).
-  - `CA-2:` `pnpm --filter @gym/api exec vitest run src/account-recovery.integration.test.ts -t "CA-2"` (1 passed) + `pnpm --filter @gym/api exec vitest run src/members.integration.test.ts -t "CA-2"` (1 passed).
-  - `CA-3:` `pnpm --filter @gym/api exec vitest run src/account-recovery.integration.test.ts -t "CA-3"` (1 passed).
-  - `CA-4:` `pnpm --filter @gym/web test src/minors-guardian.test.tsx` (3 passed) + `node scripts/e2e.mjs` (11 passed).
-  - `CA-5:` `pnpm --filter @gym/api test src/api-docs-sync.test.ts` (1 passed) + `./scripts/verify.sh` verde (lint, build, typecheck, tests en 4 workspaces).
-  - Cobertura: `node scripts/coverage.mjs` (64 passed, 97.23% statements).
-- **Contador de falta de progreso:** 0, sin bloqueos.
-- **Siguiente paso:** Revisión humana de cierre de la unidad 021. Continuar según la ruta MVP (`017`–`022`).
 
 ## Unidad 020 — Matriz de exportaciones operativas CSV — Tier 2 — CERRADA (2026-10-19)
 
