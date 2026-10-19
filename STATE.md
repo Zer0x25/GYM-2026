@@ -50,7 +50,33 @@
 
 ## Meta actual — App GYM funcional (2026-10-19)
 
-Unidad activa: 018-reprogramacion-agenda-citas — CERRADA (2026-10-19)
+Unidad activa: 019-abonos-parciales-conciliacion — CERRADA (2026-10-19)
+
+## Unidad 019 — Abonos parciales con activación al 100% y estados de conciliación — Tier 1 — Cerrada (2026-10-19)
+
+- **Autoridad:** Petición directa del usuario «resuelve la issues #5 · Abonos parciales con activación al 100% y conciliación» (`specs/019-abonos-parciales-conciliacion.md`); PRD `REQ-1`, `REQ-2`, `REQ-3`, `REQ-8`, `CAL-2`, `CAL-3`; `ADR 0002`, `ADR 0008`, `ADR 0009` y `ADR 0010` §A3. Clasificación: `Tier 1` (afecta dinero, activación de derechos, caja, concurrencia y migración). Commits locales autorizados, sin push a remoto.
+- **Entregado:**
+  1. *Esquema y migración aditiva:* Migración `0016_partial_payments_reconciliation.sql` agregando `memberships.cycle_target_cents` y `payments.period_id` con índice `payments_period_idx`.
+  2. *Contratos:* `ReconciliationState` (`abierta`, `cuadrada`, `con_diferencia`), `CashSessionRef.reconciliationState`, `MembershipRef.cycleTargetCents / cyclePaidCents / cycleRemainingCents`, `PaymentRef.periodId / decidedAt`.
+  3. *Lógica financiera y transaccional:*
+     - `PaymentsService`: Validación con bloqueo pesimista `FOR UPDATE` sobre `memberships`, comprobando saldo acumulado de pagos validados del ciclo. Abonos parciales ingresan a caja abierta de inmediato sin emitir período ni créditos. Al completar el 100% emite período único inmutable vinculando todos los pagos del ciclo (`periodId`), resetea `cycleTargetCents`, y extiende vigencia. Bloqueo de sobrepago concurrente con 409 `AMOUNT_EXCEEDS_CYCLE_BALANCE`.
+     - `CashService`: Función pura `deriveReconciliationState` expone `abierta`, `cuadrada` o `con_diferencia` según discrepancia al cerrar sesión y en listado.
+     - `OperationsService`: `dailyReport` calcula agregados `partialCyclesPendingCents` y `partialCyclesCount`, y proyecta `reconciliationState` en sesiones del reporte.
+     - `app.ts`: Inyección de balance de ciclo en endpoints de membresía y nueva ruta `/api/v1/cash/sessions`.
+  4. *Web UI:*
+     - `QuickPay.tsx`: Muestra barra/insignia de progreso de abonos y saldo restante.
+     - `MemberDetail.tsx`: Muestra estado de abono parcial y montos pagados/pendientes.
+     - `Cash.tsx`: Etiqueta de conciliación (`Cuadrada` / `Con diferencia`) en último turno cerrado.
+     - `Reports.tsx`: Muestra estado de conciliación en tabla de turnos y tarjeta de estadísticas «Ciclos en abono».
+- **Evidencia verificable:**
+  - `CA-1:` `pnpm --filter @gym/api exec vitest run src/partial-payments.integration.test.ts -t "CA-1"` (1 passed).
+  - `CA-2:` `pnpm --filter @gym/api exec vitest run src/partial-payments.integration.test.ts -t "CA-2"` (1 passed).
+  - `CA-3:` `pnpm --filter @gym/api exec vitest run src/partial-payments.integration.test.ts -t "CA-3"` (1 passed) + `pnpm --filter @gym/contracts test` (17 passed).
+  - `CA-4:` `pnpm --filter @gym/api exec vitest run src/partial-payments.integration.test.ts -t "CA-4"` (1 passed).
+  - `CA-5:` `pnpm --filter @gym/web test src/partial-payments.test.tsx` (4 passed).
+  - `CA-6:` `./scripts/verify.sh` verde (lint, build, typecheck, tests en 4 workspaces) + cobertura financiera `node scripts/coverage.mjs` (73 passed, 96.96% statements).
+- **Contador de falta de progreso:** 0, sin bloqueos.
+- **Siguiente paso:** Revisión humana de cierre de la unidad 019.
 
 ## Unidad 018 — Reprogramación de agenda y citas personalizadas — Tier 1 — Cerrada (2026-10-19)
 

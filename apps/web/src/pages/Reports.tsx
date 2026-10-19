@@ -7,6 +7,7 @@ import { PageHead, ErrorNotice, Loading, Stat } from "../components/ui/page.js";
 import { DataTable } from "../components/ui/data-table.js";
 import { Button } from "../components/ui/button.js";
 import { Input, Label } from "../components/ui/input.js";
+import { Badge } from "../components/ui/badge.js";
 function getRangeError(from: string, to: string): string | null {
   if (!from || !to) return null;
   if (from > to) {
@@ -49,6 +50,27 @@ export function Reports() {
       accessorKey: "state",
       header: "Estado",
       cell: ({ getValue }) => (getValue() === "open" ? "Abierto" : "Cerrado"),
+    },
+    {
+      accessorKey: "reconciliationState",
+      header: "Conciliación",
+      cell: ({ row }) => {
+        const s = row.original;
+        const rec =
+          s.reconciliationState ??
+          (s.state === "open"
+            ? "abierta"
+            : (s.discrepancyCents ?? 0) === 0
+              ? "cuadrada"
+              : "con_diferencia");
+        const map = {
+          abierta: { label: "Abierta", variant: "secondary" as const },
+          cuadrada: { label: "Cuadrada", variant: "success" as const },
+          con_diferencia: { label: "Con diferencia", variant: "destructive" as const },
+        };
+        const item = map[rec] ?? { label: rec, variant: "secondary" as const };
+        return <Badge variant={item.variant}>{item.label}</Badge>;
+      },
     },
     {
       accessorKey: "openingCents",
@@ -263,7 +285,7 @@ export function Reports() {
                 note="Sin duplicados de pagos validados"
               />
             </div>
-            <div className="mb-6 grid gap-4 sm:grid-cols-2">
+            <div className="mb-6 grid gap-4 sm:grid-cols-3">
               <Stat
                 label="Salidas compensatorias"
                 value={formatCLP(data.outflow ?? 0)}
@@ -273,6 +295,11 @@ export function Reports() {
                 label="Neto del día"
                 value={formatCLP(data.net ?? data.income)}
                 note="Ingresos confirmados menos salidas compensatorias"
+              />
+              <Stat
+                label="Ciclos en abono"
+                value={formatCLP(data.partialCyclesPendingCents ?? 0)}
+                note={`${data.partialCyclesCount ?? 0} membresías con saldo pendiente`}
               />
             </div>
             <h2 className="mb-4 font-semibold">Turnos abiertos en esta fecha</h2>

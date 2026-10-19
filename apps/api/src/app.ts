@@ -484,10 +484,19 @@ export async function buildServer(opts: AppOptions) {
     const rows = await membershipsService.list(req.session.organizationId);
     // State is derived per membership (SPEC rights rule): compute on read.
     const withState = await Promise.all(
-      rows.map(async (row) => ({
-        ...row,
-        state: await paymentsService.membershipState(req.session!.organizationId, row.id),
-      })),
+      rows.map(async (row) => {
+        const [state, balance] = await Promise.all([
+          paymentsService.membershipState(req.session!.organizationId, row.id),
+          paymentsService.getCycleBalance(req.session!.organizationId, row.id),
+        ]);
+        return {
+          ...row,
+          state,
+          cycleTargetCents: balance.targetPriceCents,
+          cyclePaidCents: balance.paidValidatedCents,
+          cycleRemainingCents: balance.remainingCents,
+        };
+      }),
     );
     return reply.send({ data: withState });
   });
@@ -500,7 +509,22 @@ export async function buildServer(opts: AppOptions) {
       req.session.organizationId,
       req.session.memberId,
     );
-    return reply.send({ data: rows });
+    const withBalance = await Promise.all(
+      rows.map(async (row) => {
+        const [state, balance] = await Promise.all([
+          paymentsService.membershipState(req.session!.organizationId, row.id),
+          paymentsService.getCycleBalance(req.session!.organizationId, row.id),
+        ]);
+        return {
+          ...row,
+          state,
+          cycleTargetCents: balance.targetPriceCents,
+          cyclePaidCents: balance.paidValidatedCents,
+          cycleRemainingCents: balance.remainingCents,
+        };
+      }),
+    );
+    return reply.send({ data: withBalance });
   });
 
   app.get<{ Params: { id: string } }>("/api/v1/memberships/:id", async (req, reply) => {
@@ -511,8 +535,19 @@ export async function buildServer(opts: AppOptions) {
     if (req.session.role === "socio" && row.memberId !== req.session.memberId) {
       throw new AppError("NOT_FOUND", "Membresía no encontrada");
     }
-    const state = await paymentsService.membershipState(req.session.organizationId, row.id);
-    return reply.send({ data: { ...row, state } });
+    const [state, balance] = await Promise.all([
+      paymentsService.membershipState(req.session.organizationId, row.id),
+      paymentsService.getCycleBalance(req.session.organizationId, row.id),
+    ]);
+    return reply.send({
+      data: {
+        ...row,
+        state,
+        cycleTargetCents: balance.targetPriceCents,
+        cyclePaidCents: balance.paidValidatedCents,
+        cycleRemainingCents: balance.remainingCents,
+      },
+    });
   });
 
   // --- Payments (REQ-2) -------------------------------------------------------
@@ -641,6 +676,13 @@ export async function buildServer(opts: AppOptions) {
     assertTenantContext(req.session);
     const row = await cashService.findOpenSession(req.session.organizationId);
     return reply.send({ data: row ?? null });
+  });
+
+  app.get("/api/v1/cash/sessions", async (req: FastifyRequest, reply: FastifyReply) => {
+    requireRole(req.session, ["admin", "recepcion"]);
+    assertTenantContext(req.session);
+    const rows = await cashService.list(req.session.organizationId);
+    return reply.send({ data: rows });
   });
 
   app.post<{ Params: { id: string } }>("/api/v1/cash/sessions/:id/close", async (req, reply) => {

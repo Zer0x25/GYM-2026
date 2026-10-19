@@ -143,6 +143,26 @@ export class OperationsService {
     const cash = rows.find((r) => r.method === "cash")?.total ?? 0,
       transfer = rows.find((r) => r.method === "transfer")?.total ?? 0,
       transbank = rows.find((r) => r.method === "transbank")?.total ?? 0;
+
+    const partialMemberships = await this.db
+      .select({
+        id: memberships.id,
+      })
+      .from(memberships)
+      .where(eq(memberships.organizationId, actor.organizationId));
+
+    let partialCyclesPendingCents = 0;
+    let partialCyclesCount = 0;
+    const paymentsService = new PaymentsService(this.db);
+
+    for (const m of partialMemberships) {
+      const balance = await paymentsService.getCycleBalance(actor.organizationId, m.id);
+      if (balance.paidValidatedCents > 0 && balance.paidValidatedCents < balance.targetPriceCents) {
+        partialCyclesCount += 1;
+        partialCyclesPendingCents += balance.remainingCents;
+      }
+    }
+
     return {
       date,
       timeZone: "America/Santiago",
@@ -155,7 +175,17 @@ export class OperationsService {
       outflow: refunds + adjustments,
       net: cash + transfer + transbank - refunds - adjustments,
       movements: rows.reduce((v, r) => v + r.count, 0),
-      shifts,
+      shifts: shifts.map((s) => ({
+        ...s,
+        reconciliationState:
+          s.state === "open"
+            ? ("abierta" as const)
+            : (s.discrepancyCents ?? 0) === 0
+              ? ("cuadrada" as const)
+              : ("con_diferencia" as const),
+      })),
+      partialCyclesPendingCents,
+      partialCyclesCount,
     };
   }
 
@@ -316,6 +346,7 @@ export class OperationsService {
             pauses.find((p) => p.state === "active" && p.endsAt > now) ??
             null;
 
+          const balance = await paymentsService.getCycleBalance(organizationId, r.membership.id);
           return {
             ...r.membership,
             plan: r.plan,
@@ -323,6 +354,9 @@ export class OperationsService {
             pauses,
             activePause,
             state: await paymentsService.membershipState(organizationId, r.membership.id),
+            cycleTargetCents: balance.targetPriceCents,
+            cyclePaidCents: balance.paidValidatedCents,
+            cycleRemainingCents: balance.remainingCents,
           };
         }),
       ),

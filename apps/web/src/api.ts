@@ -2,6 +2,7 @@ import type {
   OfflineLeaseResponse,
   RegisterFinancialAdjustmentRequest,
   FinancialAdjustmentRef,
+  ReconciliationState,
 } from "@gym/contracts";
 /**
  * Minimal API client for the GYM API.
@@ -154,6 +155,9 @@ export interface Membership {
     reason: string;
     extendedDays: number;
   } | null;
+  cycleTargetCents?: number;
+  cyclePaidCents?: number;
+  cycleRemainingCents?: number;
 }
 
 export type FinancialAdjustment = FinancialAdjustmentRef;
@@ -175,6 +179,7 @@ export interface Payment {
   decidedBy: string | null;
   decidedAt: string | null;
   reason: string | null;
+  periodId?: string | null;
   createdAt: string;
 }
 
@@ -184,6 +189,7 @@ export interface CashSession {
   openedBy: string;
   closedBy: string | null;
   state: "open" | "closed";
+  reconciliationState?: ReconciliationState;
   openingCents: number;
   declaredClosingCents: number | null;
   expectedClosingCents: number | null;
@@ -526,6 +532,7 @@ export const api = {
   rejectPayment: (id: string, reason: string) =>
     request<Payment>("POST", `/payments/${id}/reject`, { reason }),
 
+  listCashSessions: () => request<CashSession[]>("GET", "/cash/sessions"),
   openCashSession: (openingCents: number) =>
     request<CashSession>("POST", "/cash/sessions", { openingCents }),
   currentCashSession: () => request<CashSession | null>("GET", "/cash/sessions/current"),
@@ -691,4 +698,6 @@ export interface DailyReport {
   net?: number;
   movements: number;
   shifts: CashSession[];
+  partialCyclesPendingCents?: number;
+  partialCyclesCount?: number;
 }

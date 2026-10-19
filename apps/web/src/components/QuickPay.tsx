@@ -47,8 +47,13 @@ export function QuickPay({
 
   function pickMembership(id: string) {
     setMembershipId(id);
-    const plan = plans.find((p) => p.id === memberships.find((m) => m.id === id)?.planId);
-    if (plan) setAmount(String(plan.priceCents));
+    const m = memberships.find((item) => item.id === id);
+    const plan = plans.find((p) => p.id === m?.planId);
+    if (m && m.cycleRemainingCents !== undefined && m.cycleRemainingCents > 0) {
+      setAmount(String(m.cycleRemainingCents));
+    } else if (plan) {
+      setAmount(String(plan.priceCents));
+    }
     setStep(2);
   }
 
@@ -117,6 +122,7 @@ export function QuickPay({
             ) : (
               memberships.map((m) => {
                 const plan = plans.find((p) => p.id === m.planId);
+                const hasPartial = (m.cyclePaidCents ?? 0) > 0;
                 return (
                   <button
                     key={m.id}
@@ -124,9 +130,16 @@ export function QuickPay({
                     onClick={() => pickMembership(m.id)}
                     className="flex w-full items-center justify-between rounded-md border p-3 text-left hover:bg-accent"
                   >
-                    <span className="font-medium">{plan?.name ?? "Plan"}</span>
+                    <div>
+                      <span className="font-medium">{plan?.name ?? "Plan"}</span>
+                      {hasPartial && (
+                        <p className="text-xs text-amber-600 font-medium">
+                          {formatCLP(m.cyclePaidCents!)} pagado / {formatCLP(m.cycleRemainingCents ?? (plan?.priceCents ?? 0) - m.cyclePaidCents!)} pendiente
+                        </p>
+                      )}
+                    </div>
                     <span className="text-sm text-muted-foreground">
-                      {formatCLP(plan?.priceCents ?? 0)}
+                      {formatCLP(hasPartial ? (m.cycleRemainingCents ?? (plan?.priceCents ?? 0) - m.cyclePaidCents!) : (plan?.priceCents ?? 0))}
                     </span>
                   </button>
                 );
