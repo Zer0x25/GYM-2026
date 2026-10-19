@@ -8,8 +8,8 @@
 import { and, eq } from "drizzle-orm";
 import type { Database } from "@gym/db";
 import { plans } from "@gym/db";
-import { notFound } from "../errors.js";
-import { CreatePlanRequest } from "@gym/contracts";
+import { notFound, validationError } from "../errors.js";
+import { CreatePlanRequest, UpdatePlanRequest } from "@gym/contracts";
 
 export class PlansService {
   constructor(private readonly db: Database) {}
@@ -54,4 +54,56 @@ export class PlansService {
     if (!row) throw notFound("Plan no encontrado");
     return row;
   }
+
+  /** Updates an existing plan in the caller's organization. Increments version. */
+  async update(organizationId: string, planId: string, input: UpdatePlanRequest) {
+    const existing = await this.getById(organizationId, planId);
+
+    const effectiveCoverage = input.coverage ?? existing.coverage;
+    let grupalCredits = existing.grupalCredits;
+    let fijaCredits = existing.fijaCredits;
+    let citaCredits = existing.citaCredits;
+
+    if (effectiveCoverage === "limited") {
+      if (input.classCredits) {
+        grupalCredits = input.classCredits.grupal;
+        fijaCredits = input.classCredits.fija;
+        citaCredits = input.classCredits.cita;
+      } else if (input.coverage === "limited" && !input.classCredits) {
+        throw validationError({ message: "Configura cuotas completas para cobertura limitada" });
+      } else if (
+        existing.coverage !== "limited" ||
+        grupalCredits === null ||
+        fijaCredits === null ||
+        citaCredits === null
+      ) {
+        throw validationError({ message: "Configura cuotas completas para cobertura limitada" });
+      }
+    } else {
+      grupalCredits = null;
+      fijaCredits = null;
+      citaCredits = null;
+    }
+
+    const newVersion = (existing.version ?? 1) + 1;
+    const [row] = await this.db
+      .update(plans)
+      .set({
+        name: input.name !== undefined ? input.name.trim() : existing.name,
+        priceCents: input.priceCents !== undefined ? input.priceCents : existing.priceCents,
+        durationDays: input.durationDays !== undefined ? input.durationDays : existing.durationDays,
+        coverage: effectiveCoverage,
+        grupalCredits,
+        fijaCredits,
+        citaCredits,
+        active: input.active !== undefined ? input.active : existing.active,
+        version: newVersion,
+      })
+      .where(and(eq(plans.id, planId), eq(plans.organizationId, organizationId)))
+      .returning();
+
+    if (!row) throw notFound("Plan no encontrado");
+    return row;
+  }
 }
+

@@ -71,6 +71,33 @@ Unidad activa: 021-menores-correo-contratos — CERRADA (2026-10-19)
 - **Contador de falta de progreso:** 0, sin bloqueos.
 - **Siguiente paso:** Revisión humana de cierre de la unidad 021. Continuar según la ruta MVP (`017`–`022`).
 
+## Unidad 020 — Matriz de exportaciones operativas CSV — Tier 2 — CERRADA (2026-10-19)
+
+- **Autoridad:** petición directa del usuario «Resuelve la Issue #2 (specs/020-exportaciones-operativas-csv.md)»; PRD REQ-1, REQ-2, REQ-4, REQ-5, REQ-7, CAL-3; ADR 0010 §1.4. Nivel Tier 2 autoaceptado dentro del PRD y base aprobada.
+- **Alcance entregado:** contratos `AttendanceReportQuery` en `@gym/contracts`; métodos `membersCsv`, `membershipsCsv`, `attendanceCsv` con sanitización anti-fórmulas en `OperationsService`; rutas `GET /api/v1/reports/*.csv` con control de roles (`admin`, `recepcion` permitidos; `instructor`, `socio` 403; anónimo 401) y aislamiento estricto multi-tenant (`organizationId`); controles de descarga en `Reports.tsx` (`/reportes`) y cliente `api.ts`; pruebas en `contracts.test.ts`, `operations.integration.test.ts`, `reports-export.test.tsx` y suite E2E `tests/e2e/operation.spec.ts`.
+- **Verificación y evidencia (DoD completa):**
+  - CA-1: `GET /api/v1/reports/members.csv` y `memberships.csv` proyectan datos del tenant (`org`) con estado verificado de contacto, adulto responsable, `qr_state` (`activo|revocado|sin_emitir`), vigencias y créditos disponibles por modalidad, omitiendo `qrToken` (19/19 en `operations.integration.test.ts`).
+  - CA-2: `GET /api/v1/reports/attendance.csv?from=...&to=...` exporta reservas, asistencias y cancelaciones del rango, y rechaza con `400 VALIDATION_ERROR` rangos con `from > to` o superiores a 93 días corridos (19/19 en `operations.integration.test.ts`).
+  - CA-3: `instructor` y `socio` reciben `403 FORBIDDEN` en los 3 endpoints; anónimo recibe `401`; inyección de fórmulas neutralizada con apóstrofo `'` inicial y RFC 4180.
+  - CA-4: `Reports.tsx` (`/reportes`) permite descargar los 4 reportes CSV (financiero diario + socios, vigencias/créditos, reservas/asistencia) con validación de rango reactiva; 3/3 en `reports-export.test.tsx`, 12/12 en `pnpm test:e2e` (`node scripts/e2e.mjs`) sobre preview de producción y PostgreSQL ficticio (`gym_e2e`); `./scripts/verify.sh` superado en verde (lint, build, typecheck, tests y verify-scope sin advertencias).
+- **Contador de falta de progreso:** 0, sin bloqueos.
+- **Siguiente paso:** Crear commit local para la unidad 020 verificado contra `Archivos autorizados`.
+
+## Unidad 017 — Catálogo editable, pausas autorizadas y cambio de plan — Tier 1 — Implementada/verificada; revisión humana pendiente
+
+- Autoridad: resolución de Issue #1 (`specs/017-catalogo-pausas-cambio-plan.md`); validación explícita del usuario (`A1`, ADR 0010); PRD REQ-1, REQ-2, REQ-5, REQ-7, CAL-2, CAL-3. Commits locales autorizados por unidad verificada; revisión humana al cierre.
+- Entregado:
+  - Migración aditiva Drizzle `0014_catalog_pauses_plan_changes.sql` (`plans.version`, `memberships.nextPlanId`, `membershipPeriods.planVersion`, tabla `membershipPauses`).
+  - Contratos Zod en `@gym/contracts`: `UpdatePlanRequest`, `SchedulePlanChangeRequest`, `CreateMembershipPauseRequest`, `MembershipPauseRef`, `PlanRef.version`, `MembershipRef.nextPlanId`.
+  - Backend API: `PlansService.update` (versionado inmutable y toggle activo/archivado), `MembershipsService.schedulePlanChange` (aislamiento y validación de plan activo), `MembershipsService.createPause` (idempotencia por clave, extensión de fin de vigencia, cancelación de reservas con restitución de créditos), `CheckinService` (denegación de ingreso por membresía pausada con motivo `membership_paused`), `BookingCreditsService` (bloqueo de reservas dentro de intervalos pausados) y `PaymentsService` (consumo de `nextPlanId` y snapshot de `planVersion` en renovaciones).
+  - Web UI: edición de catálogo y versión en `Plans.tsx`, modal de pausa y selector de cambio de plan en `MemberDetail.tsx`, alerta de pausa activa con motivo y aviso de plan futuro en `Portal.tsx`.
+- Evidencia final:
+  - Gate raíz `./scripts/verify.sh`: salida 0 (lint, typecheck, build, unit tests 149/149).
+  - Integración PostgreSQL `TEST_DATABASE_URL`: 15 suites de integración completas sin omitidos; `memberships-lifecycle.integration.test.ts` 4/4 pasando.
+  - Cobertura financiera (`node scripts/coverage.mjs`): 68/68 pruebas, 97.09% statements/lines (umbral >= 80% superado holgadamente).
+  - Suite E2E Playwright (`node scripts/e2e.mjs`): 12/12 pasando en 24.4s, incluyendo prueba completa de SPEC017 y viewport móvil sin overflow (screenshot `/tmp/gym-017-pauses-mobile.png`).
+- Checkpoint: unidad 017 lista para commit local con Conventional Commits. Revisión humana Tier 1 requerida. Siguiente unidad en ruta: `018-reprogramacion-agenda-citas`. Contador de falta de progreso: 0.
+
 ## Unidad 016 — Períodos y créditos por modalidad — Tier 1 — Implementada/verificada; revisión humana pendiente
 
 - Autoridad: «continua» y respuesta explícita a cuotas separadas por modalidad/período, sin acumulación; ADR 0009 registrado antes de código. Spec 016, revisión humana al cierre y commits locales sin push.

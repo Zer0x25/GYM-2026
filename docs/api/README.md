@@ -101,9 +101,11 @@ Errores: 401 sin sesión; 403 rol insuficiente, socio sobre ajeno o menor autoge
 | `GET /api/v1/plans` | admin, recepcion, instructor | Listado de planes activos del tenant |
 | `POST /api/v1/plans` | admin | Crear plan |
 | `GET /api/v1/plans/:id` | admin, recepcion, instructor | Detalle |
+| `PATCH /api/v1/plans/:id` | admin | Edición de catálogo y activo/archivado (incrementa versión sin mutar períodos históricos) |
 
-Request `CreatePlanRequest`: `{ "name", "priceCents", "durationDays", "coverage": "none|unlimited|limited" }`
-Dinero en **centavos CLP enteros** (sin decimales). Respuesta `201` → `PlanDetail`.
+Request `CreatePlanRequest`: `{ "name", "priceCents", "durationDays", "coverage": "none|unlimited|limited", "classCredits"? }`
+Request `UpdatePlanRequest`: `{ "name"?, "priceCents"?, "durationDays"?, "coverage"?: "none|unlimited|limited", "classCredits"?: { grupal, fija, cita } | null, "active"?: boolean }`
+Dinero en **centavos CLP enteros** (sin decimales). Invariante de inmutabilidad: actualizar incrementa `version` y jamás altera `membership_periods` emitidos. Planes con `active = false` son rechazados en nuevas asignaciones (`409`).
 
 ## Memberships (Entrega 2)
 
@@ -113,12 +115,20 @@ Dinero en **centavos CLP enteros** (sin decimales). Respuesta `201` → `PlanDet
 | `GET /api/v1/memberships` | admin, recepcion, instructor | Listado con estado derivado |
 | `GET /api/v1/memberships/mine` | socio | Solo las propias |
 | `GET /api/v1/memberships/:id` | admin, recepcion, instructor, socio | Socio solo la propia (otras → 404) |
+| `POST /api/v1/memberships/:id/schedule-plan-change` | admin, recepcion | Programa cambio de plan para la siguiente renovación |
+| `POST /api/v1/memberships/:id/pauses` | admin | Registra pausa autorizada idempotente, extiende vigencia y cancela reservas del intervalo |
 
 Request `CreateMembershipRequest`: `{ "memberId", "planId" }`.
+Request `SchedulePlanChangeRequest`: `{ "nextPlanId": "<uuid>" | null }`.
+Request `CreateMembershipPauseRequest`: `{ "idempotencyKey": "<uuid>", "startsAt": "<iso>", "endsAt": "<iso>", "reason": "..." }`.
 La membresía nace **sin ventana de vigencia** (`state: "pending_payment"`); la ventana se
 abre con el **primer pago validado**. El `state` es **derivado** de los pagos validados en
 cada lectura: `pending_payment` (sin ventana) · `active` (vigente hoy) · `expired` (fin pasado).
-La renovación extiende desde el fin previo (sin huecos).
+La renovación extiende desde el fin previo (sin huecos). Si `nextPlanId` está definido, la renovación
+materializa el nuevo plan y limpia el campo.
+Las pausas registradas son idempotentes por `(organizationId, idempotencyKey)`, extienden `endsAt`/`endAt`
+por `extendedDays`, suspenden check-in y reservas durante el intervalo, y cancelan reservas futuras dentro
+de la pausa con restitución de créditos.
 
 ## Payments (Entrega 2 — REQ-2)
 
@@ -391,11 +401,24 @@ Todos los endpoints siguientes usan cookie de sesión verificada y `{data: ...}`
 | GET /api/v1/checkins/recent | admin, recepción | Query `limit=1..200`, `today=true` → feed limitado al día de Santiago cuando se solicita |
 | GET /api/v1/sessions/:id/roster | staff | Reservas scoped al tenant con `attendance:asistio/ausencia/null` derivada del último evento de auditoría |
 | GET /api/v1/reports/daily | admin, recepción | Query `date=YYYY-MM-DD` válida → `{date,timeZone,cash,transfer,income,movements,shifts}`; fecha America/Santiago, movimientos de pagos validados |
+| GET /api/v1/reports/members.csv | admin, recepción | Sin body → CSV UTF-8 con socios del tenant (columnas: `member_id,full_name,contact_email,contact_verified,adult_responsible_id,qr_state,membership_status,created_at`); sin tokens QR |
+| GET /api/v1/reports/memberships.csv | admin, recepción | Sin body → CSV UTF-8 con vigencias y créditos (columnas: `membership_id,member_id,member_name,plan_name,coverage,state,period_starts_at,period_ends_at,grupal_available,fija_available,cita_available,pending_review_count,next_plan_id`) |
+| GET /api/v1/reports/attendance.csv | admin, recepción | Query `from=YYYY-MM-DD&to=YYYY-MM-DD` (máx. 93 días, `from <= to`) → CSV UTF-8 con reservas, asistencia y cancelaciones (columnas: `booking_id,session_id,session_type,template_name,instructor_id,starts_at,member_id,member_name,booking_state,attendance_outcome,cancellation_type,credit_returned`) |
 | GET /api/v1/offline/devices | admin, recepción | Solo dispositivos asignados al operador de la sesión |
 | GET /api/v1/offline/policy | admin, recepción | `{enabled,freshnessHours}` máximo 72 horas |
 | POST /api/v1/offline/policy | admin | `{enabled:boolean}` → política y auditoría, frescura 72 horas |
 | POST /api/v1/offline/lease | admin, recepción | `{deviceId:uuid}` → `OfflineLeaseResponse` validado por schema compartido: ámbito, issuedAt/expiresAt, permiso firmado y miembros mínimos con prueba individual firmada |
 | POST /api/v1/offline/lease/sync | admin, recepción | `SyncEventsRequest`: deviceId + array no vacío de eventos; cada payload JSON contiene `{permit,proof}` → reconocimientos `sincronizado/duplicado/rechazado` con reason/paymentId si aplica |
+
+### Exportaciones operativas CSV (Spec 020)
+
+- `GET /api/v1/reports/members.csv`: padrón de socios del tenant. Proyecta `member_id`, `full_name`, `contact_email`, `contact_verified` (boolean), `adult_responsible_id` (o vacío), `qr_state` (`activo | revocado | sin_emitir`), `membership_status` (`active | expired | pending_payment | none`), y `created_at`. El valor secreto de `qrToken` nunca se expone.
+- `GET /api/v1/reports/memberships.csv`: padrón de membresías y vigencias del tenant. Proyecta `membership_id`, `member_id`, `member_name`, `plan_name`, `coverage`, `state`, fechas de inicio/fin del período, saldos disponibles por modalidad (`grupal_available`, `fija_available`, `cita_available`), número de reservas pendientes de revisión (`pending_review_count`), y `next_plan_id`.
+- `GET /api/v1/reports/attendance.csv?from=YYYY-MM-DD&to=YYYY-MM-DD`: histórico de reservas, asistencias y cancelaciones del tenant en el rango especificado. Valida que `from <= to` y que la diferencia no exceda 93 días corridos (400 `VALIDATION_ERROR` si formato o rango es inválido). Proyecta `booking_id`, `session_id`, `session_type`, `template_name`, `instructor_id`, `starts_at`, `member_id`, `member_name`, `booking_state`, `attendance_outcome` (`asistio | ausencia`), `cancellation_type` (`temprana | tardia | cancelada_instructor | ausencia`), y `credit_returned`.
+- **Seguridad transversal:**
+  - Solo roles `admin` y `recepcion` autorizados; `instructor` y `socio` reciben 403 `FORBIDDEN`; no autenticado recibe 401 `UNAUTHENTICATED`.
+  - Consultas estrictamente acotadas a `actor.organizationId`.
+  - Todo campo de texto libre (`fullName`, `contactEmail`, `planName`, `reason`, etc.) es neutralizado contra inyección de fórmulas de hoja de cálculo anteponiendo `'` si comienza con `=`, `+`, `-`, `@`, `\t` o `\r`, y escapado conforme a RFC 4180.
 
 Schemas de entrada y lease viven en `packages/contracts/src/index.ts` (SPEC 010). Dinero se mantiene entero en la convención CLP existente; la interfaz no cambia su escala. Los comandos de QR, membresías, pagos, caja, reservas, personal y sesiones reutilizan los contratos de entregas anteriores.
 

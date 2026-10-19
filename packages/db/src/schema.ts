@@ -218,6 +218,7 @@ export const plans = pgTable(
     fijaCredits: integer("fija_credits"),
     citaCredits: integer("cita_credits"),
     active: boolean("active").notNull().default(true),
+    version: integer("version").notNull().default(1),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
@@ -249,6 +250,8 @@ export const memberships = pgTable(
     planId: uuid("plan_id")
       .notNull()
       .references(() => plans.id),
+    /** Scheduled plan change for the next renewal period (SPEC 017). */
+    nextPlanId: uuid("next_plan_id").references(() => plans.id),
     /** Start of the current validity window (set at first validated payment). */
     startAt: timestamp("start_at", { withTimezone: true }),
     /** End of the current validity window (start + plan.durationDays). */
@@ -438,6 +441,7 @@ export const membershipPeriods = pgTable(
     planName: text("plan_name").notNull(),
     priceCents: integer("price_cents").notNull(),
     durationDays: integer("duration_days").notNull(),
+    planVersion: integer("plan_version").notNull().default(1),
     grupalCredits: integer("grupal_credits"),
     fijaCredits: integer("fija_credits"),
     citaCredits: integer("cita_credits"),
@@ -453,6 +457,46 @@ export const membershipPeriods = pgTable(
     check("membership_periods_grupal_credits_check", sql`${t.grupalCredits} BETWEEN 0 AND 100000`),
     check("membership_periods_fija_credits_check", sql`${t.fijaCredits} BETWEEN 0 AND 100000`),
     check("membership_periods_cita_credits_check", sql`${t.citaCredits} BETWEEN 0 AND 100000`),
+  ],
+);
+
+/**
+ * Membership pause (pausa autorizada de membresía, SPEC 017):
+ * Authorized by admin, extends membership_periods.endsAt and memberships.endAt
+ * by extendedDays, and cancels future bookings in [startsAt, endsAt).
+ */
+export const membershipPauses = pgTable(
+  "membership_pauses",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id),
+    membershipId: uuid("membership_id")
+      .notNull()
+      .references(() => memberships.id),
+    periodId: uuid("period_id")
+      .notNull()
+      .references(() => membershipPeriods.id),
+    actorId: text("actor_id")
+      .notNull()
+      .references(() => authUsers.id),
+    idempotencyKey: uuid("idempotency_key").notNull(),
+    startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
+    endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
+    extendedDays: integer("extended_days").notNull(),
+    reason: text("reason").notNull(),
+    state: text("state", { enum: ["active", "lifted"] }).notNull().default("active"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique("membership_pauses_org_key").on(t.organizationId, t.idempotencyKey),
+    check("membership_pauses_extended_days_check", sql`${t.extendedDays} >= 1`),
+    check("membership_pauses_dates", sql`${t.endsAt} > ${t.startsAt}`),
+    check("membership_pauses_reason_check", sql`length(trim(${t.reason})) BETWEEN 1 AND 1000`),
+    check("membership_pauses_state_check", sql`${t.state} IN ('active', 'lifted')`),
+    index("membership_pauses_org_membership_idx").on(t.organizationId, t.membershipId),
+    index("membership_pauses_org_period_idx").on(t.organizationId, t.periodId),
   ],
 );
 
@@ -782,6 +826,7 @@ export const schema = {
   plans,
   memberships,
   membershipPeriods,
+  membershipPauses,
   creditMovements,
   payments,
   cashSessions,

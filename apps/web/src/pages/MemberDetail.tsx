@@ -16,6 +16,13 @@ import { DataTable } from "../components/ui/data-table.js";
 import { QuickPay } from "../components/QuickPay.js";
 import { Confirm } from "../components/ui/confirm.js";
 import { MemberQr } from "../components/MemberQr.js";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "../components/ui/dialog.js";
 export function MemberDetail() {
   const { id = "" } = useParams();
   const { session } = useSession();
@@ -29,7 +36,17 @@ export function MemberDetail() {
     [busy, setBusy] = useState(false),
     [qrAction, setQrAction] = useState<"revoke" | "reissue" | null>(null),
     [qr, setQr] = useState(""),
-    [contact, setContact] = useState("");
+    [contact, setContact] = useState(""),
+    [pauseOpen, setPauseOpen] = useState(false),
+    [pauseMembershipId, setPauseMembershipId] = useState<string | null>(null),
+    [pauseReason, setPauseReason] = useState(""),
+    [pauseStarts, setPauseStarts] = useState(""),
+    [pauseEnds, setPauseEnds] = useState(""),
+    [pauseError, setPauseError] = useState<string | null>(null),
+    [scheduleOpen, setScheduleOpen] = useState(false),
+    [scheduleMembershipId, setScheduleMembershipId] = useState<string | null>(null),
+    [scheduleNextPlanId, setScheduleNextPlanId] = useState(""),
+    [scheduleError, setScheduleError] = useState<string | null>(null);
   async function assign() {
     if (!planId) return;
     setBusy(true);
@@ -138,8 +155,46 @@ export function MemberDetail() {
                       ? `Vence el ${new Date(m.endAt).toLocaleDateString("es-CL")}`
                       : "El período comienza al validar el primer pago."}
                   </p>
+                  {m.nextPlan && (
+                    <p className="mt-1 text-xs font-medium text-primary">
+                      Próximo plan programado: {m.nextPlan.name}
+                    </p>
+                  )}
+                  {m.activePause && (
+                    <p className="mt-1 text-xs font-medium text-amber-600 dark:text-amber-400">
+                      Pausa activa hasta {new Date(m.activePause.endsAt).toLocaleDateString("es-CL")}{" "}
+                      ({m.activePause.reason})
+                    </p>
+                  )}
                 </div>
-                <MembershipStateBadge state={m.state ?? "pending_payment"} />
+                <div className="flex items-center gap-2">
+                  <MembershipStateBadge state={m.state ?? "pending_payment"} />
+                  {session?.role === "admin" && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setPauseMembershipId(m.id);
+                        setPauseOpen(true);
+                      }}
+                    >
+                      Pausar
+                    </Button>
+                  )}
+                  {(session?.role === "admin" || session?.role === "recepcion") && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setScheduleMembershipId(m.id);
+                        setScheduleNextPlanId(m.nextPlanId ?? "");
+                        setScheduleOpen(true);
+                      }}
+                    >
+                      Programar cambio
+                    </Button>
+                  )}
+                </div>
               </div>
             ))}
             {profile.memberships.length === 0 && (
@@ -149,7 +204,7 @@ export function MemberDetail() {
               <div className="flex-1">
                 <Select
                   id="assign-plan"
-                  label="Asignar nuevo plan"
+                  label="Asignar plan"
                   value={planId}
                   onChange={(e) => setPlanId(e.target.value)}
                 >
@@ -260,6 +315,142 @@ export function MemberDetail() {
         onConfirm={() => void qrChange()}
         destructive={qrAction === "revoke"}
       />
+      <Dialog open={pauseOpen} onOpenChange={setPauseOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Pausar membresía</DialogTitle>
+            <DialogDescription>
+              La pausa extiende la vigencia por los días pausados y cancela reservas futuras en ese
+              intervalo restituyendo los créditos.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (!pauseMembershipId) return;
+              setBusy(true);
+              setPauseError(null);
+              try {
+                const startsIso = pauseStarts.includes("Z")
+                  ? pauseStarts
+                  : new Date(pauseStarts).toISOString();
+                const endsIso = pauseEnds.includes("Z")
+                  ? pauseEnds
+                  : new Date(pauseEnds).toISOString();
+                await api.createMembershipPause(pauseMembershipId, {
+                  startsAt: startsIso,
+                  endsAt: endsIso,
+                  reason: pauseReason.trim(),
+                });
+                toast.success("Pausa registrada");
+                setPauseOpen(false);
+                setPauseReason("");
+                setPauseStarts("");
+                setPauseEnds("");
+                await reload();
+              } catch (e) {
+                setPauseError(e instanceof Error ? e.message : "No se pudo registrar la pausa");
+              } finally {
+                setBusy(false);
+              }
+            }}
+            className="space-y-4"
+          >
+            <ErrorNotice message={pauseError} />
+            <div>
+              <Label htmlFor="pause-reason">Motivo de la pausa</Label>
+              <Input
+                id="pause-reason"
+                required
+                value={pauseReason}
+                onChange={(e) => setPauseReason(e.target.value)}
+                placeholder="Ej. Reposo médico por 7 días"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label htmlFor="pause-starts">Fecha de inicio</Label>
+                <Input
+                  id="pause-starts"
+                  type="datetime-local"
+                  required
+                  value={pauseStarts}
+                  onChange={(e) => setPauseStarts(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label htmlFor="pause-ends">Fecha de fin</Label>
+                <Input
+                  id="pause-ends"
+                  type="datetime-local"
+                  required
+                  value={pauseEnds}
+                  onChange={(e) => setPauseEnds(e.target.value)}
+                />
+              </div>
+            </div>
+            <Button type="submit" disabled={busy || !pauseReason.trim()}>
+              {busy ? "Registrando…" : "Registrar pausa"}
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={scheduleOpen} onOpenChange={setScheduleOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Programar cambio de plan</DialogTitle>
+            <DialogDescription>
+              El cambio tomará efecto en la próxima renovación validada sin alterar el período en
+              curso.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (!scheduleMembershipId) return;
+              setBusy(true);
+              setScheduleError(null);
+              try {
+                await api.schedulePlanChange(scheduleMembershipId, {
+                  nextPlanId: scheduleNextPlanId || null,
+                });
+                toast.success("Cambio de plan programado");
+                setScheduleOpen(false);
+                await reload();
+              } catch (e) {
+                setScheduleError(
+                  e instanceof Error ? e.message : "No se pudo programar el cambio",
+                );
+              } finally {
+                setBusy(false);
+              }
+            }}
+            className="space-y-4"
+          >
+            <ErrorNotice message={scheduleError} />
+            <div>
+              <Select
+                id="schedule-next-plan"
+                label="Siguiente plan para renovación"
+                value={scheduleNextPlanId}
+                onChange={(e) => setScheduleNextPlanId(e.target.value)}
+              >
+                <option value="">Sin cambio (mantener plan actual)</option>
+                {plans
+                  .filter((p) => p.active)
+                  .map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} · {formatCLP(p.priceCents)}
+                    </option>
+                  ))}
+              </Select>
+            </div>
+            <Button type="submit" disabled={busy}>
+              {busy ? "Guardando…" : "Guardar cambio"}
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }

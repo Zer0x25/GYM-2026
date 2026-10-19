@@ -51,6 +51,7 @@ run(
     "src/credits.integration.test.ts",
     "src/transbank.integration.test.ts",
     "src/financial-adjustments.integration.test.ts",
+    "src/memberships-lifecycle.integration.test.ts",
     "--no-file-parallelism",
     "--coverage",
   ],

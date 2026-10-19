@@ -135,6 +135,25 @@ export function Portal() {
                     <h2 className="font-semibold">{active.plan.name}</h2>
                     <MembershipStateBadge state="active" />
                   </div>
+                  {active.activePause && (
+                    <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-800 dark:text-amber-300">
+                      <p className="font-semibold">Membresía pausada (pausa activa)</p>
+                      <p className="mt-1">
+                        Hasta el {new Date(active.activePause.endsAt).toLocaleDateString("es-CL")}{" "}
+                        ({active.activePause.extendedDays} días extendidos).
+                      </p>
+                      <p className="mt-1 italic">{active.activePause.reason}</p>
+                    </div>
+                  )}
+                  {active.nextPlan && (
+                    <div className="mt-3 rounded-lg border border-primary/30 bg-primary/10 p-3 text-xs">
+                      <p className="font-semibold text-primary">Cambio de plan programado</p>
+                      <p className="mt-1">
+                        Próxima renovación cambiará a:{" "}
+                        <span className="font-medium">{active.nextPlan.name}</span>
+                      </p>
+                    </div>
+                  )}
                   <p className="mt-3 text-sm text-muted-foreground">
                     Vigente hasta {new Date(active.endAt!).toLocaleDateString("es-CL")}
                   </p>

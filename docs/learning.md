@@ -8,6 +8,19 @@
 - **Adaptador de correo seguro:** El adaptador debe permanecer deshabilitado por defecto en dev/CI (`capabilities: { passwordReset: false, contactVerification: false }`) y, al activarse con transporte HTTP/webhook, aplicar `AbortSignal.timeout(5000)` y redactar URLs/tokens en respuestas de error 503 para evitar fugas de datos sensibles. Evidencia: `account-recovery.integration.test.ts`.
 - **Sincronización documental mecánica:** Verificar mecánicamente que cada ruta `/api/v1/*` de `app.ts` esté documentada con su verbo HTTP y ruta en `docs/api/README.md` (`api-docs-sync.test.ts`) previene desfasajes silenciosos entre el código del servidor y los contratos publicados.
 
+## 2026-10-19 — Unidad 017 — Comparaciones de fecha en Drizzle y aislamiento en E2E
+
+- **Hallazgo (Drizzle & postgres-js):** pasar instancias `Date` de JavaScript en fragmentos directos ``sql`... <= ${date}`` provoca errores de serialización (`could not determine data type of parameter`). Usar los operadores tipados de Drizzle (`lte`, `gt`, `gte`, `lt`) garantiza la coerción segura de fechas ISO en PostgreSQL.
+- **Hallazgo (Aislamiento E2E):** en pruebas Playwright que prueban portales de socios y administración en secuencia, hacer logout explícito (`Salir`) al terminar previene fugas de sesión en ejecuciones de un solo worker. Asimismo, `scripts/e2e.mjs` no admite ejecuciones concurrentes porque reinicia `gym_e2e`.
+- **Evidencia:** 15 suites de integración (`memberships-lifecycle.integration.test.ts`), 12 tests E2E (`credits.spec.ts`), cobertura financiera en 97.09%.
+- **Aplicación futura:** preferir siempre operadores de columna de Drizzle (`gte`, `lte`) para ventanas de validez temporal y cerrar sesión al finalizar pruebas E2E multi-rol.
+
+## 2026-10-19 — Unidad 020 — Exportaciones operativas CSV con neutralización de fórmulas
+
+- **Hallazgo:** La generación de archivos CSV de padrones y registros operativos debe aislar estrictamente el tenant (`organizationId`) en base de datos, omitir tokens secretos (`qrToken`), y neutralizar ataques de inyección de fórmulas en hojas de cálculo (CSV formula injection / DDE). Prefijar celdas que comiencen con `=`, `+`, `-`, `@`, `\t` o `\r` con `'` y escapar según RFC 4180 protege contra ejecución arbitraria al abrir los reportes en Excel o LibreOffice Calc.
+- **Evidencia:** `apps/api/src/services/operations.ts` (`escapeCsvCell`), `contracts.test.ts` (12/12), `operations.integration.test.ts` (19/19), `reports-export.test.tsx` (3/3), `tests/e2e/operation.spec.ts` (12/12) y Quality Gate `./scripts/verify.sh` en verde.
+- **Aplicación futura:** Aplicar siempre sanitización anti-fórmulas al generar proyecciones CSV de texto libre y validar que las fechas de sesión de los fixtures de integración estén cubiertas por las ventanas de vigencia de las membresías para evitar cancelaciones imprevistas por falta de cobertura durante `markAttendance`.
+
 ## 2026-10-19 — Unidades 017–022 — Validación de base comercial y alcance acumulado de specs
 
 Separar una sesión de validación de reglas de negocio (`A1..A5` en `ADR 0010`) antes de codificar evita inventar políticas en pausas, reprogramaciones, abonos parciales, exportaciones y menores. Como `scripts/verify-scope.sh` compara el árbol de trabajo contra `origin/main` usando la sección `## 4. Archivos autorizados` de la `Unidad activa` en `STATE.md`, declarar en la unidad activa (`017`) y en las specs sucesivas (`018`–`022`) las rutas documentales del lote permite dejar todas las especificaciones creadas y verificadas con el gate en verde antes de escribir código.
