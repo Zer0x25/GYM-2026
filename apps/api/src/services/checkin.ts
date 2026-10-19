@@ -18,9 +18,9 @@
  *  5. AUDIT: every check-in writes checkin.ok / checkin.denied in the same
  *     transaction, carrying member, coverage, membershipEndsAt and reason.
  */
-import { and, eq, gt, lt, desc, inArray, gte, sql } from "drizzle-orm";
+import { and, eq, gt, lt, desc, inArray, gte, lte, sql } from "drizzle-orm";
 import type { Database } from "@gym/db";
-import { members, memberships, plans, auditLog } from "@gym/db";
+import { members, memberships, plans, auditLog, membershipPauses } from "@gym/db";
 import { forbidden, notFound } from "../errors.js";
 import { AuditService } from "./audit.js";
 import { generateQrToken } from "./provisioning.js";
@@ -219,6 +219,33 @@ export class CheckinService {
     const row = active[0];
     if (!row || !row.endAt) return { allowed: false, reason: "sin membresía vigente" };
     if (row.coverage === "none") return { allowed: false, reason: "plan sin cobertura de ingreso" };
+
+    const [pause] = await this.db
+      .select({ id: membershipPauses.id })
+      .from(membershipPauses)
+      .where(
+        and(
+          eq(membershipPauses.organizationId, organizationId),
+          eq(membershipPauses.state, "active"),
+          lte(membershipPauses.startsAt, now),
+          gt(membershipPauses.endsAt, now),
+          inArray(
+            membershipPauses.membershipId,
+            this.db
+              .select({ id: memberships.id })
+              .from(memberships)
+              .where(
+                and(
+                  eq(memberships.organizationId, organizationId),
+                  eq(memberships.memberId, memberId),
+                ),
+              ),
+          ),
+        ),
+      )
+      .limit(1);
+    if (pause) return { allowed: false, reason: "membership_paused" };
+
     return {
       allowed: true,
       memberId,

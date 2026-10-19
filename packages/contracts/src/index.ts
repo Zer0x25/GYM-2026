@@ -88,6 +88,7 @@ export const PlanRef = z.object({
   grupalCredits: z.number().int().nonnegative().nullable().optional(),
   fijaCredits: z.number().int().nonnegative().nullable().optional(),
   citaCredits: z.number().int().nonnegative().nullable().optional(),
+  version: z.number().int().min(1).default(1).optional(),
 });
 export type PlanRef = z.infer<typeof PlanRef>;
 
@@ -116,6 +117,33 @@ export const CreatePlanRequest = z
   });
 export type CreatePlanRequest = z.infer<typeof CreatePlanRequest>;
 
+export const UpdatePlanRequest = z
+  .object({
+    name: z.string().trim().min(1).max(200).optional(),
+    priceCents: z.number().int().positive().optional(),
+    durationDays: z.number().int().positive().optional(),
+    coverage: z.enum(["none", "unlimited", "limited"]).optional(),
+    classCredits: ClassCredits.nullable().optional(),
+    active: z.boolean().optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.coverage === "limited" && !value.classCredits) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["classCredits"],
+        message: "Configura cuotas completas solo para cobertura limitada",
+      });
+    }
+    if (value.coverage && value.coverage !== "limited" && value.classCredits) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["classCredits"],
+        message: "No configures cuotas para planes que no sean de cobertura limitada",
+      });
+    }
+  });
+export type UpdatePlanRequest = z.infer<typeof UpdatePlanRequest>;
+
 // ---------------------------------------------------------------------------
 // Entrega 2 — memberships, payments, cash (spec 003).
 // Money is integer CLP cents everywhere. A provisional payment NEVER grants
@@ -135,11 +163,53 @@ export const CreateMembershipRequest = z.object({
 });
 export type CreateMembershipRequest = z.infer<typeof CreateMembershipRequest>;
 
+export const SchedulePlanChangeRequest = z.object({
+  nextPlanId: z.string().uuid().nullable(),
+});
+export type SchedulePlanChangeRequest = z.infer<typeof SchedulePlanChangeRequest>;
+
+export const CreateMembershipPauseRequest = z
+  .object({
+    idempotencyKey: z.string().uuid(),
+    startsAt: z.string().datetime(),
+    endsAt: z.string().datetime(),
+    reason: z.string().trim().min(1).max(1000),
+  })
+  .superRefine((val, ctx) => {
+    const start = new Date(val.startsAt).getTime();
+    const end = new Date(val.endsAt).getTime();
+    if (isNaN(start) || isNaN(end) || end <= start) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["endsAt"],
+        message: "endsAt debe ser posterior a startsAt",
+      });
+    }
+  });
+export type CreateMembershipPauseRequest = z.infer<typeof CreateMembershipPauseRequest>;
+
+export const MembershipPauseRef = z.object({
+  id: z.string().uuid(),
+  organizationId: z.string().uuid(),
+  membershipId: z.string().uuid(),
+  periodId: z.string().uuid(),
+  actorId: z.string(),
+  idempotencyKey: z.string().uuid(),
+  startsAt: z.string().datetime(),
+  endsAt: z.string().datetime(),
+  extendedDays: z.number().int().min(1),
+  reason: z.string(),
+  state: z.enum(["active", "lifted"]).default("active"),
+  createdAt: z.string().datetime(),
+});
+export type MembershipPauseRef = z.infer<typeof MembershipPauseRef>;
+
 export const MembershipRef = z.object({
   id: z.string().uuid(),
   organizationId: z.string().uuid(),
   memberId: z.string().uuid(),
   planId: z.string().uuid(),
+  nextPlanId: z.string().uuid().nullable().optional(),
   /** Derived state — computed from payments, never stored editable. */
   state: z.enum(["pending_payment", "active", "expired"]),
   startAt: z.string().nullable(),

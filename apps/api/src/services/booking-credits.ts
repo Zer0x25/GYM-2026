@@ -1,7 +1,8 @@
-import { and, asc, eq, sql, inArray } from "drizzle-orm";
+import { and, asc, eq, sql, inArray, lte, gt } from "drizzle-orm";
 import {
   creditMovements,
   membershipPeriods,
+  membershipPauses,
   memberships,
   plans,
   members,
@@ -67,6 +68,22 @@ export class BookingCreditsService {
         membership.endAt <= session.startsAt
       )
         continue;
+      const sessionStartsAt =
+        session.startsAt instanceof Date ? session.startsAt : new Date(session.startsAt);
+      const [paused] = await tx
+        .select({ id: membershipPauses.id })
+        .from(membershipPauses)
+        .where(
+          and(
+            eq(membershipPauses.organizationId, actor.organizationId),
+            eq(membershipPauses.membershipId, membership.id),
+            eq(membershipPauses.state, "active"),
+            lte(membershipPauses.startsAt, sessionStartsAt),
+            gt(membershipPauses.endsAt, sessionStartsAt),
+          ),
+        )
+        .limit(1);
+      if (paused) continue;
       const periods = await tx
         .select()
         .from(membershipPeriods)

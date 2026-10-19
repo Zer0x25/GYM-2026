@@ -74,7 +74,8 @@ export class PaymentsService {
     }
     const membership = await this.findMembership(actor.organizationId, input.membershipId);
     if (!membership) throw notFound("Membresía no encontrada");
-    const plan = await this.findPlan(actor.organizationId, membership.planId);
+    const targetPlanId = membership.nextPlanId ?? membership.planId;
+    const plan = await this.findPlan(actor.organizationId, targetPlanId);
     if (!plan) throw notFound("Plan no encontrado");
 
     return this.db.transaction(async (tx) => {
@@ -84,7 +85,7 @@ export class PaymentsService {
           organizationId: actor.organizationId,
           memberId: membership.memberId,
           membershipId: membership.id,
-          planId: membership.planId,
+          planId: targetPlanId,
           amountCents: input.amountCents,
           method: input.method,
           reference: input.reference?.trim() ?? null,
@@ -172,21 +173,30 @@ export class PaymentsService {
           ),
         )
         .for("update");
-      const plan = await this.findPlan(actor.organizationId, payment.planId, tx);
-      if (!membership || !plan) throw notFound("Membresía o plan no encontrado");
+      if (!membership) throw notFound("Membresía no encontrada");
+
+      const targetPlanId = membership.nextPlanId ?? payment.planId;
+      const plan = await this.findPlan(actor.organizationId, targetPlanId, tx);
+      if (!plan) throw notFound("Plan no encontrado");
 
       const now = new Date();
       const previousEnd = membership.endAt ? new Date(membership.endAt) : null;
       const start = previousEnd && previousEnd > now ? previousEnd : now;
       const end = new Date(start.getTime() + plan.durationDays * DAY_MS);
 
+      const updateValues: Record<string, unknown> = {
+        startAt: previousEnd && previousEnd > now ? (membership.startAt ?? start) : start,
+        endAt: end,
+        lastPaymentId: paymentId,
+      };
+      if (membership.nextPlanId) {
+        updateValues.planId = membership.nextPlanId;
+        updateValues.nextPlanId = null;
+      }
+
       await tx
         .update(memberships)
-        .set({
-          startAt: previousEnd && previousEnd > now ? (membership.startAt ?? start) : start,
-          endAt: end,
-          lastPaymentId: paymentId,
-        })
+        .set(updateValues)
         .where(eq(memberships.id, membership.id));
 
       await tx.insert(membershipPeriods).values({
@@ -200,6 +210,7 @@ export class PaymentsService {
         planName: plan.name,
         priceCents: plan.priceCents,
         durationDays: plan.durationDays,
+        planVersion: plan.version ?? 1,
         grupalCredits: plan.grupalCredits,
         fijaCredits: plan.fijaCredits,
         citaCredits: plan.citaCredits,

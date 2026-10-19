@@ -6,6 +6,9 @@ import {
   CreateMemberRequest,
   CreateOrganizationRequest,
   CreatePlanRequest,
+  UpdatePlanRequest,
+  SchedulePlanChangeRequest,
+  CreateMembershipPauseRequest,
   ErrorCode,
   SessionResponse,
   RegisterPaymentRequest,
@@ -13,6 +16,63 @@ import {
 } from "./index.js";
 
 describe("contracts", () => {
+  it("SPEC017 CA-1 UpdatePlanRequest valida edición parcial, cuotas para limited y rechaza datos inválidos", () => {
+    expect(UpdatePlanRequest.safeParse({ name: "Plan Nuevo", priceCents: 25000, active: false }).success).toBe(true);
+    expect(UpdatePlanRequest.safeParse({ priceCents: -500 }).success).toBe(false);
+    expect(UpdatePlanRequest.safeParse({ durationDays: 0 }).success).toBe(false);
+    // Si coverage es limited, classCredits completo es obligatorio
+    expect(UpdatePlanRequest.safeParse({ coverage: "limited" }).success).toBe(false);
+    expect(
+      UpdatePlanRequest.safeParse({
+        coverage: "limited",
+        classCredits: { grupal: 5, fija: 2, cita: 1 },
+      }).success,
+    ).toBe(true);
+    // Si coverage es unlimited, no puede tener classCredits con cuotas
+    expect(
+      UpdatePlanRequest.safeParse({
+        coverage: "unlimited",
+        classCredits: { grupal: 5, fija: 2, cita: 1 },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("SPEC017 CA-2 SchedulePlanChangeRequest valida nextPlanId UUID o null", () => {
+    expect(SchedulePlanChangeRequest.safeParse({ nextPlanId: "11111111-1111-4111-8111-111111111111" }).success).toBe(true);
+    expect(SchedulePlanChangeRequest.safeParse({ nextPlanId: null }).success).toBe(true);
+    expect(SchedulePlanChangeRequest.safeParse({ nextPlanId: "invalido" }).success).toBe(false);
+  });
+
+  it("SPEC017 CA-3 CreateMembershipPauseRequest exige idempotencyKey UUID, endsAt > startsAt y reason no vacío", () => {
+    const valid = {
+      idempotencyKey: "11111111-1111-4111-8111-111111111111",
+      startsAt: "2026-11-01T00:00:00.000Z",
+      endsAt: "2026-11-06T00:00:00.000Z",
+      reason: "Licencia médica de 5 días",
+    };
+    expect(CreateMembershipPauseRequest.safeParse(valid).success).toBe(true);
+    // endsAt <= startsAt
+    expect(
+      CreateMembershipPauseRequest.safeParse({
+        ...valid,
+        endsAt: "2026-11-01T00:00:00.000Z",
+      }).success,
+    ).toBe(false);
+    // reason vacío
+    expect(
+      CreateMembershipPauseRequest.safeParse({
+        ...valid,
+        reason: "   ",
+      }).success,
+    ).toBe(false);
+    // idempotencyKey inválido
+    expect(
+      CreateMembershipPauseRequest.safeParse({
+        ...valid,
+        idempotencyKey: "no-uuid",
+      }).success,
+    ).toBe(false);
+  });
   it("SPEC016 cuotas limitadas son completas, enteras y separadas por modalidad", () => {
     const plan = { name: "Limitado", priceCents: 10000, durationDays: 30, coverage: "limited" };
     for (const classCredits of [

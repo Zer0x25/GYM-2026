@@ -99,9 +99,11 @@ Errores: 401 sin sesión; 403 rol insuficiente o socio sobre ajeno;
 | `GET /api/v1/plans` | admin, recepcion, instructor | Listado de planes activos del tenant |
 | `POST /api/v1/plans` | admin | Crear plan |
 | `GET /api/v1/plans/:id` | admin, recepcion, instructor | Detalle |
+| `PATCH /api/v1/plans/:id` | admin | Edición de catálogo y activo/archivado (incrementa versión sin mutar períodos históricos) |
 
-Request `CreatePlanRequest`: `{ "name", "priceCents", "durationDays", "coverage": "none|unlimited|limited" }`
-Dinero en **centavos CLP enteros** (sin decimales). Respuesta `201` → `PlanDetail`.
+Request `CreatePlanRequest`: `{ "name", "priceCents", "durationDays", "coverage": "none|unlimited|limited", "classCredits"? }`
+Request `UpdatePlanRequest`: `{ "name"?, "priceCents"?, "durationDays"?, "coverage"?: "none|unlimited|limited", "classCredits"?: { grupal, fija, cita } | null, "active"?: boolean }`
+Dinero en **centavos CLP enteros** (sin decimales). Invariante de inmutabilidad: actualizar incrementa `version` y jamás altera `membership_periods` emitidos. Planes con `active = false` son rechazados en nuevas asignaciones (`409`).
 
 ## Memberships (Entrega 2)
 
@@ -111,12 +113,20 @@ Dinero en **centavos CLP enteros** (sin decimales). Respuesta `201` → `PlanDet
 | `GET /api/v1/memberships` | admin, recepcion, instructor | Listado con estado derivado |
 | `GET /api/v1/memberships/mine` | socio | Solo las propias |
 | `GET /api/v1/memberships/:id` | admin, recepcion, instructor, socio | Socio solo la propia (otras → 404) |
+| `POST /api/v1/memberships/:id/schedule-plan-change` | admin, recepcion | Programa cambio de plan para la siguiente renovación |
+| `POST /api/v1/memberships/:id/pauses` | admin | Registra pausa autorizada idempotente, extiende vigencia y cancela reservas del intervalo |
 
 Request `CreateMembershipRequest`: `{ "memberId", "planId" }`.
+Request `SchedulePlanChangeRequest`: `{ "nextPlanId": "<uuid>" | null }`.
+Request `CreateMembershipPauseRequest`: `{ "idempotencyKey": "<uuid>", "startsAt": "<iso>", "endsAt": "<iso>", "reason": "..." }`.
 La membresía nace **sin ventana de vigencia** (`state: "pending_payment"`); la ventana se
 abre con el **primer pago validado**. El `state` es **derivado** de los pagos validados en
 cada lectura: `pending_payment` (sin ventana) · `active` (vigente hoy) · `expired` (fin pasado).
-La renovación extiende desde el fin previo (sin huecos).
+La renovación extiende desde el fin previo (sin huecos). Si `nextPlanId` está definido, la renovación
+materializa el nuevo plan y limpia el campo.
+Las pausas registradas son idempotentes por `(organizationId, idempotencyKey)`, extienden `endsAt`/`endAt`
+por `extendedDays`, suspenden check-in y reservas durante el intervalo, y cancelan reservas futuras dentro
+de la pausa con restitución de créditos.
 
 ## Payments (Entrega 2 — REQ-2)
 

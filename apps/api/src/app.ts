@@ -30,6 +30,9 @@ import {
   CreateMembershipRequest,
   CreateOrganizationRequest,
   CreatePlanRequest,
+  UpdatePlanRequest,
+  SchedulePlanChangeRequest,
+  CreateMembershipPauseRequest,
   CreateSessionRequest,
   DecidePaymentRequest,
   MarkAttendanceRequest,
@@ -395,6 +398,15 @@ export async function buildServer(opts: AppOptions) {
     return reply.send({ data: row });
   });
 
+  app.patch<{ Params: { id: string } }>("/api/v1/plans/:id", async (req, reply) => {
+    requireRole(req.session, ["admin"]);
+    assertTenantContext(req.session);
+    const parsed = UpdatePlanRequest.safeParse(req.body);
+    if (!parsed.success) throw validationError({ issues: parsed.error.issues });
+    const row = await plansService.update(req.session.organizationId, req.params.id, parsed.data);
+    return reply.send({ data: row });
+  });
+
   // --- Memberships (admin/recepción asignan; socio lee las propias) -----------
   const membershipsService = new MembershipsService(opts.db);
 
@@ -409,6 +421,31 @@ export async function buildServer(opts: AppOptions) {
       parsed.data.planId,
     );
     return reply.status(201).send({ data: row });
+  });
+
+  app.post<{ Params: { id: string } }>(
+    "/api/v1/memberships/:id/schedule-plan-change",
+    async (req, reply) => {
+      requireRole(req.session, ["admin", "recepcion"]);
+      assertTenantContext(req.session);
+      const parsed = SchedulePlanChangeRequest.safeParse(req.body);
+      if (!parsed.success) throw validationError({ issues: parsed.error.issues });
+      const row = await membershipsService.schedulePlanChange(
+        req.session,
+        req.params.id,
+        parsed.data.nextPlanId,
+      );
+      return reply.send({ data: row });
+    },
+  );
+
+  app.post<{ Params: { id: string } }>("/api/v1/memberships/:id/pauses", async (req, reply) => {
+    requireRole(req.session, ["admin"]);
+    assertTenantContext(req.session);
+    const parsed = CreateMembershipPauseRequest.safeParse(req.body);
+    if (!parsed.success) throw validationError({ issues: parsed.error.issues });
+    const row = await membershipsService.createPause(req.session, req.params.id, parsed.data);
+    return reply.status(200).send({ data: row });
   });
 
   app.get("/api/v1/memberships", async (req: FastifyRequest, reply: FastifyReply) => {
