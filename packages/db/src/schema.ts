@@ -20,6 +20,7 @@ import {
   index,
   unique,
   check,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 
 /** Organization (tenant). One venue per organization in v1.0. */
@@ -156,7 +157,9 @@ export const members = pgTable(
     fullName: text("full_name").notNull(),
     contactEmail: text("contact_email"),
     contactVerifiedAt: timestamp("contact_verified_at", { withTimezone: true }),
-    adultResponsibleId: uuid("adult_responsible_id"),
+    adultResponsibleId: uuid("adult_responsible_id").references((): AnyPgColumn => members.id, {
+      onDelete: "set null",
+    }),
     /**
      * Static, opaque, globally-unique QR token for supervised ingress
      * (spec 007, SPEC:QR-TOKEN). Not sequential, carries no member/tenant
@@ -168,7 +171,10 @@ export const members = pgTable(
     qrRevokedAt: timestamp("qr_revoked_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("members_org_idx").on(t.organizationId)],
+  (t) => [
+    index("members_org_idx").on(t.organizationId),
+    index("members_adult_responsible_idx").on(t.adultResponsibleId),
+  ],
 );
 
 /** Short-lived proof bound to the authenticated member; only token hashes persist. */

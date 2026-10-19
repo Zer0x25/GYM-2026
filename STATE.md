@@ -50,19 +50,26 @@
 
 ## Meta actual — App GYM funcional (2026-10-19)
 
-Unidad activa: 017-catalogo-pausas-cambio-plan
+Unidad activa: 021-menores-correo-contratos — CERRADA (2026-10-19)
 
-## Ruta de cierre MVP validada (Unidades 017–022 y ADR 0010) — Lista para sesiones de codificación
+## Unidad 021 — Menores de edad, adaptador de correo y contratos (CAL-3) — Tier 1 — Cerrada (2026-10-19)
 
-- **Autoridad (2026-10-19):** el usuario solicitó generar todas las specs restantes validando primero la base de negocio (`A1..A5`) para ejecutar la codificación en las siguientes sesiones. Decisiones registradas en `docs/adr/0010-ciclo-comercial-agenda-exportaciones.md`.
-- **Secuencia de specs aprobadas (en espera de fase roja e implementación):**
-  1. `specs/017-catalogo-pausas-cambio-plan.md` (`Tier 1`, **unidad activa**): edición/versionado de `plans` sin mutar `membership_periods` emitidos; pausas autorizadas por `admin` con motivo que extienden `endsAt` y cancelan reservas dentro del rango pausado (devolviendo crédito); cambio de plan (`nextPlanId`) para el siguiente período renovado.
-  2. `specs/018-reprogramacion-agenda-citas.md` (`Tier 1`): reprogramación horaria de sesiones y citas (`TX-02` + `REVAL-01`), conservando reservas y créditos comprometidos si todos los inscritos mantienen cobertura en la nueva fecha (`409` en caso contrario).
-  3. `specs/019-abonos-parciales-conciliacion.md` (`Tier 1`): abonos parciales que ingresan a caja al validarse pero activan el `membership_period` y sus créditos solo al completar el `100%` del precio del plan; estado explícito de conciliación (`abierta | cuadrada | con_diferencia`).
-  4. `specs/020-exportaciones-operativas-csv.md` (`Tier 2`): exportaciones CSV por tenant para `admin` y `recepcion` (`members.csv`, `memberships.csv`, `attendance.csv`), sin exponer `qrToken`.
-  5. `specs/021-menores-correo-contratos.md` (`Tier 1`): vínculo obligatorio de menor a `adultResponsibleId` del mismo tenant (`D-05`) sin autogestión de contacto por el menor; adaptador de correo configurable por entorno (apagado por defecto sin secretos); sincronización completa de contratos `CAL-3` en `docs/api/README.md`.
-  6. `specs/022-aceptacion-ci-staging.md` (`Tier 1`): revisión humana del lote `010`–`021`, push autorizado para CI remota (`CAL-1`), despliegue en staging VPS con datos ficticios y prueba de backup/restore (`REQ-11`).
-- **Checkpoint para la próxima sesión:** iniciar codificación en `specs/017-catalogo-pausas-cambio-plan.md` comenzando por los tests rojos en `packages/contracts/src/contracts.test.ts`, `apps/api/src/memberships-lifecycle.integration.test.ts` y `apps/web/src/memberships-lifecycle.test.tsx`. Contador de falta de progreso: 0.
+- **Autoridad:** Usuario «Resuelve la Issue #3 (specs/021-menores-correo-contratos.md)» (2026-10-19); PRD `REQ-1`, `REQ-2`, `REQ-7`, `REQ-11`, `CAL-3`; ADR 0002 y ADR 0010. Commits locales autorizados, sin push a remoto.
+- **Entregado:**
+  1. *Base de datos y contratos:* Migración `0017_minor_guardian_constraints.sql` con constraint foreign key `ON DELETE SET NULL` e índice `members_adult_responsible_idx`. Tipos `CreateMemberRequest`, `UpdateMemberRequest`, `MemberRef`, `MemberDetail` con soporte de `isMinor`, `adultResponsibleId` y `adultResponsibleName`.
+  2. *Servicios y backend:* Validación en `MembersService` de pertenencia de tutor al mismo tenant, bloqueo de auto-referencia (400), cadena menor→menor (409) y tutor de otro tenant (404). Restricción en `ContactVerificationService` y `MembersService` impidiendo autogestión de contacto por menores (403 `MINOR_CONTACT_MANAGED_BY_GUARDIAN`), permitiendo actualización por staff con registro en `audit_log`. Endpoint `PATCH /api/v1/members/:id` montado en Fastify.
+  3. *Adaptador de correo:* Adaptador configurable en `email-delivery.ts` (`EMAIL_DELIVERY_MODE=disabled|http|webhook`, `EMAIL_FROM`, `EMAIL_TRANSPORT_URL`, `EMAIL_WEBHOOK_URL`). Deshabilitado por defecto en dev/CI (`capabilities: { passwordReset: false, contactVerification: false }`). Con transporte configurado activa capacidades, aplica timeout de 5s (`AbortSignal.timeout(5000)`) y maneja fallos respondiendo de forma segura 503 sin exponer URLs ni tokens.
+  4. *UI (apps/web):* `Panel.tsx` con checkbox de menor y selector de adulto responsable; `MemberDetail.tsx` mostrando ficha de menor con adulto responsable asociado; `Portal.tsx` ocultando botón y formulario de edición de contacto para menores con aviso informativo.
+  5. *Documentación y sincronización (CAL-3):* `docs/api/README.md` documenta el 100% de las rutas `/api/v1/*` de `app.ts` verificado mecánicamente por `apps/api/src/api-docs-sync.test.ts`. `.env.example` actualizado con variables de correo.
+- **Evidencia verificable:**
+  - `CA-1:` `pnpm --filter @gym/api exec vitest run src/members.integration.test.ts -t "BDD-1 & CA-1"` (1 passed) + `pnpm --filter @gym/contracts test` (12 passed).
+  - `CA-2:` `pnpm --filter @gym/api exec vitest run src/account-recovery.integration.test.ts -t "CA-2"` (1 passed) + `pnpm --filter @gym/api exec vitest run src/members.integration.test.ts -t "CA-2"` (1 passed).
+  - `CA-3:` `pnpm --filter @gym/api exec vitest run src/account-recovery.integration.test.ts -t "CA-3"` (1 passed).
+  - `CA-4:` `pnpm --filter @gym/web test src/minors-guardian.test.tsx` (3 passed) + `node scripts/e2e.mjs` (11 passed).
+  - `CA-5:` `pnpm --filter @gym/api test src/api-docs-sync.test.ts` (1 passed) + `./scripts/verify.sh` verde (lint, build, typecheck, tests en 4 workspaces).
+  - Cobertura: `node scripts/coverage.mjs` (64 passed, 97.23% statements).
+- **Contador de falta de progreso:** 0, sin bloqueos.
+- **Siguiente paso:** Revisión humana de cierre de la unidad 021. Continuar según la ruta MVP (`017`–`022`).
 
 ## Unidad 016 — Períodos y créditos por modalidad — Tier 1 — Implementada/verificada; revisión humana pendiente
 

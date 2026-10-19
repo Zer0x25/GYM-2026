@@ -35,6 +35,7 @@ describe.skipIf(!DATABASE_URL)("members integration", () => {
         name: SOCIO_A2.fullName,
         email: SOCIO_A2.email,
       },
+      { id: "staff-recepcion", name: "Staff Recepcion", email: "recepcion@gym.test" },
     ]);
     await db.insert(members).values([
       {
@@ -143,4 +144,110 @@ describe.skipIf(!DATABASE_URL)("members integration", () => {
     );
     expect(names.some((n) => n.includes("sauna"))).toBe(false);
   });
+
+  it("SPEC 021 BDD-1 & CA-1: alta y edición de menor exige adulto responsable del mismo tenant y valida invariantes", async () => {
+    const service = new MembersService(db);
+    const rowsA = await service.list({ organizationId: ORG_A, role: "admin" });
+    const ana = rowsA.find((r) => r.contactEmail === SOCIO_A1.email)!;
+    const memberB = (await db.select().from(members).where(eq(members.organizationId, ORG_B)))[0]!;
+
+    // Falta adulto responsable para menor -> 400
+    await expect(
+      service.create(
+        { organizationId: ORG_A, role: "recepcion" },
+        { fullName: "Menor Sin Adulto", isMinor: true },
+      ),
+    ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+
+    // Adulto de otro tenant -> 404
+    await expect(
+      service.create(
+        { organizationId: ORG_A, role: "recepcion" },
+        { fullName: "Menor Otro Tenant", isMinor: true, adultResponsibleId: memberB.id },
+      ),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+
+    // Alta válida vinculando a Ana (mismo tenant)
+    const menor = await service.create(
+      { organizationId: ORG_A, role: "recepcion" },
+      { fullName: "Menor Hijo", isMinor: true, adultResponsibleId: ana.id },
+    );
+    expect(menor.organizationId).toBe(ORG_A);
+    expect(menor.adultResponsibleId).toBe(ana.id);
+    expect(menor.isMinor).toBe(true);
+
+    // Cadena menor -> menor rechazada con 409 INVALID_ADULT_RESPONSIBLE
+    await expect(
+      service.create(
+        { organizationId: ORG_A, role: "recepcion" },
+        { fullName: "Nieto Menor", isMinor: true, adultResponsibleId: menor.id },
+      ),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+
+    // Auto-referencia menor -> menor rechazada con 400
+    await expect(
+      service.update(
+        { organizationId: ORG_A, role: "admin" },
+        menor.id,
+        { adultResponsibleId: menor.id },
+      ),
+    ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+
+    // Adulto que es responsable de un menor no puede ser marcado como menor (409)
+    await expect(
+      service.update(
+        { organizationId: ORG_A, role: "admin" },
+        ana.id,
+        { isMinor: true, adultResponsibleId: rowsA.find((r) => r.id !== ana.id)!.id },
+      ),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+  });
+
+  it("SPEC 021 CA-2: socio menor no puede autogestionar contacto (403); staff sí puede actualizar con auditoría", async () => {
+    const service = new MembersService(db);
+    const rowsA = await service.list({ organizationId: ORG_A, role: "admin" });
+    const ana = rowsA.find((r) => r.contactEmail === SOCIO_A1.email)!;
+
+    const menor = await service.create(
+      { organizationId: ORG_A, role: "admin" },
+      {
+        fullName: "Menor Protegido",
+        contactEmail: "menor@gym.test",
+        isMinor: true,
+        adultResponsibleId: ana.id,
+      },
+    );
+
+    // Menor en autogestión intenta borrar o modificar contacto -> 403 MINOR_CONTACT_MANAGED_BY_GUARDIAN
+    await expect(
+      service.updateContact(
+        { organizationId: ORG_A, role: "socio", memberId: menor.id },
+        menor.id,
+        null,
+      ),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+
+    await expect(
+      service.update(
+        { organizationId: ORG_A, role: "socio", memberId: menor.id },
+        menor.id,
+        { contactEmail: null },
+      ),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+
+    // Staff sí puede actualizar contacto del menor auditando el cambio
+    const updated = await service.updateContact(
+      { organizationId: ORG_A, role: "recepcion", accountId: "staff-recepcion" },
+      menor.id,
+      "tutor-nuevo@gym.test",
+    );
+    expect(updated.contactEmail).toBe("tutor-nuevo@gym.test");
+
+    // Verificar que existe la fila de auditoría para la modificación de contacto por staff
+    const audits = await db.execute(
+      sql`SELECT * FROM audit_log WHERE entity_id = ${menor.id} AND action LIKE 'member%'`,
+    );
+    expect(audits.length).toBeGreaterThanOrEqual(1);
+  });
+
 });

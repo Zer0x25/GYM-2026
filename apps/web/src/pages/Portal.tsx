@@ -98,7 +98,7 @@ export function Portal() {
     <section>
       <PageHead
         eyebrow={
-          data?.member.fullName ? `Hola, ${data.member.fullName.split(" ")[0]}` : "Tu gimnasio"
+          data?.member.fullName ? `Hola, ${data.member.fullName}` : "Tu gimnasio"
         }
         title="Mi acceso"
         description="Tu QR, tu membresía y tu próxima clase, siempre a mano."
@@ -168,21 +168,29 @@ export function Portal() {
             <article className="rounded-2xl border bg-card p-6">
               <div className="flex items-center justify-between">
                 <h2 className="text-sm font-semibold">Mi contacto</h2>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setEmail(data?.member.contactEmail ?? "");
-                    setContactOpen(!contactOpen);
-                  }}
-                >
-                  Editar
-                </Button>
+                {!data?.member.isMinor && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setEmail(data?.member.contactEmail ?? "");
+                      setContactOpen(!contactOpen);
+                    }}
+                  >
+                    Editar
+                  </Button>
+                )}
               </div>
               <p className="mt-2 break-all text-sm text-muted-foreground">
                 {data?.member.contactEmail ?? "Sin email de contacto"}
               </p>
-              {contactOpen && (
+              {data?.member.isMinor && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Contacto administrado por adulto responsable
+                  {data.member.adultResponsibleName ? ` (${data.member.adultResponsibleName})` : ""}.
+                </p>
+              )}
+              {!data?.member.isMinor && contactOpen && (
                 <form className="mt-4 space-y-3" onSubmit={save}>
                   <Label htmlFor="portal-email">Email de contacto</Label>
                   <Input

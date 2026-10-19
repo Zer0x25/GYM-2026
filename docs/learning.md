@@ -2,6 +2,12 @@
 
 > Formato mínimo: fecha, ID de unidad, hallazgo, evidencia, aplicación futura.
 
+## 2026-10-19 — Unidad 021 — Menores de edad, entrega segura de correo y sincronización de contratos
+
+- **Menores y adulto responsable:** Un socio menor en el gimnasio requiere obligatoriamente un tutor adulto del mismo tenant; la autogestión de contacto debe denegarse al menor autenticado (`403 MINOR_CONTACT_MANAGED_BY_GUARDIAN`) y recaer exclusivamente en staff/adulto con registro en `audit_log`. Evidencia: `members.integration.test.ts` y `account-recovery.integration.test.ts`.
+- **Adaptador de correo seguro:** El adaptador debe permanecer deshabilitado por defecto en dev/CI (`capabilities: { passwordReset: false, contactVerification: false }`) y, al activarse con transporte HTTP/webhook, aplicar `AbortSignal.timeout(5000)` y redactar URLs/tokens en respuestas de error 503 para evitar fugas de datos sensibles. Evidencia: `account-recovery.integration.test.ts`.
+- **Sincronización documental mecánica:** Verificar mecánicamente que cada ruta `/api/v1/*` de `app.ts` esté documentada con su verbo HTTP y ruta en `docs/api/README.md` (`api-docs-sync.test.ts`) previene desfasajes silenciosos entre el código del servidor y los contratos publicados.
+
 ## 2026-10-19 — Unidades 017–022 — Validación de base comercial y alcance acumulado de specs
 
 Separar una sesión de validación de reglas de negocio (`A1..A5` en `ADR 0010`) antes de codificar evita inventar políticas en pausas, reprogramaciones, abonos parciales, exportaciones y menores. Como `scripts/verify-scope.sh` compara el árbol de trabajo contra `origin/main` usando la sección `## 4. Archivos autorizados` de la `Unidad activa` en `STATE.md`, declarar en la unidad activa (`017`) y en las specs sucesivas (`018`–`022`) las rutas documentales del lote permite dejar todas las especificaciones creadas y verificadas con el gate en verde antes de escribir código.

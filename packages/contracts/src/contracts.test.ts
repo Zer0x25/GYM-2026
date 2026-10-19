@@ -4,6 +4,8 @@ import {
   ConfirmContactVerification,
   EmailCapabilities,
   CreateMemberRequest,
+  UpdateMemberRequest,
+  MemberDetail,
   CreateOrganizationRequest,
   CreatePlanRequest,
   ErrorCode,
@@ -13,6 +15,81 @@ import {
 } from "./index.js";
 
 describe("contracts", () => {
+  it("SPEC021 menor exige adultResponsibleId válido; rechaza falta de adulto o no-menor con adulto", () => {
+    const validUuid = "11111111-1111-4111-8111-111111111111";
+    // Minor requires adultResponsibleId
+    expect(
+      CreateMemberRequest.safeParse({ fullName: "Menor Uno", isMinor: true }).success,
+    ).toBe(false);
+    expect(
+      CreateMemberRequest.safeParse({
+        fullName: "Menor Uno",
+        isMinor: true,
+        adultResponsibleId: null,
+      }).success,
+    ).toBe(false);
+    expect(
+      CreateMemberRequest.safeParse({
+        fullName: "Menor Uno",
+        isMinor: true,
+        adultResponsibleId: validUuid,
+      }).success,
+    ).toBe(true);
+    // adultResponsibleId provided assumes isMinor: true
+    expect(
+      CreateMemberRequest.safeParse({
+        fullName: "Menor Uno",
+        adultResponsibleId: validUuid,
+      }).success,
+    ).toBe(true);
+    // Non-minor cannot have adultResponsibleId
+    expect(
+      CreateMemberRequest.safeParse({
+        fullName: "Adulto",
+        isMinor: false,
+        adultResponsibleId: validUuid,
+      }).success,
+    ).toBe(false);
+
+    // UpdateMemberRequest constraints
+    expect(
+      UpdateMemberRequest.safeParse({
+        isMinor: true,
+      }).success,
+    ).toBe(false);
+    expect(
+      UpdateMemberRequest.safeParse({
+        isMinor: true,
+        adultResponsibleId: validUuid,
+      }).success,
+    ).toBe(true);
+    expect(
+      UpdateMemberRequest.safeParse({
+        isMinor: false,
+        adultResponsibleId: validUuid,
+      }).success,
+    ).toBe(false);
+    expect(
+      UpdateMemberRequest.safeParse({
+        isMinor: false,
+        adultResponsibleId: null,
+      }).success,
+    ).toBe(true);
+
+    // MemberDetail shape
+    const detail = {
+      id: validUuid,
+      organizationId: validUuid,
+      fullName: "Menor",
+      contactEmail: "contacto@adulto.cl",
+      isMinor: true,
+      adultResponsibleId: validUuid,
+      adultResponsibleName: "Adulto Ana",
+      createdAt: new Date().toISOString(),
+    };
+    expect(MemberDetail.safeParse(detail).success).toBe(true);
+  });
+
   it("SPEC016 cuotas limitadas son completas, enteras y separadas por modalidad", () => {
     const plan = { name: "Limitado", priceCents: 10000, durationDays: 30, coverage: "limited" };
     for (const classCredits of [

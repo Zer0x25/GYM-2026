@@ -40,6 +40,8 @@ export function Panel() {
     [password, setPassword] = useState(""),
     [portal, setPortal] = useState(true),
     [planId, setPlanId] = useState(""),
+    [isMinor, setIsMinor] = useState(false),
+    [adultResponsibleId, setAdultResponsibleId] = useState(""),
     [formError, setFormError] = useState<string | null>(null);
   const membershipByMember = useMemo(() => {
     const map = new Map<string, Membership>();
@@ -68,7 +70,14 @@ export function Panel() {
           <span className="grid h-9 w-9 place-items-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
             {row.original.fullName.charAt(0)}
           </span>
-          <span className="font-medium">{row.original.fullName}</span>
+          <div className="flex items-center gap-2">
+            <span className="font-medium">{row.original.fullName}</span>
+            {row.original.isMinor && (
+              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                Menor
+              </span>
+            )}
+          </div>
         </div>
       ),
     },
@@ -124,7 +133,7 @@ export function Panel() {
     setFormError(null);
     try {
       let id: string;
-      if (portal && email) {
+      if (portal && email && !isMinor) {
         const result = await api.createSocio({
           name: fullName.trim(),
           email: email.trim(),
@@ -136,6 +145,8 @@ export function Panel() {
           await api.createMember({
             fullName: fullName.trim(),
             ...(email.trim() ? { contactEmail: email.trim() } : {}),
+            isMinor,
+            adultResponsibleId: isMinor && adultResponsibleId ? adultResponsibleId : null,
           })
         ).id;
       }
@@ -169,6 +180,8 @@ export function Panel() {
               onClick={() => {
                 setOpen(true);
                 setFormError(null);
+                setIsMinor(false);
+                setAdultResponsibleId("");
               }}
             >
               <Plus className="h-4 w-4" />
@@ -237,20 +250,21 @@ export function Panel() {
               <Input
                 id="member-email"
                 type="email"
-                required={portal}
+                required={portal && !isMinor}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />
             </div>
-            <label className="flex items-center gap-2 text-sm">
+            <label className={`flex items-center gap-2 text-sm ${isMinor ? "opacity-50" : ""}`}>
               <input
                 type="checkbox"
-                checked={portal}
+                checked={portal && !isMinor}
+                disabled={isMinor}
                 onChange={(e) => setPortal(e.target.checked)}
               />
               Crear acceso al portal del socio
             </label>
-            {portal && (
+            {portal && !isMinor && (
               <div>
                 <Label htmlFor="member-password">Contraseña inicial</Label>
                 <Input
@@ -267,6 +281,43 @@ export function Panel() {
                 </p>
               </div>
             )}
+            <div>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={isMinor}
+                  onChange={(e) => {
+                    setIsMinor(e.target.checked);
+                    if (e.target.checked) {
+                      setPortal(false);
+                    } else {
+                      setAdultResponsibleId("");
+                    }
+                  }}
+                />
+                Es menor de edad
+              </label>
+            </div>
+            {isMinor && (
+              <div>
+                <Select
+                  id="member-guardian"
+                  label="Adulto responsable"
+                  value={adultResponsibleId}
+                  onChange={(e) => setAdultResponsibleId(e.target.value)}
+                  required
+                >
+                  <option value="">Selecciona un adulto responsable…</option>
+                  {(data?.members ?? [])
+                    .filter((m) => !m.isMinor)
+                    .map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.fullName}
+                      </option>
+                    ))}
+                </Select>
+              </div>
+            )}
             <Select
               id="member-plan"
               label="Plan inicial"
@@ -280,7 +331,10 @@ export function Panel() {
                 </option>
               ))}
             </Select>
-            <Button type="submit" disabled={busy || !fullName.trim()}>
+            <Button
+              type="submit"
+              disabled={busy || !fullName.trim() || (isMinor && !adultResponsibleId)}
+            >
               {busy ? "Creando…" : "Crear socio"}
             </Button>
           </form>
