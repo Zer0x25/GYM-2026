@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { ArrowLeft, UserCheck } from "lucide-react";
@@ -10,6 +10,20 @@ import { PageHead, ErrorNotice, Loading, Select, Stat } from "../components/ui/p
 import { DataTable } from "../components/ui/data-table.js";
 import { Button } from "../components/ui/button.js";
 import { BookingStateBadge } from "../components/ui/badge.js";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "../components/ui/dialog.js";
+import { Input, Label } from "../components/ui/input.js";
+
+function localInput(d: Date) {
+  const date = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+  return date.toISOString().slice(0, 16);
+}
+
 export function SessionDetail() {
   const { id = "" } = useParams(),
     { session } = useSession();
@@ -24,7 +38,33 @@ export function SessionDetail() {
   }, [id]);
   const { data, error, loading, reload } = useResource(loader);
   const [memberId, setMemberId] = useState(""),
-    [busy, setBusy] = useState<string | null>(null);
+    [busy, setBusy] = useState<string | null>(null),
+    [rescheduleOpen, setRescheduleOpen] = useState(false),
+    [newStart, setNewStart] = useState(""),
+    [newEnd, setNewEnd] = useState(""),
+    [rescheduleReason, setRescheduleReason] = useState(""),
+    [rescheduleError, setRescheduleError] = useState<string | null>(null);
+
+  async function handleReschedule(e: FormEvent) {
+    e.preventDefault();
+    setBusy("reschedule");
+    setRescheduleError(null);
+    try {
+      await api.rescheduleSession(id, {
+        startsAt: new Date(newStart).toISOString(),
+        endsAt: new Date(newEnd).toISOString(),
+        reason: rescheduleReason.trim() ? rescheduleReason.trim() : undefined,
+      });
+      toast.success("Sesión reprogramada exitosamente");
+      setRescheduleOpen(false);
+      await reload();
+    } catch (e) {
+      setRescheduleError(e instanceof Error ? e.message : "No se pudo reprogramar");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function attendance(id: string, outcome: "asistio" | "ausencia") {
     setBusy(id);
     try {
@@ -96,6 +136,13 @@ export function SessionDetail() {
   if (loading && !data) return <Loading />;
   if (!data) return <ErrorNotice message={error} retry={() => void reload()} />;
   const booked = data.bookings.filter((b) => b.state === "confirmada").length;
+  const canReschedule =
+    (session?.role === "admin" ||
+      session?.role === "recepcion" ||
+      (session?.role === "instructor" &&
+        data.session.instructorId === session?.user?.id &&
+        (data.session.type === "cita" || data.session.type === "bloqueo"))) &&
+    data.session.state === "programada";
   return (
     <section>
       <Link
@@ -109,7 +156,37 @@ export function SessionDetail() {
         eyebrow="Sesión"
         title={data.description?.title ?? "Detalle de sesión"}
         description={`${data.description?.instructorName ?? "Instructor"} · ${new Date(data.session.startsAt).toLocaleString("es-CL", { dateStyle: "medium", timeStyle: "short" })}`}
+        actions={
+          canReschedule ? (
+            <Button
+              variant="outline"
+              onClick={() => {
+                setNewStart(localInput(new Date(data.session.startsAt)));
+                setNewEnd(localInput(new Date(data.session.endsAt)));
+                setRescheduleReason("");
+                setRescheduleError(null);
+                setRescheduleOpen(true);
+              }}
+            >
+              Reprogramar sesión
+            </Button>
+          ) : undefined
+        }
       />
+      {(data.session.rescheduledCount ?? 0) > 0 && (
+        <div className="mb-4 inline-flex items-center gap-1.5 rounded-full border border-amber-500/20 bg-amber-500/10 px-3 py-1 text-xs font-medium text-amber-600 dark:text-amber-400">
+          <span>Horario reprogramado</span>
+          {data.session.rescheduledFromStartsAt && (
+            <span className="text-muted-foreground">
+              · Anterior:{" "}
+              {new Date(data.session.rescheduledFromStartsAt).toLocaleString("es-CL", {
+                dateStyle: "short",
+                timeStyle: "short",
+              })}
+            </span>
+          )}
+        </div>
+      )}
       <ErrorNotice message={error} />
       <div className="mb-6 grid gap-4 sm:grid-cols-3">
         <Stat label="Reservas confirmadas" value={booked} note="Incluye asistencia registrada" />
@@ -154,6 +231,55 @@ export function SessionDetail() {
         columns={columns}
         empty="Aún no hay reservas para esta sesión."
       />
+      <Dialog open={rescheduleOpen} onOpenChange={setRescheduleOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reprogramar sesión</DialogTitle>
+            <DialogDescription>
+              El nuevo horario debe estar en el futuro y no solaparse con otros compromisos del instructor.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleReschedule} className="space-y-4">
+            <ErrorNotice message={rescheduleError} />
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <Label htmlFor="reschedule-start">Nuevo inicio</Label>
+                <Input
+                  id="reschedule-start"
+                  type="datetime-local"
+                  required
+                  value={newStart}
+                  onChange={(e) => setNewStart(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label htmlFor="reschedule-end">Nuevo fin</Label>
+                <Input
+                  id="reschedule-end"
+                  type="datetime-local"
+                  required
+                  min={newStart}
+                  value={newEnd}
+                  onChange={(e) => setNewEnd(e.target.value)}
+                />
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="reschedule-reason">Motivo (opcional)</Label>
+              <Input
+                id="reschedule-reason"
+                type="text"
+                placeholder="Motivo del cambio de horario"
+                value={rescheduleReason}
+                onChange={(e) => setRescheduleReason(e.target.value)}
+              />
+            </div>
+            <Button type="submit" disabled={busy !== null || !newStart || !newEnd}>
+              {busy === "reschedule" ? "Reprogramando…" : "Confirmar reprogramación"}
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }

@@ -16,6 +16,7 @@ import {
   RegisterPaymentRequest,
   RegisterFinancialAdjustmentRequest,
   AttendanceReportQuery,
+  RescheduleSessionRequest,
 } from "./index.js";
 
 describe("contracts", () => {
@@ -313,4 +314,53 @@ describe("contracts", () => {
       AttendanceReportQuery.safeParse({ from: "2026-02-30", to: "2026-03-01" }).success,
     ).toBe(false);
   });
+
+  it("SPEC018 CA-1 RescheduleSessionRequest valida startsAt, endsAt > startsAt y reason opcional", () => {
+    const valid = {
+      startsAt: "2026-11-01T10:00:00.000Z",
+      endsAt: "2026-11-01T11:00:00.000Z",
+      reason: "Cambio de horario solicitado por el alumno",
+    };
+    expect(RescheduleSessionRequest.safeParse(valid).success).toBe(true);
+    expect(
+      RescheduleSessionRequest.safeParse({
+        startsAt: "2026-11-01T10:00:00.000Z",
+        endsAt: "2026-11-01T11:00:00.000Z",
+      }).success,
+    ).toBe(true);
+    // endsAt <= startsAt
+    expect(
+      RescheduleSessionRequest.safeParse({
+        startsAt: "2026-11-01T10:00:00.000Z",
+        endsAt: "2026-11-01T10:00:00.000Z",
+      }).success,
+    ).toBe(false);
+    expect(
+      RescheduleSessionRequest.safeParse({
+        startsAt: "2026-11-01T11:00:00.000Z",
+        endsAt: "2026-11-01T10:00:00.000Z",
+      }).success,
+    ).toBe(false);
+    // reason vacío o demasiado largo (>500)
+    expect(
+      RescheduleSessionRequest.safeParse({
+        ...valid,
+        reason: "",
+      }).success,
+    ).toBe(false);
+    expect(
+      RescheduleSessionRequest.safeParse({
+        ...valid,
+        reason: "a".repeat(501),
+      }).success,
+    ).toBe(false);
+    // startsAt inválido
+    expect(
+      RescheduleSessionRequest.safeParse({
+        startsAt: "no-date",
+        endsAt: "2026-11-01T11:00:00.000Z",
+      }).success,
+    ).toBe(false);
+  });
 });
+

@@ -2,6 +2,12 @@
 
 > Formato mínimo: fecha, ID de unidad, hallazgo, evidencia, aplicación futura.
 
+## 2026-10-19 — Unidad 018 — Reprogramación de agenda con advisory locks y revalidación de cobertura
+
+- **Advisory lock en reprogramación (TX-02):** Un `FOR UPDATE` sobre la fila de la sesión a reprogramar protege la fila misma, pero no previene que una creación concurrente inserte otra sesión en el mismo horario del instructor. Usar `pg_advisory_xact_lock` sobre `(organizationId, instructorId)` tanto en creación como en reprogramación serializa completamente la agenda del instructor ante colisiones concurrentes (200 vs 409 `SESSION_OVERLAP`). Evidencia: `sessions-reschedule.integration.test.ts`.
+- **Revalidación atómica de cobertura (REVAL-01):** Reprogramar sesiones con inscritos requiere validar que ningún socio pierda vigencia de período, caiga en una pausa de membresía activa (spec 017) o tenga solape con otra reserva confirmada en la nueva fecha. Si algún inscrito queda descubierto, abortar atómicamente con 409 (`RESCHEDULE_MEMBER_UNCOVERED`) preserva la integridad del horario sin desbalancear el ledger de créditos (`credit_movements`). Evidencia: `sessions-reschedule.integration.test.ts`.
+- **Aislamiento en pruebas E2E con cambios de usuario:** Al verificar en una misma prueba de extremo a extremo el flujo de staff y la proyección en el portal del socio, usar un contexto de navegador nuevo (`browser.newContext()`) aísla cookies y storage, previniendo timeouts por persistencia de la sesión previa en rutas protegidas. Evidencia: `operation.spec.ts` (14/14).
+
 ## 2026-10-19 — Unidad 021 — Menores de edad, entrega segura de correo y sincronización de contratos
 
 - **Menores y adulto responsable:** Un socio menor en el gimnasio requiere obligatoriamente un tutor adulto del mismo tenant; la autogestión de contacto debe denegarse al menor autenticado (`403 MINOR_CONTACT_MANAGED_BY_GUARDIAN`) y recaer exclusivamente en staff/adulto con registro en `audit_log`. Evidencia: `members.integration.test.ts` y `account-recovery.integration.test.ts`.

@@ -457,6 +457,25 @@ export const CreateSessionRequest = z.object({
 });
 export type CreateSessionRequest = z.infer<typeof CreateSessionRequest>;
 
+export const RescheduleSessionRequest = z
+  .object({
+    startsAt: z.string().datetime({ offset: true }),
+    endsAt: z.string().datetime({ offset: true }),
+    reason: z.string().trim().min(1).max(500).optional(),
+  })
+  .superRefine((val, ctx) => {
+    const start = new Date(val.startsAt).getTime();
+    const end = new Date(val.endsAt).getTime();
+    if (isNaN(start) || isNaN(end) || end <= start) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["endsAt"],
+        message: "endsAt debe ser posterior a startsAt",
+      });
+    }
+  });
+export type RescheduleSessionRequest = z.infer<typeof RescheduleSessionRequest>;
+
 export const SessionDetail = z.object({
   id: z.string().uuid(),
   organizationId: z.string().uuid(),
@@ -470,8 +489,12 @@ export const SessionDetail = z.object({
   /** Confirmed bookings count (derived; drives the last-slot check). */
   confirmedCount: z.number().int(),
   createdAt: z.string(),
+  rescheduledAt: z.string().nullable().optional(),
+  rescheduledFromStartsAt: z.string().nullable().optional(),
+  rescheduledCount: z.number().int().optional(),
 });
 export type SessionDetail = z.infer<typeof SessionDetail>;
+
 
 export const CreateBookingRequest = z.object({
   sessionId: z.string().uuid(),
