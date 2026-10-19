@@ -48,9 +48,20 @@
 
 - Falta de progreso: contador 0, sin bloqueo.
 
-## Meta actual — App GYM funcional (2026-10-19)
+## Meta actual — Preparación de despliegue y controles de piloto G2 (2026-10-19)
 
-Unidad activa: 022-aceptacion-ci-staging — CERRADA (2026-10-19)
+Unidad activa: 023-empaquetado-produccion-bootstrap-g2
+
+## Unidad 023 — Empaquetado de producción, bootstrap limpio y controles de piloto G2 — Tier 1 — Implementada y verificada (2026-10-19)
+
+- **Autoridad:** Decisión explícita del usuario (`A1..A4`, «higene limpiamo los wortree... y pasamos G2»); [ADR 0011](docs/adr/0011-arranque-piloto-g2-empaquetado-controles.md) y [specs/023-empaquetado-produccion-bootstrap-g2.md](specs/023-empaquetado-produccion-bootstrap-g2.md).
+- **Higiene de repositorio:** Eliminados los 8 worktrees temporales (incluidos los 2 huérfanos `claim_open_spec` y `lock_active_spec_status`), las 8 ramas locales ya fusionadas y las 5 ramas remotas fusionadas en `origin`.
+- **Entregado y verificado (CA-1..CA-4):**
+  1. `apps/api/src/bootstrap-org.ts` (`pnpm bootstrap:org`): aprovisiona de forma idempotente únicamente la organización real y su cuenta inicial `admin` (`>= 10` caracteres), dejando `0` filas en `members`, `plans`, `memberships`, `payments` y `cash_sessions`.
+  2. Guardia `ALLOW_MINOR_MEMBERS` en `MembersService`: cuando `ALLOW_MINOR_MEMBERS=false` (default en `compose.prod.yaml`), bloquea con `409 MINOR_REGISTRATION_DISABLED` el alta o conversión de menores hasta cierre legal `D-05` o acta física.
+  3. Artefactos de producción: `Dockerfile` multi-stage, `.dockerignore`, `compose.prod.yaml`, `Caddyfile`, `scripts/backup-db.sh` y `scripts/restore-db.sh` (`bash -n` salida 0).
+  4. Suite `apps/api/src/bootstrap-g2.integration.test.ts` (3/3) + `members.integration.test.ts` (10/10) contra PostgreSQL real y gate `./scripts/verify.sh` en verde.
+- **Siguiente paso:** Desplegar en el VPS Linux de destino siguiendo la sección 5 de `docs/operations/runbook.md`.
 
 ## Unidad 022 — Revisión humana Tier 1, CI remota, staging VPS y cierre G1 — Tier 1 — Cerrada (2026-10-19)
 

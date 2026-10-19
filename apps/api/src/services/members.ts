@@ -69,6 +69,12 @@ function toMemberRow(row: {
   };
 }
 
+function isMinorRegistrationAllowed(): boolean {
+  const raw = process.env.ALLOW_MINOR_MEMBERS?.trim().toLowerCase();
+  if (raw === "false" || raw === "0") return false;
+  return true;
+}
+
 export class MembersService {
   constructor(private readonly db: Database) {}
 
@@ -105,6 +111,13 @@ export class MembersService {
 
   /** Creates a member inside the caller's organization. */
   async create(actor: MemberActor, input: CreateMemberInput): Promise<MemberRow> {
+    if (
+      (input.isMinor === true ||
+        (input.adultResponsibleId !== undefined && input.adultResponsibleId !== null)) &&
+      !isMinorRegistrationAllowed()
+    ) {
+      throw conflict("MINOR_REGISTRATION_DISABLED");
+    }
     if (input.isMinor && !input.adultResponsibleId) {
       throw validationError({ message: "adultResponsibleId es obligatorio para un menor" });
     }
@@ -177,6 +190,10 @@ export class MembersService {
     const isBecomingMinor =
       input.isMinor === true ||
       (input.adultResponsibleId !== undefined && input.adultResponsibleId !== null);
+
+    if (isBecomingMinor && !isMinorRegistrationAllowed()) {
+      throw conflict("MINOR_REGISTRATION_DISABLED");
+    }
 
     if (
       input.isMinor === true &&

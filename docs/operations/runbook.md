@@ -197,7 +197,7 @@ volumes:
 }
 ```
 
-### 4. Secuencia de despliegue en Staging
+### 4. Secuencia de despliegue en Staging (con datos ficticios)
 
 ```bash
 # 1) Clonar repositorio y seleccionar SHA o tag auditado
@@ -221,6 +221,31 @@ docker compose -f compose.staging.yaml up -d --wait
 # 6) Health check
 curl -fsS https://${STAGING_HOST}/health
 # Respuesta esperada: {"status":"ok"}
+```
+
+### 5. Despliegue de Producción / Piloto G2 (`compose.prod.yaml` + `pnpm bootstrap:org`)
+
+En el piloto G2 con datos reales **NUNCA se ejecuta `pnpm seed:dev`**. Se utiliza `compose.prod.yaml`, `Dockerfile`, `Caddyfile` y `pnpm bootstrap:org` (Spec 023, ADR 0011):
+
+```bash
+# 1) Preparar archivo de variables fuera del repo (/etc/gym/.env.prod, modo 0600)
+#    con POSTGRES_PASSWORD, AUTH_SECRET (>=32 chars), PUBLIC_HOST,
+#    ALLOW_MINOR_MEMBERS=false, EMAIL_DELIVERY_MODE=disabled,
+#    BOOTSTRAP_ORG_NAME, BOOTSTRAP_ADMIN_EMAIL, BOOTSTRAP_ADMIN_PASSWORD, BOOTSTRAP_ADMIN_NAME.
+
+# 2) Compilar frontend estático y levantar contenedores de producción
+pnpm install --frozen-lockfile
+pnpm -r build
+docker compose --env-file /etc/gym/.env.prod -f compose.prod.yaml up -d --build --wait
+
+# 3) Aplicar migraciones e inicializar únicamente la organización real y el primer admin
+set -a && source /etc/gym/.env.prod && set +a
+DATABASE_URL="postgres://${POSTGRES_USER:-gym}:${POSTGRES_PASSWORD}@127.0.0.1:5432/${POSTGRES_DB:-gym_prod}" pnpm db:migrate
+DATABASE_URL="postgres://${POSTGRES_USER:-gym}:${POSTGRES_PASSWORD}@127.0.0.1:5432/${POSTGRES_DB:-gym_prod}" pnpm bootstrap:org
+
+# 4) Backup y verificación automatizada en el VPS
+PG_CONTAINER="gym-2026-postgres-1" POSTGRES_DB="${POSTGRES_DB:-gym_prod}" ./scripts/backup-db.sh /var/backups/gym/gym_prod.dump
+PG_CONTAINER="gym-2026-postgres-1" ./scripts/restore-db.sh /var/backups/gym/gym_prod.dump gym_restore_check
 ```
 
 ## Backup y restore (REQ-11, SPEC:BACKUP)

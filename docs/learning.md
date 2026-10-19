@@ -2,6 +2,13 @@
 
 > Formato mínimo: fecha, ID de unidad, hallazgo, evidencia, aplicación futura.
 
+## 2026-10-19 — Unidad 023 — Empaquetado de producción, bootstrap limpio de organización y controles G2
+
+- **Hallazgo (Bootstrap de producción idempotente vs. seed de desarrollo):** El comando `pnpm seed:dev` crea datos ficticios (planes, socios, sesiones y turnos de caja abiertos) útiles para pruebas locales y E2E, pero inapropiados para el arranque del piloto en VPS real (G2). Separar `pnpm bootstrap:org` (`apps/api/src/bootstrap-org.ts`) permite inicializar o reutilizar de forma idempotente únicamente la organización (`organizations.slug`) y el usuario administrador inicial con membresía `admin` verificando que el recuento de socios, planes y turnos de caja permanezca intacto.
+- **Hallazgo (Bloqueo configurable de menores por defecto en piloto):** Mientras el texto legal de `D-05` siga en revisión o el gimnasio prefiera operar inicialmente solo con mayores de edad, la guarda `ALLOW_MINOR_MEMBERS=false` por defecto en `compose.prod.yaml` rechaza con `409 MINOR_REGISTRATION_DISABLED` tanto el alta directa (`MembersService.create`) como la conversión posterior por edición de fecha de nacimiento (`MembersService.update`), sin alterar el flujo de `adultResponsibleId` (`021`) cuando se habilita `ALLOW_MINOR_MEMBERS=true`.
+- **Evidencia:** `apps/api/src/bootstrap-g2.integration.test.ts` (3/3 tests en PostgreSQL real), `apps/api/src/members.integration.test.ts` (10/10 tests), `bash -n scripts/backup-db.sh scripts/restore-db.sh` y `./scripts/verify.sh` en verde.
+- **Aplicación futura:** En el aprovisionamiento del VPS real de G2, ejecutar siempre `pnpm db:migrate && pnpm bootstrap:org` y conservar `ALLOW_MINOR_MEMBERS=false` y `EMAIL_DELIVERY_MODE=disabled` hasta habilitar formalmente la operación con menores o el proveedor SMTP/API.
+
 ## 2026-10-19 — Unidad 022 — Cierre G1, verificación en CI remota y prueba de backup/restore
 
 - **Hallazgo (Paridad en verificación de backup/restore):** La ejecución de `pg_dump -Fc` y `pg_restore` sobre una base de datos limpia (`gym_restore_check`) debe contrastar no solo el código de salida de PostgreSQL sino una verificación de paridad relacional completa (conteos por tabla en `organizations`, `members`, `payments`, `sessions`, `user` y consulta de humo de agregados de negocio como socios con pagos vinculados). Ejecutar el restore sin propietarios (`--no-owner`) previene errores de asignación de roles de sistema entre entornos con distintos usuarios administradores.

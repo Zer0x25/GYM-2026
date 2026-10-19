@@ -15,6 +15,7 @@
     "test": "pnpm -r test",
     "verify": "./scripts/verify.sh",
     "seed:dev": "pnpm --filter @gym/api seed:dev",
+    "bootstrap:org": "pnpm --filter @gym/api bootstrap:org",
     "db:generate": "pnpm --filter @gym/db db:generate",
     "db:migrate": "pnpm --filter @gym/db db:migrate",
     "dev": "node scripts/dev.mjs",
