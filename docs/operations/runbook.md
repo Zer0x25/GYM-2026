@@ -431,3 +431,36 @@ Aplicar 0013_membership_credits con `pnpm db:migrate` antes de API nueva. Migrac
 Cada período conserva condiciones del catálogo al validarse; cambiar catálogo no reescribe períodos confirmados. Renovaciones concurrentes serializan fechas y mantienen cobertura actual. Reversión conserva tablas/asientos y relaciones, detener nuevas reservas limitadas y validaciones financieras hasta operar con versión compatible; no borrar movimientos ni recrear períodos para corregir saldos.
 
 Portal/ficha muestran saldo por modalidad/período y reclamos vencidos. AC-215 requiere revisión administrativa sin prórroga/traslado; autorización de compensación comercial y su interfaz de resolución siguen pendientes. Staff puede `POST /api/v1/members/:id/bookings/revalidate` para cancelar futuras sin cobertura; se aplica también al asistir y al cancelar sesión. Integrar ese control en cada futuro comando de pérdida confirmada, sin simular que ya existen pausas/revocaciones de membresía o una ejecución periódica. No usar revalidación para borrar reservas históricas.
+
+## Unidad 027 — Diagnóstico operativo de producción, smoke-check y cierre G2
+
+### Sondas de salud y preparación
+
+- **`GET /health`:** Sonda básica de vida (liveness) del proceso Fastify en puerto 3000. Retorna `200 { "status": "ok" }`.
+- **`GET /health/ready`:** Sonda profunda de preparación (readiness) para orquestador (Docker Compose / Caddy). Ejecuta `SELECT 1` sobre la conexión real a PostgreSQL. Responde `200 { "status": "ready", "db": "ok" }` si la base de datos está disponible; en caso de caída o desconexión, responde `503 SERVICE_UNAVAILABLE` sin exponer credenciales ni cadenas de conexión.
+
+### Estado consolidado del sistema para administración
+
+- **`GET /api/v1/admin/system-status`:** Exclusivo para administradores autenticados de cada organización.
+  - Entrega el estado consolidado de controles G2:
+    - `minorPolicy`: estado de habilitación de menores (`enabled`, `orgEnabled`, `serverLocked` bajo `ALLOW_MINOR_MEMBERS`).
+    - `emailDelivery`: modo de entrega (`disabled` | `configured`), disponibilidad de reseteo de contraseña y verificación de contacto.
+    - `offline`: habilitación de contingencia, vigencia en horas (`72h`), y conteos de dispositivos físicos habilitados y revocados.
+    - `supportAccess`: número de concesiones temporales de soporte técnico activas (`D-06`).
+    - `serverTime`: marca de tiempo ISO sincronizada del servidor.
+  - Aislamiento estricto multi-tenant: ninguna organización puede inspeccionar o inferir datos de otra.
+
+### Smoke-check post-despliegue en VPS
+
+Script automatizado `scripts/smoke-prod.sh` para verificar el estado de la aplicación inmediatamente tras desplegar o actualizar contenedores en producción:
+
+```sh
+# Ejecución local o contra VPS
+BASE_URL="http://localhost:3000" ./scripts/smoke-prod.sh
+```
+
+Verificaciones ejecutadas por el script:
+1. `GET /health` responde HTTP 200 con `{ status: "ok" }`.
+2. `GET /health/ready` responde HTTP 200 con `{ status: "ready", db: "ok" }`.
+3. `GET /api/v1/admin/system-status` rechaza peticiones anónimas con HTTP 401 y código `UNAUTHENTICATED`.
+

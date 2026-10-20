@@ -30,6 +30,7 @@ import {
   DeviceDetail,
   MinorPolicyResponse,
   UpdateMinorPolicyRequest,
+  SystemStatusResponse,
 } from "./index.js";
 
 describe("contracts", () => {
@@ -670,5 +671,78 @@ describe("contracts", () => {
     };
     expect(DeviceDetail.safeParse(detail).success).toBe(true);
   });
+
+  it("SPEC027 SystemStatusResponse valida estructura de diagnóstico operativo de producción G2", () => {
+    const valid = {
+      organization: {
+        id: "11111111-1111-4111-8111-111111111111",
+        name: "Gym Piloto",
+      },
+      minorPolicy: {
+        enabled: true,
+        orgEnabled: true,
+        serverLocked: false,
+      },
+      emailDelivery: {
+        mode: "configured" as const,
+        passwordReset: true,
+        contactVerification: true,
+      },
+      offline: {
+        enabled: true,
+        freshnessHours: 72,
+        enabledDevicesCount: 2,
+        revokedDevicesCount: 1,
+      },
+      supportAccess: {
+        activeGrantsCount: 3,
+      },
+      serverTime: new Date().toISOString(),
+    };
+
+    expect(SystemStatusResponse.safeParse(valid).success).toBe(true);
+
+    // Missing organization fails
+    expect(SystemStatusResponse.safeParse({ ...valid, organization: undefined }).success).toBe(false);
+
+    // Invalid organization uuid fails
+    expect(
+      SystemStatusResponse.safeParse({
+        ...valid,
+        organization: { id: "not-a-uuid", name: "Gym" },
+      }).success,
+    ).toBe(false);
+
+    // Negative counts fail
+    expect(
+      SystemStatusResponse.safeParse({
+        ...valid,
+        offline: { ...valid.offline, enabledDevicesCount: -1 },
+      }).success,
+    ).toBe(false);
+    expect(
+      SystemStatusResponse.safeParse({
+        ...valid,
+        supportAccess: { activeGrantsCount: -1 },
+      }).success,
+    ).toBe(false);
+
+    // Invalid emailDelivery mode fails
+    expect(
+      SystemStatusResponse.safeParse({
+        ...valid,
+        emailDelivery: { ...valid.emailDelivery, mode: "unknown" },
+      }).success,
+    ).toBe(false);
+
+    // Invalid datetime fails
+    expect(
+      SystemStatusResponse.safeParse({
+        ...valid,
+        serverTime: "not-a-datetime",
+      }).success,
+    ).toBe(false);
+  });
 });
+
 

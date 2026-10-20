@@ -1,6 +1,6 @@
 # Spec 027 — Diagnóstico operativo de producción, smoke-check post-despliegue y cierre de preparación G2
 
-Estado: Abierta — lista para implementación (Ola 2 G2 — ejecutar tras fusionar 024, 025 y 026)
+Estado: Cerrada — implementada y verificada
 Nivel: Tier 1 — verificación integral de controles G2 (`D-05`, `D-06`, `P-09.3`), sondas de salud/diagnóstico de producción, sincronización documental (`CAL-3`) y sello de preparación de piloto en VPS (`REQ-1..REQ-11`).
 Autoridad: decisión explícita del usuario 2026-10-19 (`A1`, `A2`); [PRD.md](../PRD.md) `REQ-1..REQ-11`, `CAL-1..CAL-3`; [ADR 0002](../docs/adr/0002-arquitectura-base.md), [ADR 0011](../docs/adr/0011-arranque-piloto-g2-empaquetado-controles.md) y [ADR 0012](../docs/adr/0012-controles-operativos-juridicos-g2.md). Commits locales autorizados; revisión humana al cierre.
 Contexto (Notion): https://app.notion.com/p/3f529b8ebe2981d6a2e8dce35e0920c3
@@ -78,4 +78,7 @@ Escenario BDD-1: Verificación de salud profunda y estado de controles G2 por te
 
 ## 6. Evidencia y checkpoint
 
-- Pendiente de ejecución por el agente asignado a la Issue de la Unidad `027` tras fusionar la Ola 1 (`024`, `025`, `026`).
+- **CA-1:** `pnpm --filter @gym/api exec vitest run src/system-status-g2.integration.test.ts` → 8/8 tests pasados en PostgreSQL real `gym_test_system_status_g2`, validando `GET /health/ready` (`200` y `503` en caída de BD) y `GET /api/v1/admin/system-status` con aislamiento tenant, roles `admin` vs `recepcion`/`socio` (`403`) y anónimo (`401`).
+- **CA-2:** `bash -n scripts/smoke-prod.sh` (salida 0) y ejecución automatizada de humo en `src/system-status-g2.integration.test.ts` → script ejecutable (`chmod +x`), comprueba `/health`, `/health/ready` y rechazo anónimo `401` en `/api/v1/admin/system-status` con código de salida 0.
+- **CA-3:** `pnpm --filter @gym/api exec vitest run src/api-docs-sync.test.ts` (1 pasado, 100% rutas sincronizadas), `pnpm test:coverage` (77 tests pasados, 96.96% stmts, 96.96% lines superando el umbral `>= 80%`), y `./scripts/verify.sh` con salida 0.
+- **CA-4:** Actualización documental de `docs/operations/runbook.md` (sección diagnósticos operativos y smoke check), `docs/product/aceptacion-mvp.md` (matriz de preparación y controles G2 cerrada) y `STATE.md` (unidad 027 documentada y checkpoint verificado).

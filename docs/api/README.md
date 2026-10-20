@@ -22,6 +22,13 @@ El backend es autoridad: la UI nunca autoriza por sí sola.
 
 Sin autenticación. `200` → `{ "status": "ok" }`.
 
+### `GET /health/ready`
+
+Sin autenticación. Sonda de preparación para orquestador / reverse proxy.
+Verifica conectividad real con la base de datos PostgreSQL (`SELECT 1`).
+- `200` → `{ "status": "ready", "db": "ok" }`
+- `503` → `SERVICE_UNAVAILABLE` si la base de datos no responde.
+
 ## Auth (Better Auth, `/api/auth/*`)
 
 | Endpoint | Uso |
@@ -527,5 +534,51 @@ Invariantes (`D-06`, `REQ-1`, `REQ-11`):
 - **Concesión explícita y acotada:** solo `admin` crea concesiones para su organización (`15..1440` minutos). El token efímero se retorna una única vez en la respuesta de creación; la base de datos almacena exclusivamente `token_hash` (SHA-256).
 - **Revocación inmediata y aislamiento multi-tenant:** el administrador puede revocar una concesión en cualquier momento; intentos de revocar concesiones de otro tenant responden `404 NOT_FOUND` (anti-enumeración). Cada creación y revocación audita `support.grant.create` y `support.grant.revoke` en `audit_log`.
 - **Diagnóstico acotado sin exposición de secretos ni PII:** `GET /api/v1/support/diagnostic-summary` valida la cabecera `x-support-grant-token`. Tokens inválidos, expirados o revocados responden `401 UNAUTHENTICATED`. Proyecta únicamente metadatos agregados (identificador y nombre de org, conteos de socios/planes/membresías/outbox, estado de sesión de caja y política offline). Cada lectura válida actualiza `last_used_at` y audita `support.diagnostic.read` en la misma transacción.
+
+## Unidad 027 — Diagnóstico operativo de producción y cierre G2
+
+Rutas v1:
+
+| Ruta | Roles | Notas |
+|---|:--:|---|
+| `GET /api/v1/admin/system-status` | admin | Resumen consolidado de controles G2 de la organización |
+
+Invariantes (`REQ-1`, `REQ-11`, `CAL-3`):
+
+- **Acceso exclusivo y multi-tenant:** requiere sesión con rol `admin` (`403` para otros roles, `401` sin autenticación). Los conteos de equipos, concesiones y políticas corresponden estrictamente a la organización del administrador autenticado.
+- **Sin exposición de secretos ni credenciales:** no expone secretos de entorno (`AUTH_SECRET`, contraseñas de base de datos) ni datos personales identificables.
+- **Forma de respuesta (`SystemStatusResponse`):**
+
+```json
+{
+  "data": {
+    "organization": {
+      "id": "<uuid>",
+      "name": "Gimnasio Piloto"
+    },
+    "minorPolicy": {
+      "enabled": true,
+      "orgEnabled": true,
+      "serverLocked": false
+    },
+    "emailDelivery": {
+      "mode": "configured",
+      "passwordReset": true,
+      "contactVerification": true
+    },
+    "offline": {
+      "enabled": true,
+      "freshnessHours": 72,
+      "enabledDevicesCount": 2,
+      "revokedDevicesCount": 0
+    },
+    "supportAccess": {
+      "activeGrantsCount": 1
+    },
+    "serverTime": "2026-10-20T01:30:00.000Z"
+  }
+}
+```
+
 
 

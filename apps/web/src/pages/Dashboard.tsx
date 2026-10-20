@@ -1,19 +1,31 @@
 import { useCallback } from "react";
 import { Link } from "react-router-dom";
-import { ArrowUpRight, CalendarDays, Users, ScanLine, Receipt, Wallet } from "lucide-react";
+import {
+  ArrowUpRight,
+  CalendarDays,
+  Users,
+  ScanLine,
+  Receipt,
+  Wallet,
+  Activity,
+  ShieldCheck,
+} from "lucide-react";
 import { api, formatCLP } from "../api.js";
 import { useResource } from "../hooks/use-resource.js";
 import { PageHead, ErrorNotice, Loading, Stat } from "../components/ui/page.js";
+import type { SystemStatusResponse } from "@gym/contracts";
+
 export function Dashboard() {
   const loader = useCallback(async () => {
-    const [members, memberships, payments, cash, schedule] = await Promise.all([
+    const [members, memberships, payments, cash, schedule, systemStatus] = await Promise.all([
       api.listMembers(),
       api.listMemberships(),
       api.listPayments("provisional"),
       api.currentCashSession(),
       api.schedule(),
+      api.systemStatus().catch(() => null as SystemStatusResponse | null),
     ]);
-    return { members, memberships, payments, cash, schedule };
+    return { members, memberships, payments, cash, schedule, systemStatus };
   }, []);
   const { data, error, loading, reload } = useResource(loader);
   const active = new Set(
@@ -64,6 +76,64 @@ export function Dashboard() {
               }
             />
           </div>
+          {data?.systemStatus && (
+            <article className="mt-6 rounded-2xl border bg-card p-5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="flex items-center gap-2 font-semibold">
+                  <ShieldCheck className="h-4 w-4 text-primary" />
+                  Diagnóstico y controles de producción (G2)
+                </h2>
+                <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Activity className="h-3.5 w-3.5 text-emerald-500" />
+                  Sonda DB: OK · Servidor: {new Date(data.systemStatus.serverTime).toLocaleTimeString("es-CL")}
+                </span>
+              </div>
+              <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="rounded-xl border bg-background/50 p-3">
+                  <p className="text-xs font-medium text-muted-foreground">Menores (D-05)</p>
+                  <p className="mt-1 text-sm font-semibold">
+                    {data.systemStatus.minorPolicy.serverLocked
+                      ? "Bloqueado en servidor"
+                      : data.systemStatus.minorPolicy.enabled
+                        ? "Habilitado"
+                        : "Deshabilitado"}
+                  </p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {data.systemStatus.minorPolicy.orgEnabled ? "Org: permitida" : "Org: restringida"}
+                  </p>
+                </div>
+                <div className="rounded-xl border bg-background/50 p-3">
+                  <p className="text-xs font-medium text-muted-foreground">Entrega de correo</p>
+                  <p className="mt-1 text-sm font-semibold">
+                    {data.systemStatus.emailDelivery.mode === "configured"
+                      ? "Configurado"
+                      : "Deshabilitado"}
+                  </p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Reset: {data.systemStatus.emailDelivery.passwordReset ? "Sí" : "No"} · Verif: {data.systemStatus.emailDelivery.contactVerification ? "Sí" : "No"}
+                  </p>
+                </div>
+                <div className="rounded-xl border bg-background/50 p-3">
+                  <p className="text-xs font-medium text-muted-foreground">Contingencia offline (P-09.3)</p>
+                  <p className="mt-1 text-sm font-semibold">
+                    {data.systemStatus.offline.enabled ? "Habilitada" : "Deshabilitada"}
+                  </p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {data.systemStatus.offline.enabledDevicesCount} equipos ({data.systemStatus.offline.freshnessHours}h vigencia)
+                  </p>
+                </div>
+                <div className="rounded-xl border bg-background/50 p-3">
+                  <p className="text-xs font-medium text-muted-foreground">Acceso soporte (D-06)</p>
+                  <p className="mt-1 text-sm font-semibold">
+                    {data.systemStatus.supportAccess.activeGrantsCount} activas
+                  </p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {data.systemStatus.supportAccess.activeGrantsCount > 0 ? "Concesión temporal vigente" : "Sin concesiones vigentes"}
+                  </p>
+                </div>
+              </div>
+            </article>
+          )}
           <div className="mt-6 grid gap-6 lg:grid-cols-[1.5fr_1fr]">
             <article className="rounded-2xl border bg-card p-6">
               <div className="flex items-center justify-between">
