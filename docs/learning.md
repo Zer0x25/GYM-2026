@@ -2,6 +2,13 @@
 
 > Formato mínimo: fecha, ID de unidad, hallazgo, evidencia, aplicación futura.
 
+## 2026-10-19 — Unidad 026 — Acceso temporal de soporte (D-06) con expiración estricta y auditoría inmutable
+
+- **Hallazgo (Token hashing y secreto efímero único):** Para otorgar acceso diagnóstico temporal a soporte técnico (`D-06`), el servidor jamás debe persistir el token en texto claro ni escribirlo en registros de eventos (`audit_log`). Generar 32 bytes criptográficamente seguros (`randomBytes(32).toString("hex")`), calcular su digest SHA-256 (`createHash("sha256").update(token).digest("hex")`) como clave de búsqueda indexada única, y revelar el token sin cifrar exclusivamente en el cuerpo de respuesta de la creación (`201 Created`).
+- **Hallazgo (Atribución y aislamiento estricto en diagnóstico externo):** Las solicitudes a `GET /api/v1/support/diagnostic-summary` se autentican por token de concesión sin sesión de usuario interactiva (`session.user`). Para mantener integridad referencial y trazabilidad en `audit_log`, atribuir `actorId` al administrador que emitió la concesión (`grant.grantedByAccountId`) con `actorRole: "support"`, identificando la entidad `support_grant` (`grant.id`). Asimismo, cualquier intento de revocar o inspeccionar concesiones entre tenants distintos debe responder `404 NOT_FOUND` para evitar enumeración.
+- **Evidencia:** `apps/api/src/support-access.integration.test.ts` (2/2 pruebas en Postgres real `gym_test_support_access`), `apps/web/src/support-access.test.tsx` (3/3 pruebas en Vitest/React), `packages/contracts/src/contracts.test.ts` (21/21) y `./scripts/verify.sh` en verde.
+- **Aplicación futura:** Extender este patrón de token efímero con hash SHA-256 e invocación auditada para cualquier integración externa de terceros o tokens de API temporales.
+
 ## 2026-10-19 — Unidad 023 — Empaquetado de producción, bootstrap limpio de organización y controles G2
 
 - **Hallazgo (Bootstrap de producción idempotente vs. seed de desarrollo):** El comando `pnpm seed:dev` crea datos ficticios (planes, socios, sesiones y turnos de caja abiertos) útiles para pruebas locales y E2E, pero inapropiados para el arranque del piloto en VPS real (G2). Separar `pnpm bootstrap:org` (`apps/api/src/bootstrap-org.ts`) permite inicializar o reutilizar de forma idempotente únicamente la organización (`organizations.slug`) y el usuario administrador inicial con membresía `admin` verificando que el recuento de socios, planes y turnos de caja permanezca intacto.

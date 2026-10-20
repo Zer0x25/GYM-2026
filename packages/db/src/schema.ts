@@ -821,6 +821,38 @@ export const auditLog = pgTable(
   (t) => [index("audit_log_org_idx").on(t.organizationId, t.createdAt)],
 );
 
+/**
+ * Support access grants (D-06, Spec 026): temporary, explicit technical support
+ * access authorized by an organization admin with strict expiration and audit trail.
+ */
+export const supportAccessGrants = pgTable(
+  "support_access_grants",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id),
+    grantedByAccountId: text("granted_by_account_id")
+      .notNull()
+      .references(() => authUsers.id),
+    supportEmail: text("support_email").notNull(),
+    reason: text("reason").notNull(),
+    scope: text("scope", { enum: ["diagnostic", "read_only"] })
+      .notNull()
+      .default("diagnostic"),
+    tokenHash: text("token_hash").notNull().unique(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    revokedByAccountId: text("revoked_by_account_id").references(() => authUsers.id),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("support_access_grants_org_created_idx").on(t.organizationId, t.createdAt),
+    index("support_access_grants_token_hash_idx").on(t.tokenHash),
+  ],
+);
+
 export const schema = {
   organizations,
   authUsers,
@@ -848,4 +880,5 @@ export const schema = {
   offlineEvents,
   membershipSnapshots,
   auditLog,
+  supportAccessGrants,
 };

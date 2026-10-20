@@ -30,6 +30,7 @@ export {
   offlineEvents,
   membershipSnapshots,
   auditLog,
+  supportAccessGrants,
 } from "./schema.js";
 
 /**

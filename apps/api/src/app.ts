@@ -47,6 +47,7 @@ import {
   ListSessionsQuery,
   RevokeSessionRequest,
   RevokeAllSessionsRequest,
+  CreateSupportGrantRequest,
   CheckinRequest,
   SessionResponse,
   SyncEventsRequest,
@@ -68,6 +69,7 @@ import { OfflineService } from "./services/offline.js";
 import { SessionRevocationService } from "./services/session-revocation.js";
 import { OperationsService } from "./services/operations.js";
 import { CheckinService } from "./services/checkin.js";
+import { SupportAccessService } from "./services/support-access.js";
 import type { SessionContext } from "./session.js";
 
 declare module "fastify" {
@@ -1133,6 +1135,56 @@ export async function buildServer(opts: AppOptions) {
         req.ip,
       );
       return reply.send({ data: { revoked } });
+    },
+  );
+
+  // --- Acceso temporal de soporte (D-06, Spec 026) -------------------------
+  const supportAccess = new SupportAccessService(opts.db);
+
+  // Admin grants temporary support access (admin only).
+  app.post(
+    "/api/v1/admin/support-grants",
+    async (req: FastifyRequest, reply: FastifyReply) => {
+      requireRole(req.session, ["admin"]);
+      assertTenantContext(req.session);
+      const parsed = CreateSupportGrantRequest.safeParse(req.body);
+      if (!parsed.success) throw validationError({ issues: parsed.error.issues });
+      const created = await supportAccess.createGrant(req.session, parsed.data);
+      return reply.status(201).send({ data: created });
+    },
+  );
+
+  // Admin lists support grants in their organization (admin only).
+  app.get(
+    "/api/v1/admin/support-grants",
+    async (req: FastifyRequest, reply: FastifyReply) => {
+      requireRole(req.session, ["admin"]);
+      assertTenantContext(req.session);
+      const rows = await supportAccess.listGrants(req.session);
+      return reply.send({ data: rows });
+    },
+  );
+
+  // Admin immediately revokes a support grant (admin only).
+  app.post(
+    "/api/v1/admin/support-grants/:id/revoke",
+    async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+      requireRole(req.session, ["admin"]);
+      assertTenantContext(req.session);
+      const outcome = await supportAccess.revokeGrant(req.session, req.params.id);
+      return reply.send({ data: outcome });
+    },
+  );
+
+  // Support technical diagnostic summary (authenticated via x-support-grant-token).
+  app.get(
+    "/api/v1/support/diagnostic-summary",
+    async (req: FastifyRequest, reply: FastifyReply) => {
+      const token = req.headers["x-support-grant-token"];
+      const summary = await supportAccess.getDiagnosticSummary(
+        typeof token === "string" ? token : undefined,
+      );
+      return reply.send({ data: summary });
     },
   );
 

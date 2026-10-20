@@ -505,3 +505,21 @@ Migración preserva ventanas históricas como snapshots sin inventar créditos y
 - **Sincronización de contratos (CAL-1, CAL-3):**
   - 100% de las rutas `/api/v1/*` de `apps/api/src/app.ts` están documentadas con su método HTTP y ruta en este archivo y validadas mecánicamente por `apps/api/src/api-docs-sync.test.ts`.
 
+## Unidad 026 — Acceso temporal de soporte (D-06)
+
+Rutas v1:
+
+| Ruta | Roles | Notas |
+|---|:--:|---|
+| `POST /api/v1/admin/support-grants` | admin | Otorga concesión temporal de soporte (`supportEmail, reason, durationMinutes, scope`) |
+| `GET /api/v1/admin/support-grants` | admin | Lista las concesiones temporales del tenant |
+| `POST /api/v1/admin/support-grants/:id/revoke` | admin | Revoca de inmediato una concesión de soporte activa |
+| `GET /api/v1/support/diagnostic-summary` | soporte (token) | Resumen diagnóstico agregado; exige cabecera `x-support-grant-token` |
+
+Invariantes (`D-06`, `REQ-1`, `REQ-11`):
+
+- **Concesión explícita y acotada:** solo `admin` crea concesiones para su organización (`15..1440` minutos). El token efímero se retorna una única vez en la respuesta de creación; la base de datos almacena exclusivamente `token_hash` (SHA-256).
+- **Revocación inmediata y aislamiento multi-tenant:** el administrador puede revocar una concesión en cualquier momento; intentos de revocar concesiones de otro tenant responden `404 NOT_FOUND` (anti-enumeración). Cada creación y revocación audita `support.grant.create` y `support.grant.revoke` en `audit_log`.
+- **Diagnóstico acotado sin exposición de secretos ni PII:** `GET /api/v1/support/diagnostic-summary` valida la cabecera `x-support-grant-token`. Tokens inválidos, expirados o revocados responden `401 UNAUTHENTICATED`. Proyecta únicamente metadatos agregados (identificador y nombre de org, conteos de socios/planes/membresías/outbox, estado de sesión de caja y política offline). Cada lectura válida actualiza `last_used_at` y audita `support.diagnostic.read` en la misma transacción.
+
+

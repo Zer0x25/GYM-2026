@@ -392,6 +392,11 @@ export const api = {
     request<AccountSession[]>("GET", `/admin/sessions?accountId=${encodeURIComponent(accountId)}`),
   revokeSession: (sessionId: string) => request("POST", "/admin/sessions/revoke", { sessionId }),
   revokeOthers: () => request("POST", "/me/sessions/revoke-others"),
+  supportGrants: () => request<SupportGrant[]>("GET", "/admin/support-grants"),
+  createSupportGrant: (input: CreateSupportGrantInput) =>
+    request<{ grant: SupportGrant; token: string }>("POST", "/admin/support-grants", input),
+  revokeSupportGrant: (id: string) =>
+    request<{ success: true; grant: SupportGrant }>("POST", `/admin/support-grants/${id}/revoke`),
   ownDevices: () => request<Device[]>("GET", "/offline/devices"),
   devices: () => request<Device[]>("GET", "/devices"),
   registerDevice: (accountId: string, label: string) =>
@@ -638,6 +643,26 @@ export interface AccountSession {
   expiresAt: string;
   ipAddress: string | null;
   userAgent: string | null;
+}
+export interface SupportGrant {
+  id: string;
+  organizationId: string;
+  grantedByAccountId: string;
+  supportEmail: string;
+  reason: string;
+  scope: "diagnostic" | "read_only";
+  tokenHash: string;
+  expiresAt: string;
+  revokedAt: string | null;
+  revokedByAccountId: string | null;
+  lastUsedAt: string | null;
+  createdAt: string;
+}
+export interface CreateSupportGrantInput {
+  supportEmail: string;
+  reason: string;
+  durationMinutes: number;
+  scope?: "diagnostic" | "read_only";
 }
 export interface Device {
   id: string;
