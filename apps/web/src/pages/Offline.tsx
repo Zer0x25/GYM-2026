@@ -16,6 +16,13 @@ import { Button } from "../components/ui/button.js";
 import { Input, Label } from "../components/ui/input.js";
 import { Confirm } from "../components/ui/confirm.js";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "../components/ui/dialog.js";
+import {
   checkLease,
   decryptBundle,
   getVault,
@@ -53,9 +60,25 @@ export function Offline() {
     [method, setMethod] = useState<"cash" | "transfer" | "transbank">("cash"),
     [label, setLabel] = useState(""),
     [operator, setOperator] = useState(""),
+    [custodyReference, setCustodyReference] = useState(""),
     [enable, setEnable] = useState(false),
     [lockConfirm, setLockConfirm] = useState(false),
-    [revoke, setRevoke] = useState<Device | null>(null);
+    [revoke, setRevoke] = useState<Device | null>(null),
+    [revokeReason, setRevokeReason] = useState<
+      "rotacion" | "perdida_robo" | "baja_operador" | "otro"
+    >("rotacion"),
+    [revokeNotes, setRevokeNotes] = useState(""),
+    [reconDeviceId, setReconDeviceId] = useState(""),
+    [reconResult, setReconResult] = useState<{
+      eventsChecked: number;
+      chainIntact: boolean;
+      brokenAt: string | null;
+    } | null>(null),
+    [reconLoading, setReconLoading] = useState(false),
+    [serverEvents, setServerEvents] = useState<
+      Awaited<ReturnType<typeof api.offlineEvents>> | null
+    >(null),
+    [eventsLoading, setEventsLoading] = useState(false);
   const phraseRef = useRef("");
   const syncBusy = useRef(false);
   const admin = session?.role === "admin";
@@ -729,78 +752,272 @@ export function Offline() {
         </div>
       )}
       {admin && !bundle && (
-        <article className="mt-6 rounded-2xl border bg-card p-6">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="font-semibold">Habilitación de dispositivos</h2>
-            <Button variant="outline" onClick={() => setEnable(true)}>
-              {policy?.enabled ? "Deshabilitar contingencia" : "Habilitar contingencia"}
-            </Button>
-          </div>
-          <form
-            className="mt-5 grid items-end gap-3 sm:grid-cols-3"
-            onSubmit={(e) => {
-              e.preventDefault();
-              setBusy(true);
-              void api
-                .registerDevice(operator, label.trim())
-                .then(() => {
-                  toast.success("Dispositivo habilitado");
-                  setLabel("");
-                  void load();
-                })
-                .catch((e) => setError(e.message))
-                .finally(() => setBusy(false));
-            }}
-          >
-            <Select
-              id="offline-operator"
-              label="Operador"
-              required
-              value={operator}
-              onChange={(e) => setOperator(e.target.value)}
+        <>
+          <article className="mt-6 rounded-2xl border bg-card p-6">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 className="font-semibold">Habilitación de dispositivos</h2>
+              <Button variant="outline" onClick={() => setEnable(true)}>
+                {policy?.enabled ? "Deshabilitar contingencia" : "Habilitar contingencia"}
+              </Button>
+            </div>
+            <form
+              className="mt-5 grid items-end gap-3 sm:grid-cols-4"
+              onSubmit={(e) => {
+                e.preventDefault();
+                setBusy(true);
+                void api
+                  .registerDevice(operator, label.trim(), custodyReference.trim() || undefined)
+                  .then(() => {
+                    toast.success("Dispositivo habilitado");
+                    setLabel("");
+                    setCustodyReference("");
+                    void load();
+                  })
+                  .catch((e) => setError(e.message))
+                  .finally(() => setBusy(false));
+              }}
             >
-              <option value="">Selecciona operador</option>
-              {staff
-                .filter((s) => s.role !== "instructor")
-                .map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name} · {s.role}
+              <Select
+                id="offline-operator"
+                label="Operador"
+                required
+                value={operator}
+                onChange={(e) => setOperator(e.target.value)}
+              >
+                <option value="">Selecciona operador</option>
+                {staff
+                  .filter((s) => s.role !== "instructor")
+                  .map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} · {s.role}
+                    </option>
+                  ))}
+              </Select>
+              <div>
+                <Label htmlFor="device-label">Nombre del dispositivo</Label>
+                <Input
+                  id="device-label"
+                  required
+                  value={label}
+                  onChange={(e) => setLabel(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label htmlFor="device-custody">Referencia de custodia</Label>
+                <Input
+                  id="device-custody"
+                  placeholder="Ej. Tablet Samsung TAB-01"
+                  value={custodyReference}
+                  onChange={(e) => setCustodyReference(e.target.value)}
+                />
+              </div>
+              <Button type="submit" disabled={busy}>
+                <Plus className="h-4 w-4" />
+                Registrar dispositivo
+              </Button>
+            </form>
+            <div className="mt-4 space-y-2">
+              {allDevices.map((d) => (
+                <div
+                  key={d.id}
+                  className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t py-3 text-sm"
+                >
+                  <div>
+                    <span className="font-medium">
+                      {d.label} · {staff.find((s) => s.id === d.accountId)?.name ?? "Operador"} ·{" "}
+                      <span
+                        className={
+                          d.state === "habilitado"
+                            ? "text-success font-semibold"
+                            : "text-destructive font-semibold"
+                        }
+                      >
+                        {d.state}
+                      </span>
+                    </span>
+                    {d.custodyReference && (
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        Custodia: <span className="font-mono">{d.custodyReference}</span>
+                        {d.custodyConfirmedAt &&
+                          ` (confirmada: ${new Date(d.custodyConfirmedAt).toLocaleDateString("es-CL")})`}
+                      </p>
+                    )}
+                    {d.state === "revocado" && (
+                      <p className="mt-0.5 text-xs text-destructive">
+                        Motivo: <span className="font-semibold">{d.revokedReason ?? "otro"}</span>
+                        {d.revokedNotes && ` — ${d.revokedNotes}`}
+                        {d.revokedAt &&
+                          ` (${new Date(d.revokedAt).toLocaleString("es-CL")})`}
+                      </p>
+                    )}
+                  </div>
+                  {d.state === "habilitado" && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setRevoke(d);
+                        setRevokeReason("rotacion");
+                        setRevokeNotes("");
+                      }}
+                    >
+                      Revocar
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </article>
+
+          <article className="mt-6 rounded-2xl border bg-card p-6" data-testid="offline-recon-panel">
+            <div>
+              <h2 className="font-semibold">Reconstrucción e Inspección de Eventos (Servidor)</h2>
+              <p className="my-2 text-xs text-muted-foreground">
+                Verifica la integridad criptográfica de la cadena de hash y audita los eventos sincronizados o rechazados en el servidor.
+              </p>
+            </div>
+            <div className="mt-4 grid items-end gap-3 sm:grid-cols-3">
+              <Select
+                id="recon-device-select"
+                label="Filtrar por dispositivo"
+                value={reconDeviceId}
+                onChange={(e) => setReconDeviceId(e.target.value)}
+              >
+                <option value="">Todos los dispositivos</option>
+                {allDevices.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.label} ({d.state})
                   </option>
                 ))}
-            </Select>
-            <div>
-              <Label htmlFor="device-label">Nombre del dispositivo</Label>
-              <Input
-                id="device-label"
-                required
-                value={label}
-                onChange={(e) => setLabel(e.target.value)}
-              />
+              </Select>
+              <div className="flex flex-wrap gap-2 sm:col-span-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={reconLoading}
+                  onClick={() => {
+                    setReconLoading(true);
+                    setError(null);
+                    void api
+                      .reconstruct(reconDeviceId || undefined)
+                      .then((res) => {
+                        setReconResult(res);
+                        toast.success("Verificación de cadena completada");
+                      })
+                      .catch((e) => setError(e instanceof Error ? e.message : "Error al reconstruir"))
+                      .finally(() => setReconLoading(false));
+                  }}
+                >
+                  {reconLoading ? "Verificando…" : "Verificar integridad de cadena"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={eventsLoading}
+                  onClick={() => {
+                    setEventsLoading(true);
+                    setError(null);
+                    void api
+                      .offlineEvents(reconDeviceId || undefined)
+                      .then((evs) => {
+                        setServerEvents(evs);
+                        toast.success(`${evs.length} eventos obtenidos del servidor`);
+                      })
+                      .catch((e) => setError(e instanceof Error ? e.message : "Error al obtener eventos"))
+                      .finally(() => setEventsLoading(false));
+                  }}
+                >
+                  {eventsLoading ? "Cargando…" : "Consultar eventos"}
+                </Button>
+              </div>
             </div>
-            <Button type="submit" disabled={busy}>
-              <Plus className="h-4 w-4" />
-              Registrar dispositivo
-            </Button>
-          </form>
-          <div className="mt-4 space-y-2">
-            {allDevices.map((d) => (
-              <div
-                key={d.id}
-                className="flex items-center justify-between gap-3 border-t py-3 text-sm"
-              >
-                <span>
-                  {d.label} · {staff.find((s) => s.id === d.accountId)?.name ?? "Operador"} ·{" "}
-                  {d.state}
-                </span>
-                {d.state === "habilitado" && (
-                  <Button variant="ghost" size="sm" onClick={() => setRevoke(d)}>
-                    Revocar
-                  </Button>
+
+            {reconResult && (
+              <div className="mt-4 rounded-xl border p-4 bg-muted/20" data-testid="recon-result">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium">Estado de la cadena:</span>
+                  {reconResult.chainIntact ? (
+                    <span className="text-sm font-semibold text-success">
+                      Cadena intacta (válida)
+                    </span>
+                  ) : (
+                    <span className="text-sm font-semibold text-destructive">
+                      Cadena rota o alterada
+                    </span>
+                  )}
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Eventos verificados: <span className="font-semibold">{reconResult.eventsChecked}</span>
+                  {reconResult.brokenAt && (
+                    <span className="ml-2 font-mono text-destructive">
+                      Roto en ID: {reconResult.brokenAt}
+                    </span>
+                  )}
+                </p>
+              </div>
+            )}
+
+            {serverEvents !== null && (
+              <div className="mt-5 space-y-2">
+                <h3 className="text-sm font-medium">Eventos en Servidor ({serverEvents.length})</h3>
+                {serverEvents.length === 0 ? (
+                  <p className="py-3 text-xs text-muted-foreground">
+                    No hay eventos registrados en el servidor para este filtro.
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead>
+                        <tr className="border-b text-muted-foreground">
+                          <th className="py-2 pr-3">Folio</th>
+                          <th className="py-2 pr-3">Tipo</th>
+                          <th className="py-2 pr-3">Estado</th>
+                          <th className="py-2 pr-3">Motivo / Detalle</th>
+                          <th className="py-2 pr-3">Fecha captura</th>
+                          <th className="py-2 pr-3">Hash</th>
+                          <th className="py-2 pr-3">Prev Hash</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {serverEvents.map((ev) => (
+                          <tr key={ev.id}>
+                            <td className="py-2 pr-3 font-semibold">{ev.folioExterno}</td>
+                            <td className="py-2 pr-3">{ev.type}</td>
+                            <td className="py-2 pr-3">
+                              <span
+                                className={
+                                  ev.state === "rechazado"
+                                    ? "font-semibold text-destructive"
+                                    : ev.state === "duplicado"
+                                      ? "font-semibold text-warning"
+                                      : "font-semibold text-success"
+                                }
+                              >
+                                {ev.state}
+                              </span>
+                            </td>
+                            <td className="py-2 pr-3 text-muted-foreground">
+                              {ev.rejectReason ?? "—"}
+                            </td>
+                            <td className="py-2 pr-3 text-muted-foreground">
+                              {new Date(ev.capturedAt).toLocaleString("es-CL")}
+                            </td>
+                            <td className="max-w-[120px] truncate py-2 pr-3 font-mono text-[10px]" title={ev.hash}>
+                              {ev.hash.slice(0, 10)}…
+                            </td>
+                            <td className="max-w-[120px] truncate py-2 pr-3 font-mono text-[10px]" title={ev.prevHash ?? "null"}>
+                              {ev.prevHash ? `${ev.prevHash.slice(0, 10)}…` : "origen"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 )}
               </div>
-            ))}
-          </div>
-        </article>
+            )}
+          </article>
+        </>
       )}
       <Confirm
         open={enable}
@@ -830,26 +1047,66 @@ export function Offline() {
           setLockConfirm(false);
         }}
       />
-      <Confirm
-        open={revoke !== null}
-        onOpenChange={(o) => !o && setRevoke(null)}
-        title="Revocar dispositivo"
-        description="Sus futuros eventos serán rechazados al reconectar y se conservarán para auditoría."
-        destructive
-        onConfirm={() => {
-          if (!revoke) return;
-          setBusy(true);
-          void api
-            .revokeDevice(revoke.id)
-            .then(() => {
-              setRevoke(null);
-              void load();
-            })
-            .catch((e) => setError(e.message))
-            .finally(() => setBusy(false));
-        }}
-        busy={busy}
-      />
+      <Dialog open={revoke !== null} onOpenChange={(o) => !o && setRevoke(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Revocar dispositivo: {revoke?.label}</DialogTitle>
+            <DialogDescription>
+              Sus futuros eventos serán rechazados al reconectar y se conservarán para auditoría sin generar cobros ni movimientos.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!revoke) return;
+              setBusy(true);
+              void api
+                .revokeDevice(revoke.id, {
+                  reason: revokeReason,
+                  notes: revokeNotes.trim() || undefined,
+                })
+                .then(() => {
+                  setRevoke(null);
+                  toast.success("Dispositivo revocado");
+                  void load();
+                })
+                .catch((e) => setError(e instanceof Error ? e.message : "Error al revocar"))
+                .finally(() => setBusy(false));
+            }}
+            className="space-y-4"
+          >
+            <Select
+              id="revoke-reason"
+              label="Motivo de revocación"
+              value={revokeReason}
+              onChange={(e) => setRevokeReason(e.target.value as typeof revokeReason)}
+              required
+            >
+              <option value="rotacion">Rotación programada</option>
+              <option value="perdida_robo">Pérdida o robo del equipo</option>
+              <option value="baja_operador">Baja o cambio de operador</option>
+              <option value="otro">Otro motivo</option>
+            </Select>
+            <div>
+              <Label htmlFor="revoke-notes">Notas / Observaciones (opcional)</Label>
+              <Input
+                id="revoke-notes"
+                value={revokeNotes}
+                onChange={(e) => setRevokeNotes(e.target.value)}
+                placeholder="Ej. Constancia policial #1234 / cambio de turno"
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button type="button" variant="outline" onClick={() => setRevoke(null)}>
+                Cancelar
+              </Button>
+              <Button type="submit" variant="destructive" disabled={busy}>
+                Confirmar revocación
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }

@@ -24,6 +24,10 @@ import {
   CreateSupportGrantRequest,
   SupportGrantRef,
   SupportDiagnosticSummary,
+  DeviceRevokeReason,
+  RegisterDeviceRequest,
+  RevokeDeviceRequest,
+  DeviceDetail,
 } from "./index.js";
 
 describe("contracts", () => {
@@ -523,6 +527,90 @@ describe("contracts", () => {
       },
     };
     expect(SupportDiagnosticSummary.safeParse(validSummary).success).toBe(true);
+  });
+
+  it("SPEC024 contratos de dispositivos: custodia, revocación estructurada y detalle", () => {
+    // RegisterDeviceRequest
+    expect(
+      RegisterDeviceRequest.safeParse({
+        accountId: "acc-1",
+        label: "Tablet Mostrador",
+      }).success,
+    ).toBe(true);
+
+    expect(
+      RegisterDeviceRequest.safeParse({
+        accountId: "acc-1",
+        label: "Tablet Mostrador",
+        custodyReference: "ACTA-EQ-01",
+      }).success,
+    ).toBe(true);
+
+    // custodyReference vacío no pasa min(1) tras trim
+    expect(
+      RegisterDeviceRequest.safeParse({
+        accountId: "acc-1",
+        label: "Tablet Mostrador",
+        custodyReference: "   ",
+      }).success,
+    ).toBe(false);
+
+    // custodyReference > 200 chars
+    expect(
+      RegisterDeviceRequest.safeParse({
+        accountId: "acc-1",
+        label: "Tablet Mostrador",
+        custodyReference: "x".repeat(201),
+      }).success,
+    ).toBe(false);
+
+    // RevokeDeviceRequest retrocompatible
+    const emptyRevoke = RevokeDeviceRequest.parse({});
+    expect(emptyRevoke.reason).toBe("otro");
+
+    const undefinedRevoke = RevokeDeviceRequest.parse(undefined);
+    expect(undefinedRevoke.reason).toBe("otro");
+
+    const structuredRevoke = RevokeDeviceRequest.parse({
+      reason: "perdida_robo",
+      notes: "Extraviado en recepción",
+    });
+    expect(structuredRevoke.reason).toBe("perdida_robo");
+    expect(structuredRevoke.notes).toBe("Extraviado en recepción");
+
+    expect(DeviceRevokeReason.safeParse("rotacion").success).toBe(true);
+    expect(DeviceRevokeReason.safeParse("perdida_robo").success).toBe(true);
+    expect(DeviceRevokeReason.safeParse("baja_operador").success).toBe(true);
+    expect(DeviceRevokeReason.safeParse("otro").success).toBe(true);
+    expect(DeviceRevokeReason.safeParse("invalido").success).toBe(false);
+
+    // Invalid reason
+    expect(
+      RevokeDeviceRequest.safeParse({
+        reason: "invalido",
+      }).success,
+    ).toBe(false);
+
+    // notes > 500 chars
+    expect(
+      RevokeDeviceRequest.safeParse({
+        reason: "rotacion",
+        notes: "y".repeat(501),
+      }).success,
+    ).toBe(false);
+
+    // DeviceDetail schema
+    const detail = {
+      id: "11111111-1111-4111-8111-111111111111",
+      organizationId: "22222222-2222-4222-8222-222222222222",
+      accountId: "acc-1",
+      label: "Tablet Mostrador",
+      state: "habilitado" as const,
+      custodyReference: "ACTA-EQ-01",
+      custodyConfirmedAt: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+    };
+    expect(DeviceDetail.safeParse(detail).success).toBe(true);
   });
 });
 

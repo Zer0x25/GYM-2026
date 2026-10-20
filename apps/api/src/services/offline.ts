@@ -25,7 +25,7 @@
  *  7. AUDIT: every mutation writes its audit row in the same transaction,
  *     carrying event_id and folio_externo for device→server traceability.
  */
-import { TransbankEvidence } from "@gym/contracts";
+import { DeviceRevokeReason, RevokeDeviceRequest, TransbankEvidence } from "@gym/contracts";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { and, desc, eq, sql } from "drizzle-orm";
 import type { Database } from "@gym/db";
@@ -227,7 +227,12 @@ export class OfflineService {
       let reason: string | undefined;
       let membershipId: string | undefined;
       try {
-        if (device.state !== "habilitado") throw conflict("dispositivo revocado");
+        if (device.state !== "habilitado") {
+          const rejectMsg = device.revokedReason
+            ? `dispositivo revocado (${device.revokedReason})`
+            : "dispositivo revocado";
+          throw conflict(rejectMsg);
+        }
         if (!org.offlineEnabled) throw forbidden("contingencia deshabilitada");
         const payload = JSON.parse(ev.payload ?? "{}") as { permit: string; proof: string };
         const permit = this.verify<{
@@ -296,7 +301,12 @@ export class OfflineService {
   /** Registers a pre-authorized device (admin). Bound to org + one operator. */
   async registerDevice(
     actor: OfflineActor,
-    input: { accountId: string; label: string; publicKey?: string | undefined },
+    input: {
+      accountId: string;
+      label: string;
+      publicKey?: string | undefined;
+      custodyReference?: string | undefined;
+    },
   ) {
     if (actor.role !== "admin") throw forbidden("Solo un administrador registra dispositivos");
     const [assignment] = await this.db
@@ -314,6 +324,8 @@ export class OfflineService {
       throw notFound("Operador no encontrado");
     if (assignment && assignment.role === "instructor")
       throw forbidden("El operador debe ser recepción o administración");
+    const custodyReference = input.custodyReference?.trim() || null;
+    const custodyConfirmedAt = custodyReference ? new Date() : null;
     return this.db.transaction(async (tx) => {
       const [row] = await tx
         .insert(devices)
@@ -322,6 +334,8 @@ export class OfflineService {
           accountId: input.accountId,
           label: input.label,
           publicKey: input.publicKey ?? null,
+          custodyReference,
+          custodyConfirmedAt,
           state: "habilitado",
         })
         .returning();
@@ -334,7 +348,7 @@ export class OfflineService {
           action: "offline.device.register",
           entity: "device",
           entityId: row.id,
-          metadata: { label: input.label, accountId: input.accountId },
+          metadata: { label: input.label, accountId: input.accountId, custodyReference },
         },
         tx,
       );
@@ -343,14 +357,25 @@ export class OfflineService {
   }
 
   /** Revokes a device (admin). Kept for audit; its future events are inert. */
-  async revokeDevice(actor: OfflineActor, deviceId: string) {
+  async revokeDevice(
+    actor: OfflineActor,
+    deviceId: string,
+    input?: RevokeDeviceRequest,
+  ) {
     if (actor.role !== "admin") throw forbidden("Solo un administrador revoca dispositivos");
     const device = await this.getDevice(actor.organizationId, deviceId);
     if (device.state === "revocado") throw conflict("El dispositivo ya está revocado");
+    const reason: DeviceRevokeReason = input?.reason ?? "otro";
+    const notes = input?.notes?.trim() || null;
     return this.db.transaction(async (tx) => {
       const [row] = await tx
         .update(devices)
-        .set({ state: "revocado", revokedAt: new Date() })
+        .set({
+          state: "revocado",
+          revokedAt: new Date(),
+          revokedReason: reason,
+          revokedNotes: notes,
+        })
         .where(and(eq(devices.id, deviceId), eq(devices.state, "habilitado")))
         .returning();
       if (!row) throw conflict("El dispositivo cambió de estado");
@@ -362,7 +387,7 @@ export class OfflineService {
           action: "offline.device.revoke",
           entity: "device",
           entityId: deviceId,
-          metadata: {},
+          metadata: { reason, notes },
         },
         tx,
       );
@@ -422,7 +447,10 @@ export class OfflineService {
         continue;
       }
       if (revoked) {
-        results.push(await this.store(actor, device.id, ev, "rechazado", "dispositivo revocado"));
+        const rejectReason = device.revokedReason
+          ? `dispositivo revocado (${device.revokedReason})`
+          : "dispositivo revocado";
+        results.push(await this.store(actor, device.id, ev, "rechazado", rejectReason));
         continue;
       }
       if (ev.type === "cobro_provisional") {
@@ -796,6 +824,9 @@ export class OfflineService {
 
   /** Replays the event chain and verifies hash integrity. */
   async reconstruct(organizationId: string, deviceId?: string) {
+    if (deviceId) {
+      await this.getDevice(organizationId, deviceId);
+    }
     const conditions = [eq(offlineEvents.organizationId, organizationId)];
     if (deviceId) conditions.push(eq(offlineEvents.deviceId, deviceId));
     const rows = await this.db
@@ -829,6 +860,9 @@ export class OfflineService {
   }
 
   async listEvents(organizationId: string, deviceId?: string) {
+    if (deviceId) {
+      await this.getDevice(organizationId, deviceId);
+    }
     const conditions = [eq(offlineEvents.organizationId, organizationId)];
     if (deviceId) conditions.push(eq(offlineEvents.deviceId, deviceId));
     return this.db

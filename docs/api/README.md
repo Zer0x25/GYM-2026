@@ -238,24 +238,26 @@ Invariantes (verificadas con tests de integración contra Postgres real, `apps/a
   devuelve **404** (sin fuga de existencia).
 - **REQ-7 (propio):** un socio solo reserva/cancela para sí (`memberId` de la sesión, nunca del cliente).
 
-## Entrega 4 · Offline controlado (spec 005, REQ-9)
+## Entrega 4 · Offline controlado (spec 005, 024, REQ-9)
 
 Contratos (esquemas Zod en `@gym/contracts`, fuente única):
 
-- `DeviceState` = `habilitado | revocado`; `OfflineEventState` = `pendiente | sincronizado | rechazado | duplicado_negocio`
-- `RegisterDeviceRequest`, `SyncEventsRequest`/`SyncEventsResponse`, `OfflineEventInput`, `SyncResultEntry`, `IngressContingenciaRequest`, `ReconstructRequest`/`ReconstructResponse`
+- `DeviceState` = `habilitado | revocado`; `DeviceRevokeReason` = `rotacion | perdida_robo | baja_operador | otro`
+- `OfflineEventState` = `pendiente | sincronizado | rechazado | duplicado_negocio`
+- `RegisterDeviceRequest` (`accountId`, `label`, `custodyReference?`), `RevokeDeviceRequest` (`reason?`, `notes?`)
+- `SyncEventsRequest`/`SyncEventsResponse`, `OfflineEventInput`, `SyncResultEntry`, `IngressContingenciaRequest`, `ReconstructRequest`/`ReconstructResponse`
 
 Rutas v1:
 
 | Ruta | Roles | Notas |
 |---|:--:|---|
-| `POST /api/v1/devices` | admin | Registra dispositivo prehabilitado (org + operador) |
-| `GET /api/v1/devices` | admin | Listado por tenant |
-| `POST /api/v1/devices/:id/revoke` | admin | Revoca (eventos futuros inertes, conservados) |
+| `POST /api/v1/devices` | admin | Registra dispositivo prehabilitado (`accountId`, `label`, `custodyReference?`). Registra `custodyConfirmedAt` y auditoría. |
+| `GET /api/v1/devices` | admin | Listado por tenant (incluye custodia y motivo/notas si revocado) |
+| `POST /api/v1/devices/:id/revoke` | admin | Revoca con motivo estructurado (`rotacion`, `perdida_robo`, `baja_operador`, `otro`) y notas opcionales. Auditoría `{reason, notes}`. |
 | `POST /api/v1/offline/sync` | admin, recepcion | Ingesta idempotente con permiso e instantánea firmados (010) |
-| `GET /api/v1/offline/events?deviceId=` | admin, recepcion | Eventos sincronizados |
+| `GET /api/v1/offline/events?deviceId=` | admin, recepcion | Eventos sincronizados por tenant / dispositivo (aislamiento multi-tenant) |
 | `POST /api/v1/offline/ingreso` | admin, recepcion | Legado: 403; usar eventos firmados en /offline/lease/sync |
-| `POST /api/v1/offline/reconstruct` | admin | Reconstrucción auditable + verificación de hashes |
+| `POST /api/v1/offline/reconstruct` | admin | Reconstrucción auditable + verificación de hashes (opcional `deviceId`, aislamiento multi-tenant) |
 
 Invariantes (verificadas con tests de integración contra Postgres real, `apps/api/scripts/test-integration.sh`):
 
@@ -263,9 +265,9 @@ Invariantes (verificadas con tests de integración contra Postgres real, `apps/a
 - **TX-06 duplicado de negocio (REQ-9):** dos `event_id` distintos con la misma huella `(org, folio_externo, tipo, monto)` → ambos conservados; el segundo marcado `duplicado_negocio` (nunca se descarta: es evidencia).
 - **Prohibición ADR-0002 §3:** el `cobro_provisional` offline crea un pago **provisional** (Entrega 2) SIN movimiento de caja ni cobertura; requiere validación humana.
 - **SPEC:OFF-FRESH:** `ingreso_contingencia` con instantánea más vieja que `organizations.offline_freshness_hours` (default 72h = valor de trabajo, configurable) → 409.
-- **Dispositivo revocado:** eventos conservados y marcados `rechazado`, sin efectos.
-- **SPEC:OFF-RECON:** `reconstruct` reproduce la cadena y verifica hashes encadenados por evento.
-- **TX-07:** dispositivo/evento de otro tenant → 404.
+- **Dispositivo revocado y custodia (SPEC 024):** si un dispositivo revocado (ej. por pérdida/robo) intenta reconectar y sincronizar, sus eventos son conservados y marcados como `rechazado` con `rejectReason` estructurado (`dispositivo revocado (<reason>)`), sin generar cobros provisionales ni movimientos, mientras que la cadena criptográfica de hash se mantiene íntegra (`chainIntact: true`).
+- **SPEC:OFF-RECON:** `reconstruct` reproduce la cadena y verifica hashes encadenados por evento (a nivel de tenant o filtrado por `deviceId`).
+- **TX-07 aislamiento:** dispositivo/evento de otro tenant en `POST /devices/:id/revoke`, `POST /offline/reconstruct` o `GET /offline/events` → 404.
 
 ## Entrega 5 · Revocación de sesión (spec 006, REQ-11)
 

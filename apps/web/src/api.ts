@@ -390,7 +390,10 @@ export const api = {
   revokeQr: (id: string) => request<{ revoked: boolean }>("POST", `/members/${id}/qr/revoke`),
   accountSessions: (accountId: string) =>
     request<AccountSession[]>("GET", `/admin/sessions?accountId=${encodeURIComponent(accountId)}`),
-  revokeSession: (sessionId: string) => request("POST", "/admin/sessions/revoke", { sessionId }),
+  revokeSession: (accountId: string, sessionId: string) =>
+    request("POST", "/admin/sessions/revoke", { accountId, sessionId }),
+  revokeAllSessions: (accountId: string) =>
+    request<{ revoked: number }>("POST", "/admin/sessions/revoke-all", { accountId }),
   revokeOthers: () => request("POST", "/me/sessions/revoke-others"),
   supportGrants: () => request<SupportGrant[]>("GET", "/admin/support-grants"),
   createSupportGrant: (input: CreateSupportGrantInput) =>
@@ -399,21 +402,32 @@ export const api = {
     request<{ success: true; grant: SupportGrant }>("POST", `/admin/support-grants/${id}/revoke`),
   ownDevices: () => request<Device[]>("GET", "/offline/devices"),
   devices: () => request<Device[]>("GET", "/devices"),
-  registerDevice: (accountId: string, label: string) =>
-    request<Device>("POST", "/devices", { accountId, label }),
-  revokeDevice: (id: string) => request<Device>("POST", `/devices/${id}/revoke`),
+  registerDevice: (accountId: string, label: string, custodyReference?: string) =>
+    request<Device>("POST", "/devices", {
+      accountId,
+      label,
+      custodyReference: custodyReference?.trim() || undefined,
+    }),
+  revokeDevice: (
+    id: string,
+    input?: { reason?: "rotacion" | "perdida_robo" | "baja_operador" | "otro"; notes?: string },
+  ) => request<Device>("POST", `/devices/${id}/revoke`, input),
   offlinePolicy: () =>
     request<{ enabled: boolean; freshnessHours: number }>("GET", "/offline/policy"),
   setOfflinePolicy: (enabled: boolean) => request("POST", "/offline/policy", { enabled }),
   offlineLease: (deviceId: string) => request<OfflineLease>("POST", "/offline/lease", { deviceId }),
   offlineSync: (deviceId: string, events: OfflineEvent[]) =>
     request<{ results: SyncResult[] }>("POST", "/offline/lease/sync", { deviceId, events }),
-  offlineEvents: () => request<ServerOfflineEvent[]>("GET", "/offline/events"),
-  reconstruct: (deviceId: string) =>
+  offlineEvents: (deviceId?: string) =>
+    request<ServerOfflineEvent[]>(
+      "GET",
+      `/offline/events${deviceId ? `?deviceId=${encodeURIComponent(deviceId)}` : ""}`,
+    ),
+  reconstruct: (deviceId?: string) =>
     request<{ eventsChecked: number; chainIntact: boolean; brokenAt: string | null }>(
       "POST",
       "/offline/reconstruct",
-      { deviceId },
+      deviceId ? { deviceId } : {},
     ),
   session: () => request<SessionData>("GET", "/auth/session"),
   signIn: (email: string, password: string) =>
@@ -669,7 +683,12 @@ export interface Device {
   accountId: string;
   label: string;
   state: "habilitado" | "revocado";
+  custodyReference?: string | null;
+  custodyConfirmedAt?: string | null;
+  revokedReason?: "rotacion" | "perdida_robo" | "baja_operador" | "otro" | null;
+  revokedNotes?: string | null;
   createdAt: string;
+  revokedAt?: string | null;
 }
 export interface OfflineMember {
   id: string;
@@ -707,6 +726,9 @@ export interface ServerOfflineEvent {
   type: string;
   state: string;
   rejectReason: string | null;
+  capturedAt: string;
+  hash: string;
+  prevHash: string | null;
   createdAt: string;
 }
 

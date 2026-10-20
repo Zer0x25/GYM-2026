@@ -69,6 +69,31 @@ Unidad activa: 026-acceso-temporal-soporte-d06-g2
 - **Contador de falta de progreso:** 0, sin bloqueos.
 - **Siguiente paso:** Commit local de la unidad 026. Revisión humana Tier 1 previa a despliegue.
 
+## Unidad 024 — Custodia de dispositivos, revocación diferida y panel de reconstrucción — Tier 1 — Cerrada (2026-10-19)
+
+- **Autoridad:** Petición directa del usuario «Resuelve la issue #12 (specs/024-custodia-reconstruccion-offline-g2.md)»; PRD `REQ-1`, `REQ-9`, `REQ-11`, `CAL-1`, `CAL-3`; [ADR 0002](docs/adr/0002-arquitectura-base.md), [ADR 0007](docs/adr/0007-offline-cliente.md) y [ADR 0012](docs/adr/0012-controles-operativos-juridicos-g2.md). Nivel `Tier 1` (custodia física y revocación diferida de dispositivos offline `P-09.3`, integridad de cadena de hashes `SPEC:OFF-RECON`, y revocación de sesiones en equipos compartidos `REQ-11`).
+- **Entregado y Verificado (CA-1..CA-5):**
+  1. *Esquema y base de datos (0019_device_custody_loss.sql):* Columnas `custody_reference`, `custody_confirmed_at`, `revoked_reason` y `revoked_notes` agregadas a `devices` de forma aditiva.
+  2. *Contratos (@gym/contracts):* `DeviceRevokeReason` (`"rotacion" | "perdida_robo" | "baja_operador" | "otro"`), `RegisterDeviceRequest` con `custodyReference` opcional, `RevokeDeviceRequest` con `reason` (default `"otro"`) y `notes`, y `DeviceDetail` extendido.
+  3. *Backend API (@gym/api):*
+     - `OfflineService.registerDevice`: persiste `custodyReference` y sella `custodyConfirmedAt` con auditoría `offline.device.register`.
+     - `OfflineService.revokeDevice`: persiste motivo y notas estructuradas, audita `offline.device.revoke` en la misma transacción y garantiza aislamiento multi-tenant con `404 NOT_FOUND` ante accesos cruzados.
+     - `OfflineService.syncLeased` / `sync`: si el dispositivo está revocado, persiste eventos en `offline_events` como `rechazado` con `rejectReason: "dispositivo revocado (<reason>)"`, sin crear pagos provisionales ni movimientos de caja, manteniendo la cadena criptográfica verificable (`chainIntact: true`).
+     - `OfflineService.reconstruct` y `listEvents`: aislamiento multi-tenant estricto con `404` si el dispositivo pertenece a otra organización.
+     - `app.ts`: Validación de `RevokeDeviceRequest` en `POST /api/v1/devices/:id/revoke`.
+  4. *Web UI (@gym/web):*
+     - `Offline.tsx`: Campo de custodia física en alta de dispositivo, diálogo estructurado de revocación con selector de motivo y notas opcionales, y panel `SPEC:OFF-RECON` con disparador de reconstrucción de cadena (`chainIntact`, `eventsChecked`, `brokenAt`) e inspección de eventos del servidor.
+     - `Team.tsx` y `api.ts`: Corrección de invocación a `api.revokeSession(target.id, revoke.id)` con `{ accountId, sessionId }` y adición de acción «Cerrar todas las sesiones» (`api.revokeAllSessions(target.id)`).
+  5. *Documentación y Runbook:* `docs/api/README.md` actualizado con nuevos contratos y `docs/operations/runbook.md` con procedimiento de custodia, pérdida/robo de equipos y cierre de sesiones.
+- **Evidencia verificable:**
+  - `CA-1:` `TEST_DATABASE_URL="postgres://gym:gym-local-dev@localhost:55432/gym_test_offline" pnpm --filter @gym/api exec vitest run src/offline.integration.test.ts` (9/9 pasados).
+  - `CA-2:` `TEST_DATABASE_URL="postgres://gym:gym-local-dev@localhost:55432/gym_test_offline" pnpm --filter @gym/api exec vitest run src/offline.integration.test.ts` (9/9 pasados).
+  - `CA-3:` `pnpm --filter @gym/web exec vitest run src/offline-custody.test.tsx` (5/5 pasados).
+  - `CA-4:` `TEST_DATABASE_URL="postgres://gym:gym-local-dev@localhost:55432/gym_test_session_revocation" pnpm --filter @gym/api exec vitest run src/session-revocation.integration.test.ts` (6/6 pasados) + `src/offline-custody.test.tsx` (5/5 pasados).
+  - `CA-5:` `./scripts/verify.sh` superado con código 0 (scope-lock verificado, lint, typecheck, build, unit/integration tests).
+- **Contador de falta de progreso:** 0, sin bloqueos.
+- **Siguiente paso:** Crear commit local para la unidad 024 y continuar con la siguiente unidad de Ola 1 G2 (`025-consentimiento-menores-d05-g2`).
+
 ## Unidad 023 — Empaquetado de producción, bootstrap limpio y controles de piloto G2 — Tier 1 — Implementada y verificada (2026-10-19)
 
 - **Autoridad:** Decisión explícita del usuario (`A1..A4`, «higene limpiamo los wortree... y pasamos G2»); [ADR 0011](docs/adr/0011-arranque-piloto-g2-empaquetado-controles.md) y [specs/023-empaquetado-produccion-bootstrap-g2.md](specs/023-empaquetado-produccion-bootstrap-g2.md).

@@ -696,6 +696,10 @@ export const devices = pgTable(
     state: text("state", { enum: ["habilitado", "revocado"] })
       .notNull()
       .default("habilitado"),
+    custodyReference: text("custody_reference"),
+    custodyConfirmedAt: timestamp("custody_confirmed_at", { withTimezone: true }),
+    revokedReason: text("revoked_reason"),
+    revokedNotes: text("revoked_notes"),
     /** Public key of the device identity (opaque; crypto details resolved
      *  before G2 with the offline parameters P-09.3.1b). */
     publicKey: text("public_key"),

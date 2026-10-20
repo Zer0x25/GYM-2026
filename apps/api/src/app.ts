@@ -41,6 +41,7 @@ import {
   MarkAttendanceRequest,
   OpenCashSessionRequest,
   RegisterDeviceRequest,
+  RevokeDeviceRequest,
   RegisterPaymentRequest,
   RegisterFinancialAdjustmentRequest,
   ReconstructRequest,
@@ -977,6 +978,8 @@ export async function buildServer(opts: AppOptions) {
   app.post<{ Params: { id: string } }>("/api/v1/devices/:id/revoke", async (req, reply) => {
     requireRole(req.session, ["admin"]);
     assertTenantContext(req.session);
+    const parsed = RevokeDeviceRequest.safeParse(req.body ?? {});
+    if (!parsed.success) throw validationError({ issues: parsed.error.issues });
     const row = await offlineService.revokeDevice(
       {
         organizationId: req.session.organizationId,
@@ -984,6 +987,7 @@ export async function buildServer(opts: AppOptions) {
         role: req.session.role,
       },
       req.params.id,
+      parsed.data,
     );
     return reply.send({ data: row });
   });

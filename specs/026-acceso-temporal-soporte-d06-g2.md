@@ -65,6 +65,7 @@ Escenario BDD-1: Ciclo completo de concesión temporal de soporte D-06, uso audi
 - apps/api/src/services/support-access.ts
 - apps/api/src/support-access.integration.test.ts
 - apps/web/src/api.ts
+- apps/web/src/offline-custody.test.tsx
 - apps/web/src/pages/Team.tsx
 - apps/web/src/support-access.test.tsx
 - docs/adr/0012-controles-operativos-juridicos-g2.md
