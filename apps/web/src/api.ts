@@ -3,6 +3,7 @@ import type {
   RegisterFinancialAdjustmentRequest,
   FinancialAdjustmentRef,
   ReconciliationState,
+  SystemStatusResponse,
 } from "@gym/contracts";
 /**
  * Minimal API client for the GYM API.
@@ -404,6 +405,7 @@ export const api = {
     request<{ revoked: number }>("POST", "/admin/sessions/revoke-all", { accountId }),
   revokeOthers: () => request("POST", "/me/sessions/revoke-others"),
   supportGrants: () => request<SupportGrant[]>("GET", "/admin/support-grants"),
+  systemStatus: () => request<SystemStatusResponse>("GET", "/admin/system-status"),
   createSupportGrant: (input: CreateSupportGrantInput) =>
     request<{ grant: SupportGrant; token: string }>("POST", "/admin/support-grants", input),
   revokeSupportGrant: (id: string) =>

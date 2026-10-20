@@ -38,7 +38,7 @@ services:
       EMAIL_DELIVERY_MODE: ${EMAIL_DELIVERY_MODE:-disabled}
       ALLOW_MINOR_MEMBERS: ${ALLOW_MINOR_MEMBERS:-false}
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/health/ready || exit 1"]
       interval: 10s
       timeout: 3s
       retries: 5

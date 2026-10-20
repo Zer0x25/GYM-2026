@@ -13,8 +13,8 @@ import { FinancialAdjustmentsService } from "./services/financial-adjustments.js
  * ever in v1.0 (MVP-SAUNA-01/B).
  */
 import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
-import { eq } from "drizzle-orm";
-import { organizations } from "@gym/db";
+import { and, eq, gt, isNull, sql } from "drizzle-orm";
+import { devices, organizations, supportAccessGrants } from "@gym/db";
 import type { Database } from "@gym/db";
 import {
   DailyReportQuery,
@@ -54,6 +54,7 @@ import {
   CheckinRequest,
   SessionResponse,
   SyncEventsRequest,
+  SystemStatusResponse,
 } from "@gym/contracts";
 import { toErrorResponse, AppError, validationError } from "./errors.js";
 import { assertTenantContext, type TenantContext } from "./tenant.js";
@@ -163,6 +164,15 @@ export async function buildServer(opts: AppOptions) {
   const emailDelivery = opts.emailDelivery ?? createEmailDeliveryFromEnv();
 
   app.get("/health", async () => ({ status: "ok" }));
+
+  app.get("/health/ready", async (_req, reply) => {
+    try {
+      await opts.db.execute(sql`SELECT 1`);
+      return reply.status(200).send({ status: "ready", db: "ok" });
+    } catch {
+      throw new AppError("SERVICE_UNAVAILABLE", "Database not reachable");
+    }
+  });
 
   app.get("/api/v1/account/email-capabilities", async () => ({
     data: {
@@ -1217,6 +1227,82 @@ export async function buildServer(opts: AppOptions) {
       return reply.send({ data: summary });
     },
   );
+
+  // Production operational diagnostics and G2 system status (SPEC 027).
+  app.get("/api/v1/admin/system-status", async (req: FastifyRequest, reply: FastifyReply) => {
+    requireRole(req.session, ["admin"]);
+    assertTenantContext(req.session);
+
+    const organizationId = req.session.organizationId;
+    const now = new Date();
+
+    const [org] = await opts.db
+      .select({
+        id: organizations.id,
+        name: organizations.name,
+        offlineEnabled: organizations.offlineEnabled,
+        offlineFreshnessHours: organizations.offlineFreshnessHours,
+        minorRegistrationEnabled: organizations.minorRegistrationEnabled,
+      })
+      .from(organizations)
+      .where(eq(organizations.id, organizationId));
+
+    if (!org) {
+      throw new AppError("NOT_FOUND", "Organización no encontrada");
+    }
+
+    const minorPolicy = await members.getMinorPolicy(organizationId);
+
+    const [deviceCounts] = await opts.db
+      .select({
+        enabled: sql<number>`count(*) filter (where ${devices.state} = 'habilitado')::int`,
+        revoked: sql<number>`count(*) filter (where ${devices.state} = 'revocado')::int`,
+      })
+      .from(devices)
+      .where(eq(devices.organizationId, organizationId));
+
+    const [activeGrants] = await opts.db
+      .select({
+        count: sql<number>`count(*)::int`,
+      })
+      .from(supportAccessGrants)
+      .where(
+        and(
+          eq(supportAccessGrants.organizationId, organizationId),
+          isNull(supportAccessGrants.revokedAt),
+          gt(supportAccessGrants.expiresAt, now),
+        ),
+      );
+
+    const systemStatus: SystemStatusResponse = {
+      organization: {
+        id: org.id,
+        name: org.name,
+      },
+      minorPolicy: {
+        enabled: minorPolicy.enabled,
+        orgEnabled: minorPolicy.orgEnabled,
+        serverLocked: minorPolicy.serverLocked,
+      },
+      emailDelivery: {
+        mode: emailDelivery ? "configured" : "disabled",
+        passwordReset: Boolean(opts.auth?.emailDeliveryEnabled || emailDelivery),
+        contactVerification: Boolean(emailDelivery),
+      },
+      offline: {
+        enabled: org.offlineEnabled,
+        freshnessHours: Math.min(72, org.offlineFreshnessHours),
+        enabledDevicesCount: deviceCounts?.enabled ?? 0,
+        revokedDevicesCount: deviceCounts?.revoked ?? 0,
+      },
+      supportAccess: {
+        activeGrantsCount: activeGrants?.count ?? 0,
+      },
+      serverTime: now.toISOString(),
+    };
+
+    return reply.send({ data: systemStatus });
+  });
 
   // --- QR de ingreso y check-in supervisado (Entrega 5, spec 007) ------------
   const checkinService = new CheckinService(opts.db);

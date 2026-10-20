@@ -50,7 +50,24 @@
 
 ## Meta actual — Preparación de despliegue y controles de piloto G2 (2026-10-19)
 
-Unidad activa: 025-consentimiento-menores-d05-g2
+Unidad activa: 027-diagnostico-produccion-cierre-g2
+
+## Unidad 027 — Diagnóstico operativo de producción, smoke-check post-despliegue y cierre de preparación G2 — Tier 1 — Cerrada (2026-10-20)
+
+- **Autoridad:** Petición directa del usuario «Resuelve la issue #15 (specs/027-diagnostico-produccion-cierre-g2.md)»; PRD `REQ-1..REQ-11`, `CAL-1..CAL-3`; [ADR 0002](docs/adr/0002-arquitectura-base.md), [ADR 0011](docs/adr/0011-arranque-piloto-g2-empaquetado-controles.md) y [ADR 0012](docs/adr/0012-controles-operativos-juridicos-g2.md). Nivel: `Tier 1`.
+- **Entregado y verificado (CA-1..CA-4):**
+  1. *Sonda de preparación de base de datos (`GET /health/ready`):* Sonda desacoplada en `apps/api/src/app.ts` que ejecuta `opts.db.execute(sql`SELECT 1`)` y responde `200 { status: "ready", db: "ok" }` o `503 SERVICE_UNAVAILABLE` ante fallo de BD, permitiendo a Caddy/Docker abstenerse de enrutar tráfico si Postgres no responde. En `compose.prod.yaml`, el contenedor `api` actualizó su healthcheck hacia `/health/ready`.
+  2. *Diagnóstico consolidado de producción (`GET /api/v1/admin/system-status`):* Endpoint restringido al rol `admin` y aislado por tenant que consolida estado de política de menores (`D-05`), modo de entrega de email, conteo de dispositivos offline habilitados/revocados (`P-09.3`), concesiones activas de soporte (`D-06`) y hora de servidor sin exponer secretos (`AUTH_SECRET`, `DATABASE_URL`).
+  3. *Script de humo post-despliegue (`scripts/smoke-prod.sh`):* Script ejecutable (`chmod +x`, validado con `bash -n`) que verifica `/health`, `/health/ready` y rechazo anónimo `401` en `/api/v1/admin/system-status`.
+  4. *Sincronización en UI (`Dashboard.tsx` y `api.ts`):* Consumo de `api.systemStatus()` en el loader del panel principal con tarjeta informativa de diagnóstico operativo y estado de controles G2.
+  5. *Sincronización documental (`CAL-3`):* `docs/api/README.md` documenta 100% de rutas (verificado con `api-docs-sync.test.ts`), y `docs/operations/runbook.md` y `docs/product/aceptacion-mvp.md` documentan los procedimientos de verificación y la matriz de preparación G2.
+- **Evidencia verificada:**
+  - `CA-1:` `pnpm --filter @gym/api exec vitest run src/system-status-g2.integration.test.ts` → 8/8 tests pasados en PostgreSQL real `gym_test_system_status_g2`, comprobando `GET /health/ready` (200 y 503) y `GET /api/v1/admin/system-status` (aislamiento por tenant, 403 para recepción/socio y 401 anónimo).
+  - `CA-2:` `bash -n scripts/smoke-prod.sh` (código 0) y ejecución automatizada del script en `system-status-g2.integration.test.ts` (código 0).
+  - `CA-3:` `pnpm --filter @gym/api exec vitest run src/api-docs-sync.test.ts` (1 pasado, 100% rutas sincronizadas), `pnpm test:coverage` (77 tests, 96.96% stmts superando umbral >= 80%) y `./scripts/verify.sh` en verde.
+  - `CA-4:` `docs/operations/runbook.md`, `docs/product/aceptacion-mvp.md` y `STATE.md` actualizados; `./scripts/verify.sh` con código 0.
+- **Contador de falta de progreso:** 0, sin bloqueo.
+- **Checkpoint:** Unidad 027 cerrada y verificada; todas las unidades de preparación de piloto G2 (023, 024, 025, 026, 027) están implementadas, probadas y documentadas. Pendiente commit local y revisión humana.
 
 ## Unidad 025 — Consentimiento documental de adulto responsable para menores (D-05) y política por organización — Tier 1 — Cerrada (2026-10-19)
 
@@ -108,11 +125,7 @@ Unidad activa: 025-consentimiento-menores-d05-g2
   - `CA-4:` `TEST_DATABASE_URL="postgres://gym:gym-local-dev@localhost:55432/gym_test_session_revocation" pnpm --filter @gym/api exec vitest run src/session-revocation.integration.test.ts` (6/6 pasados) + `src/offline-custody.test.tsx` (5/5 pasados).
   - `CA-5:` `./scripts/verify.sh` superado con código 0 (scope-lock verificado, lint, typecheck, build, unit/integration tests).
 - **Contador de falta de progreso:** 0, sin bloqueos.
-<<<<<<< HEAD
-- **Siguiente paso:** Crear commit local para la unidad 024 y continuar con la siguiente unidad de Ola 1 G2 (`025-consentimiento-menores-d05-g2`).
-=======
 - **Siguiente paso:** Continuar con las demás unidades de la Ola 1 / Ola 2 de G2.
->>>>>>> 5b88d20 (feat(members): implement minor registration policy and guardian consent D-05 (025))
 
 ## Unidad 023 — Empaquetado de producción, bootstrap limpio y controles de piloto G2 — Tier 1 — Implementada y verificada (2026-10-19)
 

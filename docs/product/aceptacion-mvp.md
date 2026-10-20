@@ -21,11 +21,14 @@ Actualizada tras la integración de las unidades 010–022 (Ola 1, Ola 2 y Ola 3
 | CAL-2 | Cobertura financiera | `pnpm test:coverage` (`node scripts/coverage.mjs`): 77 tests pasados, 96.96% statements/lines (supera holgadamente el umbral >= 80%). | **Verificado G1** |
 | CAL-3 | Contratos y sincronización | Contratos `@gym/contracts` cerrados con esquemas Zod; `docs/api/README.md` sincronizado y auditado mecánicamente con `api-docs-sync.test.ts`. | **Verificado G1** |
 
-## Estado del Cierre G1 y Frontera con G2
+## Estado del Cierre G1 y Preparación G2
 
 1. **G1 (Cierre técnico y pre-operativo):** COMPLETADO. Todas las unidades del MVP (`001` a `021`) y la verificación de aceptación/staging (`022`) se encuentran implementadas, integradas en `main` y validadas con suite local, cobertura, E2E y CI remota en GitHub Actions.
-2. **G2 (Piloto con datos reales):** REQUIERE AUTORIZACIÓN SEPARADA.
-   - Validación jurídica formal de representación de menores (`D-05`) y procedimiento de acceso de soporte (`D-06`).
-   - Aprovisionamiento definitivo de VPS y secretos reales en el servidor (fuera del repositorio).
-   - Habilitación de transporte de correo real para notificaciones/recuperación si aplica.
-   - El inicio del piloto en terreno con socios reales solo procederá cuando el usuario lo autorice explícitamente tras revisar la matriz G1.
+2. **G2 (Preparación técnica y controles operativos completados — Unidades 023 a 027):**
+   - **Empaquetado y bootstrap (`023`):** `Dockerfile` multi-stage, `compose.prod.yaml` con healthcheck a `/health/ready`, `Caddyfile`, `scripts/backup-db.sh`, `scripts/restore-db.sh` y `pnpm bootstrap:org` (aprovisionamiento limpio de organización y admin con 0 filas demo).
+   - **Custodia y reconstrucción offline (`024`, P-09.3):** metadatos de custodia (`custodyReference`), revocación estructurada por pérdida/robo (`revokedReason`), preservación de cadena de hashes con eventos rechazados (`SPEC:OFF-RECON`) y revocación masiva de sesiones en equipos compartidos.
+   - **Consentimiento de menores (`025`, D-05):** folio de consentimiento de adulto responsable obligatorio (`guardianConsentRef`), sellado temporal (`guardianConsentAt`), política por organización y guarda de servidor `ALLOW_MINOR_MEMBERS=false` por defecto en producción.
+   - **Acceso temporal de soporte (`026`, D-06):** concesiones con límite estricto (15..1440 min), token efímero con hash SHA-256 en base de datos, revocación inmediata y endpoint de resumen diagnóstico agregado sin secretos ni PII (`/api/v1/support/diagnostic-summary`).
+   - **Diagnóstico operativo y smoke-check (`027`):** sonda de preparación `/health/ready` (SELECT 1), estado consolidado `/api/v1/admin/system-status`, script post-despliegue `scripts/smoke-prod.sh` ejecutable y sincronización 100% de contratos en `docs/api/README.md` (`api-docs-sync.test.ts`).
+3. **Inicio de piloto en terreno:** Requiere aprovisionamiento de VPS y variables de entorno reales en el servidor (fuera del repositorio) y validación jurídica final de los procedimientos documentados.
+

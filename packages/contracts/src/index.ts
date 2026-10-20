@@ -942,3 +942,29 @@ export const SupportDiagnosticSummary = z.object({
 });
 export type SupportDiagnosticSummary = z.infer<typeof SupportDiagnosticSummary>;
 
+/** SPEC 027: Diagnóstico operativo de producción y estado del sistema (G2). */
+export const SystemStatusResponse = z.object({
+  organization: z.object({
+    id: z.string().uuid(),
+    name: z.string(),
+  }),
+  minorPolicy: MinorPolicyResponse,
+  emailDelivery: z.object({
+    mode: z.enum(["disabled", "configured"]),
+    passwordReset: z.boolean(),
+    contactVerification: z.boolean(),
+  }),
+  offline: z.object({
+    enabled: z.boolean(),
+    freshnessHours: z.number().int().nonnegative(),
+    enabledDevicesCount: z.number().int().nonnegative(),
+    revokedDevicesCount: z.number().int().nonnegative(),
+  }),
+  supportAccess: z.object({
+    activeGrantsCount: z.number().int().nonnegative(),
+  }),
+  serverTime: z.string().datetime(),
+});
+export type SystemStatusResponse = z.infer<typeof SystemStatusResponse>;
+
+
