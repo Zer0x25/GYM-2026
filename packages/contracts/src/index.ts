@@ -570,6 +570,9 @@ export type DeviceState = z.infer<typeof DeviceState>;
 export const DeviceType = z.enum(["cobro_provisional", "ingreso_contingencia", "excepcion"]);
 export type DeviceType = z.infer<typeof DeviceType>;
 
+export const DeviceRevokeReason = z.enum(["rotacion", "perdida_robo", "baja_operador", "otro"]);
+export type DeviceRevokeReason = z.infer<typeof DeviceRevokeReason>;
+
 export const OfflineEventState = z.enum([
   "pendiente",
   "sincronizado",
@@ -583,8 +586,33 @@ export const RegisterDeviceRequest = z.object({
   accountId: z.string().min(1),
   label: z.string().min(1),
   publicKey: z.string().min(1).optional(),
+  custodyReference: z.string().trim().min(1).max(200).optional(),
 });
 export type RegisterDeviceRequest = z.infer<typeof RegisterDeviceRequest>;
+
+export const RevokeDeviceRequest = z
+  .object({
+    reason: DeviceRevokeReason.default("otro"),
+    notes: z.string().trim().max(500).optional(),
+  })
+  .default({ reason: "otro" });
+export type RevokeDeviceRequest = z.infer<typeof RevokeDeviceRequest>;
+
+export const DeviceDetail = z.object({
+  id: z.string().uuid(),
+  organizationId: z.string().uuid(),
+  accountId: z.string(),
+  label: z.string(),
+  state: DeviceState,
+  publicKey: z.string().nullable().optional(),
+  custodyReference: z.string().nullable().optional(),
+  custodyConfirmedAt: z.string().nullable().optional(),
+  revokedReason: DeviceRevokeReason.nullable().optional(),
+  revokedNotes: z.string().nullable().optional(),
+  createdAt: z.string(),
+  revokedAt: z.string().nullable().optional(),
+});
+export type DeviceDetail = z.infer<typeof DeviceDetail>;
 
 /**
  * A single offline event as emitted by the device (sync batch entry).

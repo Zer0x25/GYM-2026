@@ -158,20 +158,44 @@ export function Team() {
           {busy ? (
             <Loading />
           ) : sessions.length ? (
-            sessions.map((s) => (
-              <div key={s.id} className="rounded-lg border p-4">
-                <p className="truncate text-xs text-muted-foreground">
-                  {s.userAgent ?? "Equipo no identificado"}
-                </p>
-                <p className="mt-2 text-xs">
-                  {s.ipAddress ?? "IP no disponible"} ·{" "}
-                  {new Date(s.createdAt).toLocaleString("es-CL")}
-                </p>
-                <Button className="mt-3" size="sm" variant="outline" onClick={() => setRevoke(s)}>
-                  Revocar sesión
+            <div className="space-y-4">
+              <div className="flex justify-end">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-destructive hover:bg-destructive/10"
+                  disabled={busy}
+                  onClick={() => {
+                    if (!target) return;
+                    setBusy(true);
+                    void api
+                      .revokeAllSessions(target.id)
+                      .then((res) => {
+                        setSessions([]);
+                        toast.success(`Todas las sesiones cerradas (${res.revoked})`);
+                      })
+                      .catch((e) => toast.error(e.message))
+                      .finally(() => setBusy(false));
+                  }}
+                >
+                  Cerrar todas las sesiones
                 </Button>
               </div>
-            ))
+              {sessions.map((s) => (
+                <div key={s.id} className="rounded-lg border p-4">
+                  <p className="truncate text-xs text-muted-foreground">
+                    {s.userAgent ?? "Equipo no identificado"}
+                  </p>
+                  <p className="mt-2 text-xs">
+                    {s.ipAddress ?? "IP no disponible"} ·{" "}
+                    {new Date(s.createdAt).toLocaleString("es-CL")}
+                  </p>
+                  <Button className="mt-3" size="sm" variant="outline" onClick={() => setRevoke(s)}>
+                    Revocar sesión
+                  </Button>
+                </div>
+              ))}
+            </div>
           ) : (
             !sessionsError && <p className="text-sm text-muted-foreground">Sin sesiones activas.</p>
           )}
@@ -185,10 +209,10 @@ export function Team() {
         destructive
         busy={busy}
         onConfirm={() => {
-          if (!revoke) return;
+          if (!revoke || !target) return;
           setBusy(true);
           void api
-            .revokeSession(revoke.id)
+            .revokeSession(target.id, revoke.id)
             .then(() => {
               setSessions((rows) => rows.filter((r) => r.id !== revoke.id));
               setRevoke(null);

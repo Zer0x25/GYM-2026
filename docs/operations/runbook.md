@@ -15,6 +15,21 @@ Arranque reproducible: `pnpm install --frozen-lockfile` seguido de `pnpm dev`. U
 
 El service worker precarga HTML y assets versionados; nunca Cache Storage para `/api/*`. El dispositivo se habilita por administración y cada operador obtiene un permiso firmado de hasta 72 h. La outbox y snapshot se cifran en IndexedDB (ADR 0007); frase local solo en memoria. Bloquear, salir y recargar requieren desbloqueo posterior. No perder la frase ni borrar el perfil del navegador con eventos pendientes; exportar copia cifrada y conservar folios externos. La restauración no sobrescribe una copia ya existente: restaurar en otro perfil controlado. Al reconectar, revalidar sesión/dispositivo/política, sincronizar por evento y revisar rechazos/duplicados antes de dar por conciliada la jornada. Los cobros reconocidos quedan provisionales en Pagos hasta la validación separada.
 
+### Custodia de dispositivos offline, pérdida/robo y reconstrucción (SPEC 024)
+
+- **Registro y confirmación de custodia:**
+  Al registrar un dispositivo para contingencia (`POST /api/v1/devices`), se anota opcionalmente la referencia de custodia (`custodyReference`, ej. serie de activo, tablet recepción, acta #). El servidor persiste `custodyConfirmedAt` con la marca de tiempo actual y registra en `audit_log`.
+- **Procedimiento ante pérdida, robo o rotación:**
+  1. Si un dispositivo físico se extravía, es sustraído o rota de operador, el administrador debe revocarlo inmediatamente desde el panel de Contingencia o vía `POST /api/v1/devices/:id/revoke`.
+  2. La revocación captura motivo estructurado (`rotacion`, `perdida_robo`, `baja_operador`, `otro`) y notas opcionales.
+  3. Si el dispositivo revocado se reconecta y envía eventos en cola, el servidor los persiste en `offline_events` con estado `rechazado` y motivo `dispositivo revocado (<motivo>)`. No se crean cobros provisionales ni movimientos de caja, manteniendo inalteradas las finanzas y preservando intacta la cadena de hashes (`chainIntact: true`) para auditoría forense.
+- **Auditoría y reconstrucción de la cadena offline (SPEC:OFF-RECON):**
+  1. El administrador puede verificar la integridad criptográfica de la cadena de eventos desde el panel de Reconstrucción en Contingencia (`POST /api/v1/offline/reconstruct`, opcionalmente filtrando por `deviceId`).
+  2. El resultado indica `chainIntact` (verdadero si la secuencia de hashes SHA-256 no ha sido alterada) y `eventsChecked`.
+  3. Los eventos sincronizados y rechazados pueden consultarse en tabla vía `GET /api/v1/offline/events` (`folioExterno`, `type`, `state`, `rejectReason`, `capturedAt`, `hash`, `prevHash`).
+- **Revocación de sesiones de operadores:**
+  Ante compromiso de un operador o equipo compartido, el administrador puede listar sesiones en Equipo (`GET /api/v1/admin/sessions?accountId=`), revocar una sesión puntual (`POST /api/v1/admin/sessions/revoke`) o cerrar todas las sesiones del operador en un solo paso (`POST /api/v1/admin/sessions/revoke-all`).
+
 ### Verificación aislada
 
 - `pnpm test:integration`: crea/reusa BDs `gym_test_<suite>`, migra cada una y ejecuta su archivo; no silencia fallos.
