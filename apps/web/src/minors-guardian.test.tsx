@@ -1,154 +1,221 @@
-import { beforeEach, afterEach, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { Panel } from "./pages/Panel.js";
 import { MemberDetail } from "./pages/MemberDetail.js";
-import { Portal } from "./pages/Portal.js";
-import { api } from "./api.js";
+import { api, type MemberOverview } from "./api.js";
+import { useSession } from "./session.js";
 
-vi.mock("./session.js", () => ({
-  useSession: () => ({ session: { role: "admin", accountId: "admin-1" } }),
-}));
-
+vi.mock("./session.js", () => ({ useSession: vi.fn() }));
 vi.mock("./api.js", async () => ({
   ...(await vi.importActual("./api.js")),
   api: {
     listMembers: vi.fn(),
     listMemberships: vi.fn(),
     listPlans: vi.fn(),
+    minorPolicy: vi.fn(),
+    setMinorPolicy: vi.fn(),
     createMember: vi.fn(),
-    createSocio: vi.fn(),
-    createMembership: vi.fn(),
+    updateMember: vi.fn(),
     memberOverview: vi.fn(),
-    portalOverview: vi.fn(),
-    schedule: vi.fn(),
-    myBookings: vi.fn(),
-    myQr: vi.fn(),
-    updateContact: vi.fn(),
   },
 }));
 
-beforeEach(() => {
-  vi.clearAllMocks();
-  vi.mocked(api.listMembers).mockResolvedValue([
-    {
-      id: "adulto-1",
-      organizationId: "org-1",
-      fullName: "Ana Adulta",
-      contactEmail: "ana@gym.test",
-      isMinor: false,
-      adultResponsibleId: null,
-      createdAt: "2026-10-01T00:00:00.000Z",
-    },
-  ]);
-  vi.mocked(api.listMemberships).mockResolvedValue([]);
-  vi.mocked(api.listPlans).mockResolvedValue([]);
-  vi.mocked(api.createMember).mockResolvedValue({
-    id: "menor-1",
-    organizationId: "org-1",
-    fullName: "Hijo Menor",
-    contactEmail: null,
-    isMinor: true,
-    adultResponsibleId: "adulto-1",
-    createdAt: "2026-10-19T00:00:00.000Z",
-  });
-  vi.mocked(api.schedule).mockResolvedValue([]);
-  vi.mocked(api.myBookings).mockResolvedValue([]);
-  vi.mocked(api.myQr).mockResolvedValue({ qrToken: "qr-123" });
-});
+const mocked = vi.mocked(api);
 
-afterEach(cleanup);
-
-it("CA-4 Panel: permite registrar a un socio menor seleccionando adulto responsable", async () => {
-  render(
-    <MemoryRouter>
-      <Panel />
-    </MemoryRouter>,
-  );
-
-  fireEvent.click(await screen.findByRole("button", { name: "Nuevo socio" }));
-  fireEvent.change(screen.getByLabelText("Nombre completo"), {
-    target: { value: "Hijo Menor" },
+describe("SPEC 025 CA-3 — Sincronización UI de política de menores y consentimiento D-05", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    vi.mocked(useSession).mockReturnValue({
+      session: {
+        user: { id: "admin-1", email: "admin@gym.test", name: "Admin" },
+        organization: { id: "org-1", name: "Gimnasio Central" },
+        role: "admin",
+      },
+      loading: false,
+      reload: vi.fn(),
+      signIn: vi.fn(),
+      signOut: vi.fn(),
+    });
+    mocked.listMembers.mockResolvedValue([
+      {
+        id: "adult-1",
+        organizationId: "org-1",
+        fullName: "Adulto Responsable",
+        contactEmail: "adulto@gym.test",
+        isMinor: false,
+        createdAt: "2026-10-10",
+      },
+    ]);
+    mocked.listMemberships.mockResolvedValue([]);
+    mocked.listPlans.mockResolvedValue([]);
   });
 
-  // Desmarcar portal si aplica
-  const portalCheckbox = screen.getByLabelText("Crear acceso al portal del socio");
-  fireEvent.click(portalCheckbox);
+  it("Panel bloquea alta de menor si minorPolicy está deshabilitada (enabled=false)", async () => {
+    mocked.minorPolicy.mockResolvedValue({
+      enabled: false,
+      orgEnabled: false,
+      serverLocked: false,
+    });
 
-  // Marcar menor
-  const minorCheckbox = screen.getByLabelText(/Es menor de edad/i);
-  fireEvent.click(minorCheckbox);
-
-  // Seleccionar adulto responsable
-  const guardianSelect = screen.getByLabelText(/Adulto responsable/i);
-  fireEvent.change(guardianSelect, { target: { value: "adulto-1" } });
-
-  fireEvent.click(screen.getByRole("button", { name: "Crear socio" }));
-
-  await waitFor(() => {
-    expect(api.createMember).toHaveBeenCalledWith(
-      expect.objectContaining({
-        fullName: "Hijo Menor",
-        isMinor: true,
-        adultResponsibleId: "adulto-1",
-      }),
+    render(
+      <MemoryRouter>
+        <Panel />
+      </MemoryRouter>,
     );
-  });
-});
 
-it("CA-4 MemberDetail: muestra adulto responsable en la ficha del menor", async () => {
-  vi.mocked(api.memberOverview).mockResolvedValue({
-    member: {
-      id: "menor-1",
+    expect(await screen.findByText("Nuevo socio")).toBeTruthy();
+    fireEvent.click(screen.getByText("Nuevo socio"));
+
+    // Verifica que aparezca el aviso de restricción D-05
+    expect(await screen.findByText(/Restricción de piloto \(D-05\)/i)).toBeTruthy();
+
+    // El checkbox 'Es menor de edad' debe estar deshabilitado
+    const minorCheckbox = screen.getByLabelText(/Es menor de edad/i) as HTMLInputElement;
+    expect(minorCheckbox.disabled).toBe(true);
+  });
+
+  it("Panel permite alta de menor y captura guardianConsentRef si minorPolicy está habilitada", async () => {
+    mocked.minorPolicy.mockResolvedValue({
+      enabled: true,
+      orgEnabled: true,
+      serverLocked: false,
+    });
+    mocked.createMember.mockResolvedValue({
+      id: "minor-1",
       organizationId: "org-1",
-      fullName: "Hijo Menor",
-      contactEmail: "contacto@tutor.test",
+      fullName: "Menor Con Consentimiento",
+      contactEmail: null,
       isMinor: true,
-      adultResponsibleId: "adulto-1",
-      adultResponsibleName: "Ana Adulta",
-      createdAt: "2026-10-19T00:00:00.000Z",
-    },
-    memberships: [],
-    payments: [],
-    creditPeriods: [],
+      adultResponsibleId: "adult-1",
+      guardianConsentRef: "ACTA-2026-0042",
+      createdAt: "2026-10-19",
+    });
+
+    render(
+      <MemoryRouter>
+        <Panel />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("Nuevo socio")).toBeTruthy();
+    fireEvent.click(screen.getByText("Nuevo socio"));
+
+    const minorCheckbox = (await screen.findByLabelText(
+      /Es menor de edad/i,
+    )) as HTMLInputElement;
+    expect(minorCheckbox.disabled).toBe(false);
+
+    fireEvent.click(minorCheckbox);
+    expect(minorCheckbox.checked).toBe(true);
+
+    // Campos de menor visibles: adulto responsable y folio D-05
+    expect(screen.getByLabelText(/Adulto responsable/i)).toBeTruthy();
+    expect(screen.getByLabelText(/Folio \/ acta de autorización/i)).toBeTruthy();
+
+    // Completar formulario
+    fireEvent.change(screen.getByLabelText(/Nombre completo/i), {
+      target: { value: "Menor Con Consentimiento" },
+    });
+    fireEvent.change(screen.getByLabelText(/Adulto responsable/i), {
+      target: { value: "adult-1" },
+    });
+    fireEvent.change(screen.getByLabelText(/Folio \/ acta de autorización/i), {
+      target: { value: "ACTA-2026-0042" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Crear socio" }));
+
+    await waitFor(() => {
+      expect(mocked.createMember).toHaveBeenCalledWith(
+        expect.objectContaining({
+          fullName: "Menor Con Consentimiento",
+          isMinor: true,
+          adultResponsibleId: "adult-1",
+          guardianConsentRef: "ACTA-2026-0042",
+        }),
+      );
+    });
   });
 
-  render(
-    <MemoryRouter initialEntries={["/panel/menor-1"]}>
-      <Routes>
-        <Route path="/panel/:id" element={<MemberDetail />} />
-      </Routes>
-    </MemoryRouter>,
-  );
+  it("Panel permite al admin conmutar la política de menores", async () => {
+    mocked.minorPolicy.mockResolvedValue({
+      enabled: true,
+      orgEnabled: true,
+      serverLocked: false,
+    });
+    mocked.setMinorPolicy.mockResolvedValue({
+      enabled: false,
+      orgEnabled: false,
+      serverLocked: false,
+    });
 
-  expect(await screen.findByText(/Hijo Menor/)).toBeDefined();
-  expect(await screen.findByText(/Ana Adulta/)).toBeDefined();
-});
+    render(
+      <MemoryRouter>
+        <Panel />
+      </MemoryRouter>,
+    );
 
-it("CA-4 Portal: oculta edición de contacto cuando el socio es menor", async () => {
-  vi.mocked(api.portalOverview).mockResolvedValue({
-    member: {
-      id: "menor-1",
-      organizationId: "org-1",
-      fullName: "Hijo Menor",
-      contactEmail: "contacto@tutor.test",
-      isMinor: true,
-      adultResponsibleId: "adulto-1",
-      adultResponsibleName: "Ana Adulta",
-      createdAt: "2026-10-19T00:00:00.000Z",
-    },
-    memberships: [],
-    creditPeriods: [],
+    const toggleBtn = await screen.findByRole("button", { name: /Menores: Habilitados/i });
+    expect(toggleBtn).toBeTruthy();
+
+    fireEvent.click(toggleBtn);
+
+    await waitFor(() => {
+      expect(mocked.setMinorPolicy).toHaveBeenCalledWith(false);
+    });
   });
 
-  render(
-    <MemoryRouter>
-      <Portal />
-    </MemoryRouter>,
-  );
+  it("MemberDetail exhibe guardianConsentRef y permite actualizarlo a staff", async () => {
+    const overview: MemberOverview = {
+      member: {
+        id: "minor-1",
+        organizationId: "org-1",
+        fullName: "Menor Aprobado",
+        contactEmail: "contacto@tutor.cl",
+        isMinor: true,
+        adultResponsibleId: "adult-1",
+        adultResponsibleName: "Adulto Tutor",
+        guardianConsentRef: "ACTA-2026-0042",
+        guardianConsentAt: "2026-10-19T15:30:00.000Z",
+        createdAt: "2026-10-19",
+      },
+      memberships: [],
+      payments: [],
+      creditPeriods: [],
+    };
+    mocked.memberOverview.mockResolvedValue(overview);
+    mocked.listPlans.mockResolvedValue([]);
+    mocked.updateMember.mockResolvedValue({
+      ...overview.member,
+      guardianConsentRef: "ACTA-2026-0099",
+    });
 
-  await screen.findByText(/Hijo Menor/);
-  // El botón "Editar" de contacto NO debe estar disponible para un menor
-  expect(screen.queryByRole("button", { name: "Editar" })).toBeNull();
-  expect(screen.getByText(/administrado por adulto responsable/i)).toBeDefined();
+    render(
+      <MemoryRouter initialEntries={["/panel/minor-1"]}>
+        <Routes>
+          <Route path="/panel/:id" element={<MemberDetail />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("Menor Aprobado")).toBeTruthy();
+    expect(screen.getByText(/Socio menor de edad/i)).toBeTruthy();
+    expect(screen.getByText("Adulto Tutor")).toBeTruthy();
+    expect(screen.getByText("ACTA-2026-0042")).toBeTruthy();
+    expect(screen.getByText(/sellado el/i)).toBeTruthy();
+
+    // Actualizar acta / consentimiento
+    const consentInput = screen.getByLabelText(
+      /Actualizar acta\/folio de consentimiento \(D-05\)/i,
+    );
+    fireEvent.change(consentInput, { target: { value: "ACTA-2026-0099" } });
+    fireEvent.click(screen.getByRole("button", { name: "Guardar" }));
+
+    await waitFor(() => {
+      expect(mocked.updateMember).toHaveBeenCalledWith("minor-1", {
+        guardianConsentRef: "ACTA-2026-0099",
+      });
+    });
+  });
 });

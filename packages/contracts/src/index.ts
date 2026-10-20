@@ -70,8 +70,22 @@ export const MemberRef = z.object({
   contactEmail: z.string().email().nullable().optional(),
   isMinor: z.boolean().optional(),
   adultResponsibleId: z.string().uuid().nullable().optional(),
+  guardianConsentRef: z.string().nullable().optional(),
+  guardianConsentAt: z.string().nullable().optional(),
 });
 export type MemberRef = z.infer<typeof MemberRef>;
+
+export const MinorPolicyResponse = z.object({
+  enabled: z.boolean(),
+  orgEnabled: z.boolean(),
+  serverLocked: z.boolean(),
+});
+export type MinorPolicyResponse = z.infer<typeof MinorPolicyResponse>;
+
+export const UpdateMinorPolicyRequest = z.object({
+  enabled: z.boolean(),
+});
+export type UpdateMinorPolicyRequest = z.infer<typeof UpdateMinorPolicyRequest>;
 
 export const CreateMemberRequest = z
   .object({
@@ -79,6 +93,7 @@ export const CreateMemberRequest = z
     contactEmail: z.string().email().nullable().optional(),
     isMinor: z.boolean().optional(),
     adultResponsibleId: z.string().uuid().nullable().optional(),
+    guardianConsentRef: z.string().trim().min(1).max(200).nullable().optional(),
   })
   .superRefine((val, ctx) => {
     if (val.isMinor && !val.adultResponsibleId) {
@@ -104,6 +119,7 @@ export const UpdateMemberRequest = z
     contactEmail: z.string().email().nullable().optional(),
     isMinor: z.boolean().optional(),
     adultResponsibleId: z.string().uuid().nullable().optional(),
+    guardianConsentRef: z.string().trim().min(1).max(200).nullable().optional(),
   })
   .superRefine((val, ctx) => {
     if (val.isMinor && !val.adultResponsibleId) {
@@ -131,6 +147,8 @@ export const MemberDetail = z.object({
   isMinor: z.boolean(),
   adultResponsibleId: z.string().uuid().nullable(),
   adultResponsibleName: z.string().nullable().optional(),
+  guardianConsentRef: z.string().nullable().optional(),
+  guardianConsentAt: z.string().nullable().optional(),
   createdAt: z.string(),
 });
 export type MemberDetail = z.infer<typeof MemberDetail>;

@@ -9,7 +9,7 @@
  */
 import { and, eq, ilike, or, sql, isNull } from "drizzle-orm";
 import type { Database } from "@gym/db";
-import { members, contactVerifications } from "@gym/db";
+import { members, contactVerifications, organizations } from "@gym/db";
 import { generateQrToken } from "./provisioning.js";
 import { forbidden, notFound, conflict, validationError } from "../errors.js";
 import { AuditService } from "./audit.js";
@@ -21,6 +21,8 @@ const publicFields = {
   fullName: members.fullName,
   contactEmail: members.contactEmail,
   adultResponsibleId: members.adultResponsibleId,
+  guardianConsentRef: members.guardianConsentRef,
+  guardianConsentAt: members.guardianConsentAt,
   createdAt: members.createdAt,
 };
 
@@ -30,6 +32,8 @@ export interface MemberRow {
   fullName: string;
   contactEmail: string | null;
   adultResponsibleId: string | null;
+  guardianConsentRef: string | null;
+  guardianConsentAt: Date | null;
   isMinor: boolean;
   createdAt: Date;
 }
@@ -39,6 +43,7 @@ export interface CreateMemberInput {
   contactEmail?: string | null | undefined;
   isMinor?: boolean | undefined;
   adultResponsibleId?: string | null | undefined;
+  guardianConsentRef?: string | null | undefined;
 }
 
 export interface UpdateMemberInput {
@@ -46,6 +51,7 @@ export interface UpdateMemberInput {
   contactEmail?: string | null | undefined;
   isMinor?: boolean | undefined;
   adultResponsibleId?: string | null | undefined;
+  guardianConsentRef?: string | null | undefined;
 }
 
 export interface MemberActor {
@@ -61,6 +67,8 @@ function toMemberRow(row: {
   fullName: string;
   contactEmail: string | null;
   adultResponsibleId: string | null;
+  guardianConsentRef: string | null;
+  guardianConsentAt: Date | null;
   createdAt: Date;
 }): MemberRow {
   return {
@@ -69,14 +77,71 @@ function toMemberRow(row: {
   };
 }
 
-function isMinorRegistrationAllowed(): boolean {
+function isServerLocked(): boolean {
   const raw = process.env.ALLOW_MINOR_MEMBERS?.trim().toLowerCase();
-  if (raw === "false" || raw === "0") return false;
-  return true;
+  return raw === "false" || raw === "0";
 }
 
 export class MembersService {
   constructor(private readonly db: Database) {}
+
+  /**
+   * Retrieves effective minor policy for the organization (D-05, Spec 025).
+   * enabled is true only if server is not locked AND org.minorRegistrationEnabled is true.
+   */
+  async getMinorPolicy(organizationId: string): Promise<{
+    enabled: boolean;
+    orgEnabled: boolean;
+    serverLocked: boolean;
+  }> {
+    const [org] = await this.db
+      .select({ minorRegistrationEnabled: organizations.minorRegistrationEnabled })
+      .from(organizations)
+      .where(eq(organizations.id, organizationId));
+    const orgEnabled = org?.minorRegistrationEnabled ?? true;
+    const serverLocked = isServerLocked();
+    const enabled = !serverLocked && orgEnabled;
+    return { enabled, orgEnabled, serverLocked };
+  }
+
+  /**
+   * Updates minor registration policy for the organization (admin only).
+   * Rejects with 409 if serverLocked is true and attempting to enable.
+   */
+  async setMinorPolicy(
+    actor: MemberActor,
+    enabled: boolean,
+  ): Promise<{ enabled: boolean; orgEnabled: boolean; serverLocked: boolean }> {
+    if (actor.role !== "admin") {
+      throw forbidden("Solo administración puede cambiar la política de menores");
+    }
+    const serverLocked = isServerLocked();
+    if (serverLocked && enabled) {
+      throw conflict("MINOR_REGISTRATION_DISABLED");
+    }
+    await this.db
+      .update(organizations)
+      .set({ minorRegistrationEnabled: enabled })
+      .where(eq(organizations.id, actor.organizationId));
+
+    if (actor.accountId) {
+      await new AuditService(this.db).record({
+        organizationId: actor.organizationId,
+        actorId: actor.accountId,
+        actorRole: actor.role,
+        action: "member.minor_policy.updated",
+        entity: "organization",
+        entityId: actor.organizationId,
+        metadata: { enabled },
+      });
+    }
+
+    return {
+      enabled: !serverLocked && enabled,
+      orgEnabled: enabled,
+      serverLocked,
+    };
+  }
 
   /** Lists members of the caller's organization. Socio role may only list
    *  itself (delegated to `me`). Search matches name or contact email. */
@@ -111,12 +176,15 @@ export class MembersService {
 
   /** Creates a member inside the caller's organization. */
   async create(actor: MemberActor, input: CreateMemberInput): Promise<MemberRow> {
-    if (
-      (input.isMinor === true ||
-        (input.adultResponsibleId !== undefined && input.adultResponsibleId !== null)) &&
-      !isMinorRegistrationAllowed()
-    ) {
-      throw conflict("MINOR_REGISTRATION_DISABLED");
+    const isMinorCandidate =
+      input.isMinor === true ||
+      (input.adultResponsibleId !== undefined && input.adultResponsibleId !== null);
+
+    if (isMinorCandidate) {
+      const policy = await this.getMinorPolicy(actor.organizationId);
+      if (!policy.enabled) {
+        throw conflict("MINOR_REGISTRATION_DISABLED");
+      }
     }
     if (input.isMinor && !input.adultResponsibleId) {
       throw validationError({ message: "adultResponsibleId es obligatorio para un menor" });
@@ -139,18 +207,48 @@ export class MembersService {
       }
     }
 
-    const [row] = await this.db
-      .insert(members)
-      .values({
-        organizationId: actor.organizationId,
-        fullName: input.fullName,
-        qrToken: generateQrToken(),
-        contactEmail: input.contactEmail ?? null,
-        adultResponsibleId: input.adultResponsibleId ?? null,
-      })
-      .returning(publicFields);
-    if (!row) throw notFound("Socio no encontrado");
-    return toMemberRow(row);
+    const cleanConsentRef =
+      input.guardianConsentRef && input.guardianConsentRef.trim().length > 0
+        ? input.guardianConsentRef.trim()
+        : null;
+    const consentAt = isMinorCandidate && cleanConsentRef ? new Date() : null;
+
+    return this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .insert(members)
+        .values({
+          organizationId: actor.organizationId,
+          fullName: input.fullName,
+          qrToken: generateQrToken(),
+          contactEmail: input.contactEmail ?? null,
+          adultResponsibleId: input.adultResponsibleId ?? null,
+          guardianConsentRef: cleanConsentRef,
+          guardianConsentAt: consentAt,
+        })
+        .returning(publicFields);
+      if (!row) throw notFound("Socio no encontrado");
+
+      if (isMinorCandidate && cleanConsentRef && actor.accountId) {
+        await new AuditService(this.db).record(
+          {
+            organizationId: actor.organizationId,
+            actorId: actor.accountId,
+            actorRole: actor.role,
+            action: "member.minor_consent.recorded",
+            entity: "member",
+            entityId: row.id,
+            metadata: {
+              adultResponsibleId: input.adultResponsibleId ?? null,
+              guardianConsentRef: cleanConsentRef,
+              guardianConsentAt: consentAt,
+            },
+          },
+          tx,
+        );
+      }
+
+      return toMemberRow(row);
+    });
   }
 
   /**
@@ -174,7 +272,8 @@ export class MembersService {
       if (
         input.fullName !== undefined ||
         input.isMinor !== undefined ||
-        input.adultResponsibleId !== undefined
+        input.adultResponsibleId !== undefined ||
+        input.guardianConsentRef !== undefined
       ) {
         throw forbidden("Un socio solo puede gestionar su propio contacto");
       }
@@ -187,12 +286,20 @@ export class MembersService {
     if (input.adultResponsibleId === memberId) {
       throw validationError({ message: "Un socio no puede ser su propio adulto responsable" });
     }
-    const isBecomingMinor =
-      input.isMinor === true ||
-      (input.adultResponsibleId !== undefined && input.adultResponsibleId !== null);
 
-    if (isBecomingMinor && !isMinorRegistrationAllowed()) {
-      throw conflict("MINOR_REGISTRATION_DISABLED");
+    let targetAdultId = existing.adultResponsibleId;
+    if (input.adultResponsibleId !== undefined) {
+      targetAdultId = input.adultResponsibleId;
+    } else if (input.isMinor === false) {
+      targetAdultId = null;
+    }
+
+    const willBeMinor = targetAdultId !== null || input.isMinor === true;
+    if (willBeMinor) {
+      const policy = await this.getMinorPolicy(actor.organizationId);
+      if (!policy.enabled) {
+        throw conflict("MINOR_REGISTRATION_DISABLED");
+      }
     }
 
     if (
@@ -217,7 +324,7 @@ export class MembersService {
       if (guardian.adultResponsibleId !== null) throw conflict("INVALID_ADULT_RESPONSIBLE");
     }
 
-    if (isBecomingMinor) {
+    if (willBeMinor) {
       const minors = await this.db
         .select({ id: members.id })
         .from(members)
@@ -233,13 +340,6 @@ export class MembersService {
       }
     }
 
-    let targetAdultId = existing.adultResponsibleId;
-    if (input.adultResponsibleId !== undefined) {
-      targetAdultId = input.adultResponsibleId;
-    } else if (input.isMinor === false) {
-      targetAdultId = null;
-    }
-
     return this.db.transaction(async (tx) => {
       const scope = and(eq(members.id, memberId), eq(members.organizationId, actor.organizationId));
       await tx.select({ id: members.id }).from(members).where(scope).for("update");
@@ -248,6 +348,8 @@ export class MembersService {
         contactEmail?: string | null;
         contactVerifiedAt?: Date | null;
         adultResponsibleId?: string | null;
+        guardianConsentRef?: string | null;
+        guardianConsentAt?: Date | null;
       } = {};
       if (input.fullName !== undefined) updates.fullName = input.fullName;
       if (input.contactEmail !== undefined) {
@@ -256,6 +358,23 @@ export class MembersService {
       }
       if (targetAdultId !== existing.adultResponsibleId) {
         updates.adultResponsibleId = targetAdultId;
+      }
+
+      let consentRecorded = false;
+      if (!willBeMinor) {
+        // Socio deja de ser menor: se limpian adulto, consentimiento y sello
+        updates.adultResponsibleId = null;
+        updates.guardianConsentRef = null;
+        updates.guardianConsentAt = null;
+      } else if (input.guardianConsentRef !== undefined) {
+        if (input.guardianConsentRef && input.guardianConsentRef.trim().length > 0) {
+          updates.guardianConsentRef = input.guardianConsentRef.trim();
+          updates.guardianConsentAt = new Date();
+          consentRecorded = true;
+        } else {
+          updates.guardianConsentRef = null;
+          updates.guardianConsentAt = null;
+        }
       }
 
       const [row] = await tx.update(members).set(updates).where(scope).returning(publicFields);
@@ -273,6 +392,24 @@ export class MembersService {
           );
       }
       if (actor.accountId) {
+        if (consentRecorded) {
+          await new AuditService(this.db).record(
+            {
+              organizationId: actor.organizationId,
+              actorId: actor.accountId,
+              actorRole: actor.role,
+              action: "member.minor_consent.recorded",
+              entity: "member",
+              entityId: memberId,
+              metadata: {
+                adultResponsibleId: targetAdultId,
+                guardianConsentRef: updates.guardianConsentRef,
+                guardianConsentAt: updates.guardianConsentAt,
+              },
+            },
+            tx,
+          );
+        }
         await new AuditService(this.db).record(
           {
             organizationId: actor.organizationId,

@@ -50,7 +50,23 @@
 
 ## Meta actual — Preparación de despliegue y controles de piloto G2 (2026-10-19)
 
-Unidad activa: 026-acceso-temporal-soporte-d06-g2
+Unidad activa: 025-consentimiento-menores-d05-g2
+
+## Unidad 025 — Consentimiento documental de adulto responsable para menores (D-05) y política por organización — Tier 1 — Cerrada (2026-10-19)
+
+- **Autoridad:** Petición directa del usuario «Resuelve la issue #13 (specs/025-consentimiento-menores-d05-g2.md)»; PRD `REQ-1`, `REQ-2`, `REQ-7`, `REQ-11`, `CAL-1`, `CAL-3`; [ADR 0002](docs/adr/0002-arquitectura-base.md), [ADR 0011](docs/adr/0011-arranque-piloto-g2-empaquetado-controles.md) y [ADR 0012](docs/adr/0012-controles-operativos-juridicos-g2.md). Nivel: `Tier 1`.
+- **Entregado y verificado (CA-1..CA-4):**
+  1. *Esquema y migración (`0020_minor_guardian_consent.sql`):* añadida columna `minor_registration_enabled` (default `true`) a `organizations`, y columnas `guardian_consent_ref` y `guardian_consent_at` a `members`. Aplicada en base de datos local y meta journal actualizado.
+  2. *Contratos (`@gym/contracts`):* esquemas Zod `MinorPolicyResponse`, `UpdateMinorPolicyRequest`, extensión de `CreateMemberRequest`, `UpdateMemberRequest`, `MemberDetail` y `MemberRef` con soporte para `guardianConsentRef` y `guardianConsentAt`.
+  3. *Lógica de dominio y API (`MembersService` y `app.ts`):* endpoints `GET/POST /api/v1/members/minor-policy` respetando aislamiento por tenant y rol `admin`; candado de servidor `ALLOW_MINOR_MEMBERS=false` (`serverLocked: true`) que bloquea activación con `409 MINOR_REGISTRATION_DISABLED`; sellado automático de `guardianConsentAt` al persistir consentimiento del tutor; registro en `audit_log` (`member.minor_consent.recorded` y `member.minor_policy.updated`); y limpieza atómica de tutela al pasar a adulto (`isMinor: false`). Proyección en `GET /api/v1/members/:id/overview` y `GET /api/v1/members/:id`.
+  4. *Sincronización en UI (`Panel.tsx` y `MemberDetail.tsx`):* `Panel.tsx` consulta `minorPolicy`, muestra aviso de restricción de piloto (`D-05`) y deshabilita casilla de menor cuando la política está deshabilitada, permite capturar `guardianConsentRef` cuando está habilitada, y permite al admin conmutar la política. `MemberDetail.tsx` exhibe el folio de consentimiento sellado y permite al staff actualizarlo.
+- **Evidencia verificada:**
+  - CA-1: `TEST_DATABASE_URL=postgres://gym:gym-local-dev@localhost:55432/gym_test_members pnpm --filter @gym/api exec vitest run src/members.integration.test.ts` → 12 passed (12), verifica `GET/POST /api/v1/members/minor-policy`, aislamiento entre ORG_A y ORG_B, rechazo 403 a no-admin, y rechazo 409 cuando `ALLOW_MINOR_MEMBERS=false`.
+  - CA-2: `TEST_DATABASE_URL=postgres://gym:gym-local-dev@localhost:55432/gym_test_members pnpm --filter @gym/api exec vitest run src/members.integration.test.ts` y `pnpm --filter @gym/contracts exec vitest run src/contracts.test.ts` → 12/12 y 20/20 passed, comprueba persistencia y sellado de consentimiento, auditoría `member.minor_consent.recorded`, proyección en `MemberDetail` / overview y limpieza al pasar a adulto.
+  - CA-3: `pnpm --filter @gym/web exec vitest run src/minors-guardian.test.tsx` → 4 passed (4), comprueba sincronización en `Panel.tsx` y `MemberDetail.tsx`.
+  - CA-4: `./scripts/verify.sh` → Gate de proyecto GYM-2026 en verde (lint, typecheck, build y tests de todos los paquetes).
+- **Contador de falta de progreso:** 0, sin bloqueo.
+- **Checkpoint:** Unidad 025 cerrada y verificada; PR #17 lista para merge.
 
 ## Unidad 026 — Acceso temporal de soporte (D-06) — Tier 1 — Implementada y verificada (2026-10-19)
 
@@ -92,7 +108,11 @@ Unidad activa: 026-acceso-temporal-soporte-d06-g2
   - `CA-4:` `TEST_DATABASE_URL="postgres://gym:gym-local-dev@localhost:55432/gym_test_session_revocation" pnpm --filter @gym/api exec vitest run src/session-revocation.integration.test.ts` (6/6 pasados) + `src/offline-custody.test.tsx` (5/5 pasados).
   - `CA-5:` `./scripts/verify.sh` superado con código 0 (scope-lock verificado, lint, typecheck, build, unit/integration tests).
 - **Contador de falta de progreso:** 0, sin bloqueos.
+<<<<<<< HEAD
 - **Siguiente paso:** Crear commit local para la unidad 024 y continuar con la siguiente unidad de Ola 1 G2 (`025-consentimiento-menores-d05-g2`).
+=======
+- **Siguiente paso:** Continuar con las demás unidades de la Ola 1 / Ola 2 de G2.
+>>>>>>> 5b88d20 (feat(members): implement minor registration policy and guardian consent D-05 (025))
 
 ## Unidad 023 — Empaquetado de producción, bootstrap limpio y controles de piloto G2 — Tier 1 — Implementada y verificada (2026-10-19)
 
