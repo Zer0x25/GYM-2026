@@ -61,7 +61,10 @@ Unidad activa: 023-empaquetado-produccion-bootstrap-g2
   2. Guardia `ALLOW_MINOR_MEMBERS` en `MembersService`: cuando `ALLOW_MINOR_MEMBERS=false` (default en `compose.prod.yaml`), bloquea con `409 MINOR_REGISTRATION_DISABLED` el alta o conversión de menores hasta cierre legal `D-05` o acta física.
   3. Artefactos de producción: `Dockerfile` multi-stage, `.dockerignore`, `compose.prod.yaml`, `Caddyfile`, `scripts/backup-db.sh` y `scripts/restore-db.sh` (`bash -n` salida 0).
   4. Suite `apps/api/src/bootstrap-g2.integration.test.ts` (3/3) + `members.integration.test.ts` (10/10) contra PostgreSQL real y gate `./scripts/verify.sh` en verde.
-- **Siguiente paso:** Desplegar en el VPS Linux de destino siguiendo la sección 5 de `docs/operations/runbook.md`.
+- **Plan de olas G2 definido (`ADR 0012`):**
+  - **Ola 1 (Paralela en worktrees):** `024-custodia-reconstruccion-offline-g2` (migración `0019`), `025-consentimiento-menores-d05-g2` (migración `0020`) y `026-acceso-temporal-soporte-d06-g2` (migración `0021`).
+  - **Ola 2 (Cierre G2):** `027-diagnostico-produccion-cierre-g2` (`/health/ready`, `/api/v1/admin/system-status`, `scripts/smoke-prod.sh`, `api-docs-sync` y sello de aceptación G2).
+- **Siguiente paso:** Ejecutar Ola 1 (`024`, `025`, `026`) con agentes en worktrees independientes y cerrar con `027`.
 
 ## Unidad 022 — Revisión humana Tier 1, CI remota, staging VPS y cierre G1 — Tier 1 — Cerrada (2026-10-19)
 

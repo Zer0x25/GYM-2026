@@ -4,7 +4,7 @@ Estado: Implementada y verificada — lista para despliegue en VPS G2
 Nivel: Tier 1 — infraestructura de producción, aprovisionamiento de identidad administrativa inicial y control de bloqueo de menores (`D-05`) para el piloto G2.
 Autoridad: decisión explícita del usuario 2026-10-19 (`A1..A4`, «pasamos G2»); [PRD.md](../PRD.md) `REQ-1`, `REQ-2`, `REQ-7`, `REQ-11`, `CAL-1`; [ADR 0002](../docs/adr/0002-arquitectura-base.md) y [ADR 0011](../docs/adr/0011-arranque-piloto-g2-empaquetado-controles.md). Commits locales autorizados; revisión humana al cierre.
 Contexto (Notion): https://app.notion.com/p/3f529b8ebe2981d6a2e8dce35e0920c3
-Trazabilidad: SPEC:002-auth-tenant-socios, SPEC:006-sesiones-backup-hardening, SPEC:021-menores-correo-contratos, SPEC:022-aceptacion-ci-staging
+Trazabilidad: SPEC:002-auth-tenant-socios, SPEC:006-revocacion-backup, SPEC:021-menores-correo-contratos, SPEC:022-aceptacion-ci-staging
 
 ## 1. Objetivo y alcance
 
@@ -65,6 +65,7 @@ Escenario BDD-2: Bloqueo de alta de menores cuando ALLOW_MINOR_MEMBERS=false en 
 - apps/api/src/services/members.ts
 - compose.prod.yaml
 - docs/adr/0011-arranque-piloto-g2-empaquetado-controles.md
+- docs/adr/0012-controles-operativos-juridicos-g2.md
 - docs/learning.md
 - docs/operations/runbook.md
 - docs/product/aceptacion-mvp.md
@@ -72,6 +73,10 @@ Escenario BDD-2: Bloqueo de alta de menores cuando ALLOW_MINOR_MEMBERS=false en 
 - scripts/backup-db.sh
 - scripts/restore-db.sh
 - specs/023-empaquetado-produccion-bootstrap-g2.md
+- specs/024-custodia-reconstruccion-offline-g2.md
+- specs/025-consentimiento-menores-d05-g2.md
+- specs/026-acceso-temporal-soporte-d06-g2.md
+- specs/027-diagnostico-produccion-cierre-g2.md
 
 ## 5. Verificación y DoD
 
