@@ -81,18 +81,22 @@ Errores: 401/403/409/400 como arriba.
 | Método y ruta | Roles permitidos | Notas |
 |---|---|---|
 | `GET /api/v1/members?q=` | admin, recepcion, instructor | Listado filtrado por tenant; `q` busca en nombre/email |
+| `GET /api/v1/members/minor-policy` | admin, recepcion, instructor, socio | Política efectiva de menores (`enabled`, `orgEnabled`, `serverLocked`) |
+| `POST /api/v1/members/minor-policy` | admin | Conmuta política de menores por organización (`minorRegistrationEnabled`) |
 | `POST /api/v1/members` | admin, recepcion | Alta de socio (sin login) en la organización de la sesión |
 | `GET /api/v1/members/:id` | admin, recepcion, instructor, socio | Socio solo su propio id (otros → 404/403) |
-| `PATCH /api/v1/members/:id` | admin, recepcion, socio | Edición de socio (nombre, email, menor, adulto responsable) |
+| `PATCH /api/v1/members/:id` | admin, recepcion, socio | Edición de socio (nombre, email, menor, adulto responsable, consentimiento D-05) |
 | `GET /api/v1/members/me` | socio | Perfil propio (memberId de la sesión) |
 | `PATCH /api/v1/members/:id/contact` | admin, recepcion, socio | Socio propio: solo eliminar (null); nuevo correo requiere verificación (015) |
 
-Request `CreateMemberRequest`: `{ "fullName", "contactEmail"?, "isMinor"?, "adultResponsibleId"? }`
-Request `UpdateMemberRequest`: `{ "fullName"?, "contactEmail"?, "isMinor"?, "adultResponsibleId"? }`
+Request `UpdateMinorPolicyRequest`: `{ "enabled": boolean }`
+Respuesta `MinorPolicyResponse`: `{ "data": { "enabled": boolean, "orgEnabled": boolean, "serverLocked": boolean } }`
+Request `CreateMemberRequest`: `{ "fullName", "contactEmail"?, "isMinor"?, "adultResponsibleId"?, "guardianConsentRef"? }`
+Request `UpdateMemberRequest`: `{ "fullName"?, "contactEmail"?, "isMinor"?, "adultResponsibleId"?, "guardianConsentRef"? }`
 Request `PATCH .../contact`: `{ "contactEmail": "<email>" | null }`
-Respuesta: `{ "data": { "id", "organizationId", "fullName", "contactEmail", "isMinor", "adultResponsibleId", "adultResponsibleName"?, "createdAt" } }`
+Respuesta: `{ "data": { "id", "organizationId", "fullName", "contactEmail", "isMinor", "adultResponsibleId", "adultResponsibleName"?, "guardianConsentRef"?, "guardianConsentAt"?, "createdAt" } }`
 Errores: 401 sin sesión; 403 rol insuficiente, socio sobre ajeno o menor autogestionando contacto (`MINOR_CONTACT_MANAGED_BY_GUARDIAN`);
-404 recurso inexistente, de otro tenant, o adulto responsable de otro tenant; 400 validación o auto-referencia; 409 conflicto o encadenamiento de menores tutor.
+404 recurso inexistente, de otro tenant, o adulto responsable de otro tenant; 400 validación o auto-referencia; 409 conflicto, registro de menor deshabilitado (`MINOR_REGISTRATION_DISABLED`) o encadenamiento de menores tutor.
 
 ## Plans (Entrega 2)
 

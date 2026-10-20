@@ -8,21 +8,35 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq, sql } from "drizzle-orm";
-import { createDb, authUsers, members, organizations, type Database } from "@gym/db";
+import {
+  createDb,
+  authUsers,
+  members,
+  organizations,
+  identityAccounts,
+  staffAssignments,
+  type Database,
+} from "@gym/db";
 import { MembersService } from "./services/members.js";
 import { resolveSession } from "./resolve-session.js";
 import { ORG_A, ORG_B, SOCIO_A1, SOCIO_A2 } from "./fixtures.js";
+import { buildServer } from "./app.js";
+import { createAuth } from "./auth.js";
 
 const DATABASE_URL = process.env.TEST_DATABASE_URL;
 
 describe.skipIf(!DATABASE_URL)("members integration", () => {
   let db: Database;
+  let app: Awaited<ReturnType<typeof buildServer>>;
+  let adminCookie: string;
+  let recepCookie: string;
+  let adminBCookie: string;
 
   beforeAll(async () => {
     db = createDb(DATABASE_URL!);
     await db.execute(
       // truncate our tables for a deterministic fixture
-      sql`TRUNCATE organizations, identity_accounts, staff_assignments, members, plans, "user" RESTART IDENTITY CASCADE`,
+      sql`TRUNCATE organizations, identity_accounts, staff_assignments, members, plans, "user", session, account, verification RESTART IDENTITY CASCADE`,
     );
     await db.insert(organizations).values([
       { id: ORG_A, name: "Gimnasio A" },
@@ -52,9 +66,96 @@ describe.skipIf(!DATABASE_URL)("members integration", () => {
       },
       { organizationId: ORG_B, fullName: "Socio B Uno", contactEmail: "socio.b1@gym.test" },
     ]);
+
+    const auth = createAuth({
+      db,
+      secret: "integration-test-secret-not-for-production-000000",
+      baseURL: "http://localhost:3000",
+    });
+    app = await buildServer({ db, auth });
+    await app.ready();
+
+    async function signIn(email: string, password = "SuperSecret123!") {
+      const response = await auth.handler(
+        new Request("http://localhost:3000/api/auth/sign-in/email", {
+          method: "POST",
+          headers: { "content-type": "application/json", origin: "http://localhost:3000" },
+          body: JSON.stringify({ email, password }),
+        }),
+      );
+      expect(response.status).toBe(200);
+      return response.headers
+        .getSetCookie()
+        .map((c) => c.split(";")[0])
+        .join("; ");
+    }
+
+    // Staff admin in ORG_A
+    const adminUser = await auth.api.createUser({
+      body: {
+        email: "admin.a.int@gym.test",
+        password: "SuperSecret123!",
+        name: "Admin Org A",
+        data: { emailVerified: true },
+      },
+    });
+    await db.insert(identityAccounts).values({
+      id: adminUser.user.id,
+      email: "admin.a.int@gym.test",
+      passwordHash: "better-auth",
+    });
+    await db.insert(staffAssignments).values({
+      organizationId: ORG_A,
+      accountId: adminUser.user.id,
+      role: "admin",
+    });
+    adminCookie = await signIn("admin.a.int@gym.test");
+
+    // Staff recepcion in ORG_A
+    const recepUser = await auth.api.createUser({
+      body: {
+        email: "recep.a.int@gym.test",
+        password: "SuperSecret123!",
+        name: "Recep Org A",
+        data: { emailVerified: true },
+      },
+    });
+    await db.insert(identityAccounts).values({
+      id: recepUser.user.id,
+      email: "recep.a.int@gym.test",
+      passwordHash: "better-auth",
+    });
+    await db.insert(staffAssignments).values({
+      organizationId: ORG_A,
+      accountId: recepUser.user.id,
+      role: "recepcion",
+    });
+    recepCookie = await signIn("recep.a.int@gym.test");
+
+    // Staff admin in ORG_B
+    const adminBUser = await auth.api.createUser({
+      body: {
+        email: "admin.b.int@gym.test",
+        password: "SuperSecret123!",
+        name: "Admin Org B",
+        data: { emailVerified: true },
+      },
+    });
+    await db.insert(identityAccounts).values({
+      id: adminBUser.user.id,
+      email: "admin.b.int@gym.test",
+      passwordHash: "better-auth",
+    });
+    await db.insert(staffAssignments).values({
+      organizationId: ORG_B,
+      accountId: adminBUser.user.id,
+      role: "admin",
+    });
+    adminBCookie = await signIn("admin.b.int@gym.test");
   });
 
   afterAll(async () => {
+    if (app) await app.close();
     if (db) await db.execute(sql`SELECT 1`);
   });
 
@@ -248,6 +349,227 @@ describe.skipIf(!DATABASE_URL)("members integration", () => {
       sql`SELECT * FROM audit_log WHERE entity_id = ${menor.id} AND action LIKE 'member%'`,
     );
     expect(audits.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("SPEC 025 CA-1: GET/POST /api/v1/members/minor-policy respeta tenant isolation, admin-only y serverLock", async () => {
+    // 1. Unauthenticated -> 401
+    const unauthRes = await app.inject({
+      method: "GET",
+      url: "/api/v1/members/minor-policy",
+    });
+    expect(unauthRes.statusCode).toBe(401);
+
+    // 2. Recepcion can read minor policy (200)
+    const recepRead = await app.inject({
+      method: "GET",
+      url: "/api/v1/members/minor-policy",
+      headers: { cookie: recepCookie },
+    });
+    expect(recepRead.statusCode).toBe(200);
+    expect(recepRead.json().data).toEqual({
+      enabled: true,
+      orgEnabled: true,
+      serverLocked: false,
+    });
+
+    // 3. Recepcion cannot update minor policy -> 403
+    const recepUpdate = await app.inject({
+      method: "POST",
+      url: "/api/v1/members/minor-policy",
+      headers: { cookie: recepCookie },
+      payload: { enabled: false },
+    });
+    expect(recepUpdate.statusCode).toBe(403);
+
+    // 4. Admin A can update minor policy of ORG_A to disabled -> 200
+    const adminDisable = await app.inject({
+      method: "POST",
+      url: "/api/v1/members/minor-policy",
+      headers: { cookie: adminCookie },
+      payload: { enabled: false },
+    });
+    expect(adminDisable.statusCode).toBe(200);
+    expect(adminDisable.json().data).toEqual({
+      enabled: false,
+      orgEnabled: false,
+      serverLocked: false,
+    });
+
+    // 5. Tenant isolation: Admin B of ORG_B still sees minor registration enabled
+    const adminBRead = await app.inject({
+      method: "GET",
+      url: "/api/v1/members/minor-policy",
+      headers: { cookie: adminBCookie },
+    });
+    expect(adminBRead.statusCode).toBe(200);
+    expect(adminBRead.json().data).toEqual({
+      enabled: true,
+      orgEnabled: true,
+      serverLocked: false,
+    });
+
+    // 6. When disabled in ORG_A, creating a minor in ORG_A fails with 409 MINOR_REGISTRATION_DISABLED
+    const service = new MembersService(db);
+    const rowsA = await service.list({ organizationId: ORG_A, role: "admin" });
+    const ana = rowsA.find((r) => r.contactEmail === SOCIO_A1.email)!;
+    await expect(
+      service.create(
+        { organizationId: ORG_A, role: "recepcion" },
+        { fullName: "Menor Bloqueado", isMinor: true, adultResponsibleId: ana.id },
+      ),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+
+    // Also via HTTP POST /api/v1/members -> 409
+    const httpCreateMinor = await app.inject({
+      method: "POST",
+      url: "/api/v1/members",
+      headers: { cookie: recepCookie },
+      payload: {
+        fullName: "Menor HTTP Bloqueado",
+        isMinor: true,
+        adultResponsibleId: ana.id,
+      },
+    });
+    expect(httpCreateMinor.statusCode).toBe(409);
+    expect(httpCreateMinor.json().error.code).toBe("CONFLICT");
+
+    // 7. Admin A re-enables minor policy
+    const adminEnable = await app.inject({
+      method: "POST",
+      url: "/api/v1/members/minor-policy",
+      headers: { cookie: adminCookie },
+      payload: { enabled: true },
+    });
+    expect(adminEnable.statusCode).toBe(200);
+    expect(adminEnable.json().data.enabled).toBe(true);
+
+    // 8. Server lock: ALLOW_MINOR_MEMBERS=false overrides org policy
+    const origEnv = process.env.ALLOW_MINOR_MEMBERS;
+    try {
+      process.env.ALLOW_MINOR_MEMBERS = "false";
+
+      // GET reflects serverLocked: true, enabled: false
+      const lockedRead = await app.inject({
+        method: "GET",
+        url: "/api/v1/members/minor-policy",
+        headers: { cookie: adminCookie },
+      });
+      expect(lockedRead.statusCode).toBe(200);
+      expect(lockedRead.json().data).toEqual({
+        enabled: false,
+        orgEnabled: true,
+        serverLocked: true,
+      });
+
+      // POST to enable returns 409 MINOR_REGISTRATION_DISABLED
+      const lockedPost = await app.inject({
+        method: "POST",
+        url: "/api/v1/members/minor-policy",
+        headers: { cookie: adminCookie },
+        payload: { enabled: true },
+      });
+      expect(lockedPost.statusCode).toBe(409);
+
+      // Attempting to register minor when server locked fails with 409
+      await expect(
+        service.create(
+          { organizationId: ORG_A, role: "recepcion" },
+          { fullName: "Menor Server Lock", isMinor: true, adultResponsibleId: ana.id },
+        ),
+      ).rejects.toMatchObject({ code: "CONFLICT" });
+    } finally {
+      if (origEnv === undefined) {
+        delete process.env.ALLOW_MINOR_MEMBERS;
+      } else {
+        process.env.ALLOW_MINOR_MEMBERS = origEnv;
+      }
+    }
+  });
+
+  it("SPEC 025 CA-2 & BDD-1: consentimiento documental D-05 (guardianConsentRef), sellado guardianConsentAt, proyección y limpieza al pasar a adulto", async () => {
+    const service = new MembersService(db);
+    const rowsA = await service.list({ organizationId: ORG_A, role: "admin" });
+    const ana = rowsA.find((r) => r.contactEmail === SOCIO_A1.email)!;
+
+    // 1. Alta de menor con adultResponsibleId y guardianConsentRef="ACTA-MENOR-101"
+    const menor = await service.create(
+      { organizationId: ORG_A, role: "recepcion", accountId: "staff-recepcion" },
+      {
+        fullName: "Menor Con Consentimiento",
+        contactEmail: "menor.consentimiento@gym.test",
+        isMinor: true,
+        adultResponsibleId: ana.id,
+        guardianConsentRef: "ACTA-MENOR-101",
+      },
+    );
+
+    expect(menor.isMinor).toBe(true);
+    expect(menor.adultResponsibleId).toBe(ana.id);
+    expect(menor.guardianConsentRef).toBe("ACTA-MENOR-101");
+    expect(menor.guardianConsentAt).toBeInstanceOf(Date);
+
+    // 2. Auditoría registrada en audit_log para member.minor_consent.recorded
+    const auditRows = await db.execute(
+      sql`SELECT * FROM audit_log WHERE entity_id = ${menor.id} AND action = 'member.minor_consent.recorded'`,
+    );
+    expect(auditRows.length).toBeGreaterThanOrEqual(1);
+    const rawMeta = (auditRows[0] as unknown as { metadata: string | null }).metadata;
+    const auditMeta = JSON.parse(rawMeta ?? "{}") as {
+      guardianConsentRef?: string;
+      adultResponsibleId?: string;
+    };
+    expect(auditMeta.guardianConsentRef).toBe("ACTA-MENOR-101");
+    expect(auditMeta.adultResponsibleId).toBe(ana.id);
+
+    // 3. Proyección en MemberDetail / overview HTTP endpoint
+    const overviewRes = await app.inject({
+      method: "GET",
+      url: `/api/v1/members/${menor.id}/overview`,
+      headers: { cookie: adminCookie },
+    });
+    expect(overviewRes.statusCode).toBe(200);
+    const overviewData = overviewRes.json().data;
+    expect(overviewData.member.id).toBe(menor.id);
+    expect(overviewData.member.guardianConsentRef).toBe("ACTA-MENOR-101");
+    expect(overviewData.member.guardianConsentAt).toBeDefined();
+
+    const memberGetRes = await app.inject({
+      method: "GET",
+      url: `/api/v1/members/${menor.id}`,
+      headers: { cookie: adminCookie },
+    });
+    expect(memberGetRes.statusCode).toBe(200);
+    const memberData = memberGetRes.json().data;
+    expect(memberData.id).toBe(menor.id);
+    expect(memberData.guardianConsentRef).toBe("ACTA-MENOR-101");
+    expect(memberData.guardianConsentAt).toBeDefined();
+
+    // 4. Edición de guardianConsentRef a "ACTA-MENOR-102"
+    const updated = await service.update(
+      { organizationId: ORG_A, role: "recepcion", accountId: "staff-recepcion" },
+      menor.id,
+      { guardianConsentRef: "ACTA-MENOR-102" },
+    );
+    expect(updated.guardianConsentRef).toBe("ACTA-MENOR-102");
+    expect(updated.guardianConsentAt).toBeInstanceOf(Date);
+
+    // 5. Transición a adulto (isMinor: false): limpia adultResponsibleId, guardianConsentRef y guardianConsentAt
+    const adultUpdated = await service.update(
+      { organizationId: ORG_A, role: "recepcion", accountId: "staff-recepcion" },
+      menor.id,
+      { isMinor: false },
+    );
+    expect(adultUpdated.isMinor).toBe(false);
+    expect(adultUpdated.adultResponsibleId).toBeNull();
+    expect(adultUpdated.guardianConsentRef).toBeNull();
+    expect(adultUpdated.guardianConsentAt).toBeNull();
+
+    // Verificación directa en base de datos via getById
+    const fetched = await service.getById({ organizationId: ORG_A, role: "admin" }, menor.id);
+    expect(fetched.isMinor).toBe(false);
+    expect(fetched.adultResponsibleId).toBeNull();
+    expect(fetched.guardianConsentRef).toBeNull();
+    expect(fetched.guardianConsentAt).toBeNull();
   });
 
 });

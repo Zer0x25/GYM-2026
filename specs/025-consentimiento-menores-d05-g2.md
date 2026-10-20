@@ -1,6 +1,6 @@
 # Spec 025 — Consentimiento documental de adulto responsable para menores (D-05) y política por organización
 
-Estado: Abierta — lista para implementación (Ola 1 G2)
+Estado: Cerrada — completada y verificada (Ola 1 G2)
 Nivel: Tier 1 — privacidad y representación jurídica de menores (`D-05`), control de habilitación por organización y trazabilidad de consentimiento firmado (`REQ-2`, `REQ-7`, `REQ-11`).
 Autoridad: decisión explícita del usuario 2026-10-19 (`A1`, `A2`); [PRD.md](../PRD.md) `REQ-1`, `REQ-2`, `REQ-7`, `REQ-11`, `CAL-1`, `CAL-3`; [ADR 0002](../docs/adr/0002-arquitectura-base.md), [ADR 0011](../docs/adr/0011-arranque-piloto-g2-empaquetado-controles.md) y [ADR 0012](../docs/adr/0012-controles-operativos-juridicos-g2.md). Commits locales autorizados; revisión humana al cierre.
 Contexto (Notion): https://app.notion.com/p/3f529b8ebe2981d6a2e8dce35e0920c3
@@ -80,4 +80,7 @@ Escenario BDD-1: Bloqueo por política de organización o servidor y registro de
 
 ## 6. Evidencia y checkpoint
 
-- Pendiente de ejecución por el agente asignado a la Issue de la Unidad `025`.
+- **CA-1:** `TEST_DATABASE_URL=postgres://gym:gym-local-dev@localhost:55432/gym_test_members pnpm --filter @gym/api exec vitest run src/members.integration.test.ts` → 12 passed (12), verifica `GET/POST /api/v1/members/minor-policy`, aislamiento por tenant entre ORG_A y ORG_B, rechazo 403 a roles no-admin, y rechazo 409 cuando `ALLOW_MINOR_MEMBERS=false` (`serverLocked: true`).
+- **CA-2:** `TEST_DATABASE_URL=postgres://gym:gym-local-dev@localhost:55432/gym_test_members pnpm --filter @gym/api exec vitest run src/members.integration.test.ts` y `pnpm --filter @gym/contracts exec vitest run src/contracts.test.ts` → 12/12 y 20/20 passed, comprueba persistencia de `guardianConsentRef`, sellado de `guardianConsentAt`, registro en `audit_log` (`member.minor_consent.recorded`), proyección en `MemberDetail` / overview y limpieza de campos al pasar a adulto (`isMinor: false`).
+- **CA-3:** `pnpm --filter @gym/web exec vitest run src/minors-guardian.test.tsx` → 4 passed (4), comprueba que `Panel.tsx` bloquea alta de menor con aviso de restricción `D-05` cuando `minorPolicy.enabled=false`, permite capturar `guardianConsentRef` si está habilitado, permite al admin conmutar la política, y `MemberDetail.tsx` exhibe y actualiza la referencia de consentimiento.
+- **CA-4:** `./scripts/verify.sh` → Gate de proyecto GYM-2026: verde (lint, typecheck, build, tests en todos los paquetes del workspace).

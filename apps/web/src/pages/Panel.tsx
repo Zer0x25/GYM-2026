@@ -25,16 +25,21 @@ export function Panel() {
     navigate = useNavigate();
   const manage = canManageMembers(session?.role);
   const loader = useCallback(async () => {
-    const members = await api.listMembers();
-    if (!manage) return { members, memberships: [], plans: [] };
+    const policyPromise =
+      typeof api.minorPolicy === "function"
+        ? api.minorPolicy().catch(() => ({ enabled: true, orgEnabled: true, serverLocked: false }))
+        : Promise.resolve({ enabled: true, orgEnabled: true, serverLocked: false });
+    const [members, minorPolicy] = await Promise.all([api.listMembers(), policyPromise]);
+    if (!manage) return { members, memberships: [], plans: [], minorPolicy };
     const [memberships, plans] = await Promise.all([api.listMemberships(), api.listPlans()]);
-    return { members, memberships, plans };
+    return { members, memberships, plans, minorPolicy };
   }, [manage]);
   const { data, error, loading, reload } = useResource(loader);
   const [query, setQuery] = useState(""),
     [filter, setFilter] = useState("all"),
     [open, setOpen] = useState(false),
     [busy, setBusy] = useState(false),
+    [policyBusy, setPolicyBusy] = useState(false),
     [fullName, setFullName] = useState(""),
     [email, setEmail] = useState(""),
     [password, setPassword] = useState(""),
@@ -42,6 +47,7 @@ export function Panel() {
     [planId, setPlanId] = useState(""),
     [isMinor, setIsMinor] = useState(false),
     [adultResponsibleId, setAdultResponsibleId] = useState(""),
+    [guardianConsentRef, setGuardianConsentRef] = useState(""),
     [formError, setFormError] = useState<string | null>(null);
   const membershipByMember = useMemo(() => {
     const map = new Map<string, Membership>();
@@ -147,6 +153,8 @@ export function Panel() {
             ...(email.trim() ? { contactEmail: email.trim() } : {}),
             isMinor,
             adultResponsibleId: isMinor && adultResponsibleId ? adultResponsibleId : null,
+            guardianConsentRef:
+              isMinor && guardianConsentRef.trim() ? guardianConsentRef.trim() : null,
           })
         ).id;
       }
@@ -176,17 +184,51 @@ export function Panel() {
         description="Encuentra a cada socio y gestiona su membresía desde una sola ficha."
         actions={
           manage && (
-            <Button
-              onClick={() => {
-                setOpen(true);
-                setFormError(null);
-                setIsMinor(false);
-                setAdultResponsibleId("");
-              }}
-            >
-              <Plus className="h-4 w-4" />
-              Nuevo socio
-            </Button>
+            <div className="flex items-center gap-2">
+              {session?.role === "admin" && data?.minorPolicy && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={policyBusy || data.minorPolicy.serverLocked}
+                  onClick={async () => {
+                    setPolicyBusy(true);
+                    try {
+                      const next = !data.minorPolicy.orgEnabled;
+                      await api.setMinorPolicy(next);
+                      toast.success(
+                        next
+                          ? "Registro de menores habilitado"
+                          : "Registro de menores deshabilitado",
+                      );
+                      await reload();
+                    } catch (e) {
+                      toast.error(e instanceof Error ? e.message : "Error al actualizar política");
+                    } finally {
+                      setPolicyBusy(false);
+                    }
+                  }}
+                >
+                  Menores:{" "}
+                  {data.minorPolicy.serverLocked
+                    ? "Bloqueado (servidor)"
+                    : data.minorPolicy.enabled
+                      ? "Habilitados"
+                      : "Deshabilitados"}
+                </Button>
+              )}
+              <Button
+                onClick={() => {
+                  setOpen(true);
+                  setFormError(null);
+                  setIsMinor(false);
+                  setAdultResponsibleId("");
+                  setGuardianConsentRef("");
+                }}
+              >
+                <Plus className="h-4 w-4" />
+                Nuevo socio
+              </Button>
+            </div>
           )
         }
       />
@@ -281,17 +323,32 @@ export function Panel() {
                 </p>
               </div>
             )}
+            {data?.minorPolicy && !data.minorPolicy.enabled && (
+              <div
+                role="status"
+                className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-800 dark:text-amber-300"
+              >
+                Restricción de piloto (D-05): registro de menores deshabilitado
+                {data.minorPolicy.serverLocked
+                  ? " por configuración del servidor (ALLOW_MINOR_MEMBERS=false)."
+                  : " por política de la organización."}
+              </div>
+            )}
             <div>
-              <label className="flex items-center gap-2 text-sm">
+              <label
+                className={`flex items-center gap-2 text-sm ${data?.minorPolicy && !data.minorPolicy.enabled ? "opacity-50 cursor-not-allowed" : ""}`}
+              >
                 <input
                   type="checkbox"
                   checked={isMinor}
+                  disabled={data?.minorPolicy ? !data.minorPolicy.enabled : false}
                   onChange={(e) => {
                     setIsMinor(e.target.checked);
                     if (e.target.checked) {
                       setPortal(false);
                     } else {
                       setAdultResponsibleId("");
+                      setGuardianConsentRef("");
                     }
                   }}
                 />
@@ -299,23 +356,39 @@ export function Panel() {
               </label>
             </div>
             {isMinor && (
-              <div>
-                <Select
-                  id="member-guardian"
-                  label="Adulto responsable"
-                  value={adultResponsibleId}
-                  onChange={(e) => setAdultResponsibleId(e.target.value)}
-                  required
-                >
-                  <option value="">Selecciona un adulto responsable…</option>
-                  {(data?.members ?? [])
-                    .filter((m) => !m.isMinor)
-                    .map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.fullName}
-                      </option>
-                    ))}
-                </Select>
+              <div className="space-y-4">
+                <div>
+                  <Select
+                    id="member-guardian"
+                    label="Adulto responsable"
+                    value={adultResponsibleId}
+                    onChange={(e) => setAdultResponsibleId(e.target.value)}
+                    required
+                  >
+                    <option value="">Selecciona un adulto responsable…</option>
+                    {(data?.members ?? [])
+                      .filter((m) => !m.isMinor)
+                      .map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.fullName}
+                        </option>
+                      ))}
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="guardian-consent-ref">
+                    Folio / acta de autorización (D-05)
+                  </Label>
+                  <Input
+                    id="guardian-consent-ref"
+                    placeholder="ej. ACTA-2026-0042"
+                    value={guardianConsentRef}
+                    onChange={(e) => setGuardianConsentRef(e.target.value)}
+                  />
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Documento o acta firmada por el adulto responsable.
+                  </p>
+                </div>
               </div>
             )}
             <Select

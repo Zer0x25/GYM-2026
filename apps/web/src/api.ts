@@ -99,7 +99,15 @@ export interface Member {
   isMinor?: boolean;
   adultResponsibleId?: string | null;
   adultResponsibleName?: string | null;
+  guardianConsentRef?: string | null;
+  guardianConsentAt?: string | null;
   createdAt: string;
+}
+
+export interface MinorPolicy {
+  enabled: boolean;
+  orgEnabled: boolean;
+  serverLocked: boolean;
 }
 
 // --- Entrega 2: plans, memberships, payments, cash ---------------------------
@@ -463,6 +471,9 @@ export const api = {
         );
       window.dispatchEvent(new Event("gym:session-expired"));
     }),
+  minorPolicy: () => request<MinorPolicy>("GET", "/members/minor-policy"),
+  setMinorPolicy: (enabled: boolean) =>
+    request<MinorPolicy>("POST", "/members/minor-policy", { enabled }),
   listMembers: (q?: string) =>
     request<Member[]>("GET", `/members${q ? `?q=${encodeURIComponent(q)}` : ""}`),
   createMember: (input: {
@@ -470,6 +481,7 @@ export const api = {
     contactEmail?: string | null;
     isMinor?: boolean;
     adultResponsibleId?: string | null;
+    guardianConsentRef?: string | null;
   }) => request<Member>("POST", "/members", input),
   updateMember: (
     id: string,
@@ -478,6 +490,7 @@ export const api = {
       contactEmail?: string | null;
       isMinor?: boolean;
       adultResponsibleId?: string | null;
+      guardianConsentRef?: string | null;
     },
   ) => request<Member>("PATCH", `/members/${id}`, input),
   createSocio: (input: { email: string; password: string; name: string }) =>

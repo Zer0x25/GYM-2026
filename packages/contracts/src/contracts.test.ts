@@ -28,6 +28,8 @@ import {
   RegisterDeviceRequest,
   RevokeDeviceRequest,
   DeviceDetail,
+  MinorPolicyResponse,
+  UpdateMinorPolicyRequest,
 } from "./index.js";
 
 describe("contracts", () => {
@@ -101,9 +103,65 @@ describe("contracts", () => {
       isMinor: true,
       adultResponsibleId: validUuid,
       adultResponsibleName: "Adulto Ana",
+      guardianConsentRef: "ACTA-2026-0042",
+      guardianConsentAt: new Date().toISOString(),
       createdAt: new Date().toISOString(),
     };
     expect(MemberDetail.safeParse(detail).success).toBe(true);
+
+    // SPEC025: Create/Update Member con guardianConsentRef
+    expect(
+      CreateMemberRequest.safeParse({
+        fullName: "Menor con acta",
+        isMinor: true,
+        adultResponsibleId: validUuid,
+        guardianConsentRef: "ACTA-2026-0099",
+      }).success,
+    ).toBe(true);
+    expect(
+      UpdateMemberRequest.safeParse({
+        guardianConsentRef: "ACTA-2026-MODIF",
+      }).success,
+    ).toBe(true);
+    // guardianConsentRef vacío o mayor a 200 rechazado
+    expect(
+      CreateMemberRequest.safeParse({
+        fullName: "Menor invalido",
+        isMinor: true,
+        adultResponsibleId: validUuid,
+        guardianConsentRef: "",
+      }).success,
+    ).toBe(false);
+    expect(
+      CreateMemberRequest.safeParse({
+        fullName: "Menor invalido",
+        isMinor: true,
+        adultResponsibleId: validUuid,
+        guardianConsentRef: "A".repeat(201),
+      }).success,
+    ).toBe(false);
+  });
+
+  it("SPEC025 CA-1 MinorPolicyResponse y UpdateMinorPolicyRequest validan contratos de política de menores", () => {
+    expect(
+      MinorPolicyResponse.safeParse({
+        enabled: true,
+        orgEnabled: true,
+        serverLocked: false,
+      }).success,
+    ).toBe(true);
+    expect(
+      MinorPolicyResponse.safeParse({
+        enabled: false,
+        orgEnabled: true,
+        serverLocked: true,
+      }).success,
+    ).toBe(true);
+    expect(MinorPolicyResponse.safeParse({ enabled: "true" }).success).toBe(false);
+
+    expect(UpdateMinorPolicyRequest.safeParse({ enabled: true }).success).toBe(true);
+    expect(UpdateMinorPolicyRequest.safeParse({ enabled: false }).success).toBe(true);
+    expect(UpdateMinorPolicyRequest.safeParse({}).success).toBe(false);
   });
 
   it("SPEC017 CA-1 UpdatePlanRequest valida edición parcial, cuotas para limited y rechaza datos inválidos", () => {

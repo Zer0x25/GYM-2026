@@ -29,6 +29,8 @@ import {
   CreateClassTemplateRequest,
   CreateMemberRequest,
   UpdateMemberRequest,
+  MinorPolicyResponse,
+  UpdateMinorPolicyRequest,
   CreateMembershipRequest,
   CreateOrganizationRequest,
   CreatePlanRequest,
@@ -324,6 +326,30 @@ export async function buildServer(opts: AppOptions) {
       query,
     );
     return reply.send({ data: rows });
+  });
+
+  app.get("/api/v1/members/minor-policy", async (req: FastifyRequest, reply: FastifyReply) => {
+    requireRole(req.session, ["admin", "recepcion", "instructor", "socio"]);
+    assertTenantContext(req.session);
+    const policy = await members.getMinorPolicy(req.session.organizationId);
+    return reply.send({ data: MinorPolicyResponse.parse(policy) });
+  });
+
+  app.post("/api/v1/members/minor-policy", async (req: FastifyRequest, reply: FastifyReply) => {
+    requireRole(req.session, ["admin"]);
+    assertTenantContext(req.session);
+    const parsed = UpdateMinorPolicyRequest.safeParse(req.body);
+    if (!parsed.success) throw validationError({ issues: parsed.error.issues });
+    const policy = await members.setMinorPolicy(
+      {
+        organizationId: req.session.organizationId,
+        role: req.session.role,
+        memberId: req.session.memberId,
+        accountId: req.session.accountId,
+      },
+      parsed.data.enabled,
+    );
+    return reply.send({ data: MinorPolicyResponse.parse(policy) });
   });
 
   app.get("/api/v1/members/me", async (req: FastifyRequest, reply: FastifyReply) => {
@@ -1327,7 +1353,28 @@ export async function buildServer(opts: AppOptions) {
   app.get<{ Params: { id: string } }>("/api/v1/members/:id/overview", async (req, reply) => {
     requireRole(req.session, ["admin", "recepcion"]);
     assertTenantContext(req.session);
-    return reply.send({ data: await operations.memberOverview(req.session, req.params.id) });
+    const overview = await operations.memberOverview(req.session, req.params.id);
+    const memberRow = await members.getById(
+      {
+        organizationId: req.session.organizationId,
+        role: req.session.role,
+        memberId: req.session.memberId,
+        accountId: req.session.accountId,
+      },
+      req.params.id,
+    );
+    return reply.send({
+      data: {
+        ...overview,
+        member: {
+          ...overview.member,
+          guardianConsentRef: memberRow.guardianConsentRef,
+          guardianConsentAt: memberRow.guardianConsentAt
+            ? memberRow.guardianConsentAt.toISOString()
+            : null,
+        },
+      },
+    });
   });
   app.get("/api/v1/me/overview", async (req, reply) => {
     requireRole(req.session, ["socio"]);

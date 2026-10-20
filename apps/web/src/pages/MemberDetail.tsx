@@ -37,6 +37,7 @@ export function MemberDetail() {
     [qrAction, setQrAction] = useState<"revoke" | "reissue" | null>(null),
     [qr, setQr] = useState(""),
     [contact, setContact] = useState(""),
+    [consentRef, setConsentRef] = useState(""),
     [pauseOpen, setPauseOpen] = useState(false),
     [pauseMembershipId, setPauseMembershipId] = useState<string | null>(null),
     [pauseReason, setPauseReason] = useState(""),
@@ -246,6 +247,61 @@ export function MemberDetail() {
                     {profile.member.adultResponsibleName ?? "Sin asignar"}
                   </span>
                 </p>
+                <p className="text-muted-foreground">
+                  Consentimiento D-05:{" "}
+                  <span className="font-semibold text-foreground">
+                    {profile.member.guardianConsentRef ?? "Sin acta registrada"}
+                  </span>
+                  {profile.member.guardianConsentAt && (
+                    <span className="ml-1 text-muted-foreground">
+                      (sellado el{" "}
+                      {new Date(profile.member.guardianConsentAt).toLocaleDateString("es-CL")})
+                    </span>
+                  )}
+                </p>
+                {(session?.role === "admin" || session?.role === "recepcion") && (
+                  <form
+                    className="mt-3 space-y-2 border-t pt-2"
+                    onSubmit={async (e) => {
+                      e.preventDefault();
+                      if (!consentRef.trim()) return;
+                      setBusy(true);
+                      try {
+                        await api.updateMember(id, { guardianConsentRef: consentRef.trim() });
+                        toast.success("Consentimiento D-05 actualizado");
+                        setConsentRef("");
+                        await reload();
+                      } catch (err) {
+                        toast.error(
+                          err instanceof Error ? err.message : "Error al actualizar consentimiento",
+                        );
+                      } finally {
+                        setBusy(false);
+                      }
+                    }}
+                  >
+                    <Label htmlFor="consent-edit" className="text-xs">
+                      Actualizar acta/folio de consentimiento (D-05)
+                    </Label>
+                    <div className="flex gap-2">
+                      <Input
+                        id="consent-edit"
+                        placeholder={profile.member.guardianConsentRef ?? "ej. ACTA-2026-0042"}
+                        value={consentRef}
+                        onChange={(e) => setConsentRef(e.target.value)}
+                        className="h-8 text-xs"
+                      />
+                      <Button
+                        type="submit"
+                        size="sm"
+                        variant="outline"
+                        disabled={busy || !consentRef.trim()}
+                      >
+                        Guardar
+                      </Button>
+                    </div>
+                  </form>
+                )}
               </div>
             )}
             <form

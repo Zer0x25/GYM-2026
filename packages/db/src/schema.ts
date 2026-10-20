@@ -34,6 +34,9 @@ export const organizations = pgTable("organizations", {
    *  72h is a WORKING VALUE, not approved (P-09.3.1b) — injected by config,
    *  replaceable per organization without code changes. */
   offlineFreshnessHours: integer("offline_freshness_hours").notNull().default(72),
+  /** Minor registration policy per organization (D-05, Spec 025). Default true in dev/test,
+   *  can be toggled by admin when server permits (ALLOW_MINOR_MEMBERS !== 'false'). */
+  minorRegistrationEnabled: boolean("minor_registration_enabled").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -169,6 +172,13 @@ export const members = pgTable(
     qrToken: text("qr_token").unique(),
     /** When the QR was revoked (shared credential / abuse). Null = active. */
     qrRevokedAt: timestamp("qr_revoked_at", { withTimezone: true }),
+    /**
+     * Physical document / authorization ref signed by adult responsible (D-05, Spec 025).
+     * E.g. "ACTA-2026-0042".
+     */
+    guardianConsentRef: text("guardian_consent_ref"),
+    /** Timestamp when adult responsible consent was sealed by the server. */
+    guardianConsentAt: timestamp("guardian_consent_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
