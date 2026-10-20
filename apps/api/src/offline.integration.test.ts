@@ -195,4 +195,103 @@ describe.skipIf(!RUN)("Entrega 4 — offline controlado (spec 005)", () => {
   it("TX-07: dispositivo de otro tenant es not-found (anti-enumeración)", async () => {
     await expect(offline.getDevice(randomUUID(), DEVICE)).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
+
+  // SPEC024 CA-1: custodia y revocación estructurada con auditoría e invariante multi-tenant
+  it("SPEC024 CA-1: registerDevice registra custodyReference y custodyConfirmedAt; revokeDevice almacena motivo y notas y audita", async () => {
+    const dev = await offline.registerDevice(adminActor, {
+      accountId: ADMIN,
+      label: "Tablet Custodia",
+      custodyReference: "ACTA-EQ-01",
+    });
+    expect(dev.custodyReference).toBe("ACTA-EQ-01");
+    expect(dev.custodyConfirmedAt).toBeInstanceOf(Date);
+
+    // Auditoría de registro incluye custodyReference
+    const regAudit = await db.execute(
+      sql`SELECT action, metadata FROM audit_log WHERE entity_id = ${dev.id} AND action = 'offline.device.register'`,
+    );
+    const regAuditRow = regAudit[0] as Record<string, unknown>;
+    const regMeta = JSON.parse(String(regAuditRow.metadata)) as { custodyReference?: string };
+    expect(regMeta.custodyReference).toBe("ACTA-EQ-01");
+
+    // Revocación con motivo y notas estructuradas
+    const revoked = await offline.revokeDevice(adminActor, dev.id, {
+      reason: "perdida_robo",
+      notes: "Extraviado en recepción",
+    });
+    expect(revoked.state).toBe("revocado");
+    expect(revoked.revokedReason).toBe("perdida_robo");
+    expect(revoked.revokedNotes).toBe("Extraviado en recepción");
+    expect(revoked.revokedAt).toBeInstanceOf(Date);
+
+    // Auditoría de revocación contiene motivo y notas en la misma transacción
+    const revAudit = await db.execute(
+      sql`SELECT action, metadata FROM audit_log WHERE entity_id = ${dev.id} AND action = 'offline.device.revoke'`,
+    );
+    expect(revAudit.length).toBe(1);
+    const revAuditRow = revAudit[0] as Record<string, unknown>;
+    const revMeta = JSON.parse(String(revAuditRow.metadata)) as { reason?: string; notes?: string };
+    expect(revMeta.reason).toBe("perdida_robo");
+    expect(revMeta.notes).toBe("Extraviado en recepción");
+
+    // Aislamiento multi-tenant: revocar o reconstruir deviceId de otra org responde 404
+    const otherOrgActor = { organizationId: randomUUID(), accountId: ADMIN, role: "admin" as const };
+    await expect(offline.revokeDevice(otherOrgActor, dev.id, { reason: "rotacion" })).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(offline.reconstruct(otherOrgActor.organizationId, dev.id)).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  // SPEC024 CA-2: eventos sincronizados de dispositivo revocado por perdida_robo
+  it("SPEC024 CA-2: eventos sincronizados desde dispositivo revocado por perdida_robo quedan en rechazado con motivo, sin pagos ni caja, y chainIntact=true", async () => {
+    // Dispositivo con custodia
+    const dev = await offline.registerDevice(adminActor, {
+      accountId: ADMIN,
+      label: "Tablet Perdida",
+      custodyReference: "ACTA-EQ-99",
+    });
+
+    // Revocar por pérdida o robo
+    await offline.revokeDevice(adminActor, dev.id, {
+      reason: "perdida_robo",
+      notes: "Equipo sustraído",
+    });
+
+    // Dispositivo reconecta más tarde e intenta sincronizar cobro provisional rezagado
+    const ev1 = cobroEvent(randomUUID(), "F-LOSS-01", 35000);
+    const syncRes = await offline.sync(adminActor, {
+      deviceId: dev.id,
+      events: [ev1],
+    });
+
+    expect(syncRes.results[0]!.status).toBe("rechazado");
+    expect(syncRes.results[0]!.reason).toContain("perdida_robo");
+
+    // Se conserva en offline_events como evidencia con estado rechazado
+    const storedEvent = await db.execute(
+      sql`SELECT state, reject_reason, payment_id FROM offline_events WHERE event_id = ${ev1.eventId}`,
+    );
+    expect(storedEvent.length).toBe(1);
+    const storedRow = storedEvent[0] as Record<string, unknown>;
+    expect(storedRow.state).toBe("rechazado");
+    expect(storedRow.reject_reason).toContain("perdida_robo");
+    expect(storedRow.payment_id).toBeNull();
+
+    // No se crearon pagos ni movimientos de caja
+    const paymentsCount = await db.execute(
+      sql`SELECT COUNT(*)::int AS n FROM payments WHERE reference = 'F-LOSS-01'`,
+    );
+    const pRow = paymentsCount[0] as Record<string, unknown>;
+    expect(Number(pRow.n)).toBe(0);
+
+    const cashMovementsCount = await db.execute(
+      sql`SELECT COUNT(*)::int AS n FROM cash_movements`,
+    );
+    const cRow = cashMovementsCount[0] as Record<string, unknown>;
+    expect(Number(cRow.n)).toBe(0);
+
+    // Reconstrucción confirma que la cadena de hashes se mantuvo íntegra
+    const recon = await offline.reconstruct(ORG, dev.id);
+    expect(recon.eventsChecked).toBe(1);
+    expect(recon.chainIntact).toBe(true);
+    expect(recon.brokenAt).toBeNull();
+  });
 });

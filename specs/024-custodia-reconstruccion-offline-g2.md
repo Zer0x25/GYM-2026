@@ -1,6 +1,6 @@
 # Spec 024 — Custodia, pérdida/revocación diferida y panel de reconstrucción de equipos offline (P-09.3) + revocación en Team.tsx
 
-Estado: Abierta — lista para implementación (Ola 1 G2)
+Estado: Cerrada — implementada y verificada (Ola 1 G2)
 Nivel: Tier 1 — custodia y revocación diferida de dispositivos offline (`REQ-9`, `ADR 0007`), integridad de cadena de eventos (`SPEC:OFF-RECON`) y revocación administrativa de sesiones en equipos compartidos (`REQ-11`).
 Autoridad: decisión explícita del usuario 2026-10-19 (`A1`, `A2`); [PRD.md](../PRD.md) `REQ-1`, `REQ-9`, `REQ-11`, `CAL-1`, `CAL-3`; [ADR 0002](../docs/adr/0002-arquitectura-base.md), [ADR 0007](../docs/adr/0007-offline-cliente.md) y [ADR 0012](../docs/adr/0012-controles-operativos-juridicos-g2.md). Commits locales autorizados; revisión humana al cierre.
 Contexto (Notion): https://app.notion.com/p/3f529b8ebe2981d6a2e8dce35e0920c3
@@ -89,4 +89,9 @@ Escenario BDD-2: Revocación de sesión individual y global desde Team.tsx
 
 ## 6. Evidencia y checkpoint
 
-- Pendiente de ejecución por el agente asignado a la Issue de la Unidad `024`.
+- **Fase roja:** `pnpm --filter @gym/contracts test src/contracts.test.ts` falló inicialmente por ausencia de `DeviceRevokeReason` y `RevokeDeviceRequest` antes de definir los contratos.
+- **CA-1:** `TEST_DATABASE_URL="postgres://gym:gym-local-dev@localhost:55432/gym_test_offline" pnpm --filter @gym/api exec vitest run src/offline.integration.test.ts` → `9/9` pasados; `registerDevice` persiste `custodyReference` y `custodyConfirmedAt` con auditoría `offline.device.register`; `revokeDevice` guarda `revokedReason` y `revokedNotes` con auditoría en la misma transacción y responde `404` para dispositivos de otro tenant.
+- **CA-2:** `TEST_DATABASE_URL="postgres://gym:gym-local-dev@localhost:55432/gym_test_offline" pnpm --filter @gym/api exec vitest run src/offline.integration.test.ts` → `9/9` pasados; sincronización diferida desde dispositivo revocado por `perdida_robo` persiste eventos en `offline_events` como `rechazado` con `dispositivo revocado (perdida_robo)`, crea 0 pagos y 0 movimientos de caja, y `reconstruct` verifica `chainIntact: true`.
+- **CA-3:** `pnpm --filter @gym/web exec vitest run src/offline-custody.test.tsx` → `5/5` pasados; `Offline.tsx` incluye campo de custodia en registro, diálogo estructurado de revocación con motivo y notas, y panel de reconstrucción `SPEC:OFF-RECON` con verificación de cadena y tabla de eventos de servidor.
+- **CA-4:** `TEST_DATABASE_URL="postgres://gym:gym-local-dev@localhost:55432/gym_test_session_revocation" pnpm --filter @gym/api exec vitest run src/session-revocation.integration.test.ts` (6/6 pasados) + `src/offline-custody.test.tsx` (5/5 pasados); `Team.tsx` y `api.ts` envían `{ accountId, sessionId }` a `POST /api/v1/admin/sessions/revoke` y botón «Cerrar todas las sesiones» invoca `POST /api/v1/admin/sessions/revoke-all` con `{ accountId }`.
+- **CA-5:** `./scripts/verify.sh` ejecutado y superado en verde: integridad documental, contrato de fases (90/90), scope-lock (16 rutas autorizadas), ESLint workspace (4/4 paquetes), TypeScript typecheck (4/4 paquetes), build (4/4 paquetes) y tests unitarios/web (15 archivos, 58 tests).
