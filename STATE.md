@@ -50,7 +50,24 @@
 
 ## Meta actual — Preparación de despliegue y controles de piloto G2 (2026-10-19)
 
-Unidad activa: 024-custodia-reconstruccion-offline-g2 (en cierre / commit)
+Unidad activa: 026-acceso-temporal-soporte-d06-g2
+
+## Unidad 026 — Acceso temporal de soporte (D-06) — Tier 1 — Implementada y verificada (2026-10-19)
+
+- **Autoridad:** Decisión explícita del usuario 2026-10-19 (`A1`, `A2`); [PRD.md](PRD.md) `REQ-1`, `REQ-11`, `CAL-1`, `CAL-3`; [ADR 0002](docs/adr/0002-arquitectura-base.md) y [ADR 0012](docs/adr/0012-controles-operativos-juridicos-g2.md); [specs/026-acceso-temporal-soporte-d06-g2.md](specs/026-acceso-temporal-soporte-d06-g2.md). Nivel: `Tier 1`.
+- **Entregado y verificado (CA-1..CA-4):**
+  1. *Esquema y persistencia segura:* Migración `0021_support_access_grants.sql` creando `support_access_grants` con llaves foráneas a `organizations` y `user(id)`, índices y unicidad sobre `token_hash`. El token en claro (`rawToken` de 32 bytes criptográficos) se retorna exclusivamente en la respuesta de creación (`POST /api/v1/admin/support-grants`) y nunca se persiste en la BD ni en logs.
+  2. *Contratos y validación:* Esquemas en `@gym/contracts` (`CreateSupportGrantRequest`, `SupportGrantRef`, `SupportDiagnosticSummary`, etc.) validando rangos de duración `15..1440` minutos, scopes (`diagnostic`, `read_only`), y sanitización de motivos.
+  3. *Servicios y API:* `SupportAccessService` en `apps/api/src/services/support-access.ts` implementa emisión, listado, revocación inmediata y resumen diagnóstico. Restricción estricta al rol `admin` (`403 FORBIDDEN` para otros roles), rechazo cross-tenant con `404 NOT_FOUND` (anti-enumeración), y registro transaccional en `audit_log` (`support.grant.create`, `support.grant.revoke`, `support.diagnostic.read`).
+  4. *Diagnóstico acotado:* `GET /api/v1/support/diagnostic-summary` exige cabecera `x-support-grant-token`, rechaza expirados/revocados con `401 UNAUTHENTICATED`, actualiza `lastUsedAt` y entrega agregados operacionales (conteos de socios, membresías, estado de caja, política offline y cola outbox) sin exponer secretos ni PII sensible.
+  5. *Web UI:* Sección «Acceso temporal de soporte (D-06)» en `Team.tsx`, con diálogo de emisión, visualización única del token generado con copia al portapapeles, distintivos de estado y confirmación de revocación inmediata.
+- **Evidencia verificable:**
+  - `CA-1:` `pnpm --filter @gym/api exec vitest run src/support-access.integration.test.ts -t "CA-1"` (1 passed) y `pnpm --filter @gym/contracts test src/contracts.test.ts` (21 passed).
+  - `CA-2:` `pnpm --filter @gym/api exec vitest run src/support-access.integration.test.ts -t "CA-2"` (1 passed).
+  - `CA-3:` `pnpm --filter @gym/web exec vitest run src/support-access.test.tsx` (3 passed).
+  - `CA-4:` `./scripts/verify.sh` superado en verde (salida 0, lint, typecheck, build, unit y verify-scope).
+- **Contador de falta de progreso:** 0, sin bloqueos.
+- **Siguiente paso:** Commit local de la unidad 026. Revisión humana Tier 1 previa a despliegue.
 
 ## Unidad 024 — Custodia de dispositivos, revocación diferida y panel de reconstrucción — Tier 1 — Cerrada (2026-10-19)
 
@@ -76,7 +93,6 @@ Unidad activa: 024-custodia-reconstruccion-offline-g2 (en cierre / commit)
   - `CA-5:` `./scripts/verify.sh` superado con código 0 (scope-lock verificado, lint, typecheck, build, unit/integration tests).
 - **Contador de falta de progreso:** 0, sin bloqueos.
 - **Siguiente paso:** Crear commit local para la unidad 024 y continuar con la siguiente unidad de Ola 1 G2 (`025-consentimiento-menores-d05-g2`).
-
 
 ## Unidad 023 — Empaquetado de producción, bootstrap limpio y controles de piloto G2 — Tier 1 — Implementada y verificada (2026-10-19)
 

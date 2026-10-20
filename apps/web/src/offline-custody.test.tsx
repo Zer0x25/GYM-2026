@@ -24,6 +24,7 @@ vi.mock("./api.js", async () => {
       accountSessions: vi.fn(),
       revokeSession: vi.fn(),
       revokeAllSessions: vi.fn(),
+      supportGrants: vi.fn(),
     },
   };
 });
@@ -58,6 +59,7 @@ describe("Offline Custody, Reconstruction and Session Revocation (SPEC 024)", ()
     vi.mocked(api.session).mockResolvedValue(adminSession);
     vi.mocked(api.ownDevices).mockResolvedValue([]);
     vi.mocked(api.offlinePolicy).mockResolvedValue({ enabled: true, freshnessHours: 72 });
+    vi.mocked(api.supportGrants).mockResolvedValue([]);
     vi.mocked(api.staff).mockResolvedValue([
       {
         id: "admin-1",

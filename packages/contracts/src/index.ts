@@ -846,3 +846,81 @@ export const CreditPeriodSummary = z.object({
   reviewCount: z.number().int().nonnegative(),
   reviewBookingIds: z.array(z.string().uuid()),
 });
+
+/** SPEC 026: Acceso temporal de soporte (D-06). */
+export const SupportGrantScope = z.enum(["diagnostic", "read_only"]);
+export type SupportGrantScope = z.infer<typeof SupportGrantScope>;
+
+export const CreateSupportGrantRequest = z.object({
+  supportEmail: z.string().trim().email(),
+  reason: z.string().trim().min(5).max(500),
+  scope: SupportGrantScope.default("diagnostic"),
+  durationMinutes: z.number().int().min(15).max(1440),
+});
+export type CreateSupportGrantRequest = z.infer<typeof CreateSupportGrantRequest>;
+
+export const SupportGrantRef = z.object({
+  id: z.string().uuid(),
+  organizationId: z.string().uuid(),
+  grantedByAccountId: z.string(),
+  supportEmail: z.string().email(),
+  reason: z.string(),
+  scope: SupportGrantScope,
+  tokenHash: z.string(),
+  expiresAt: z.string().datetime(),
+  revokedAt: z.string().datetime().nullable(),
+  revokedByAccountId: z.string().nullable(),
+  lastUsedAt: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(),
+});
+export type SupportGrantRef = z.infer<typeof SupportGrantRef>;
+
+export const CreateSupportGrantResponse = z.object({
+  grant: SupportGrantRef,
+  token: z.string().min(32),
+});
+export type CreateSupportGrantResponse = z.infer<typeof CreateSupportGrantResponse>;
+
+export const ListSupportGrantsResponse = z.object({
+  grants: z.array(SupportGrantRef),
+});
+export type ListSupportGrantsResponse = z.infer<typeof ListSupportGrantsResponse>;
+
+export const RevokeSupportGrantResponse = z.object({
+  success: z.literal(true),
+  grant: SupportGrantRef,
+});
+export type RevokeSupportGrantResponse = z.infer<typeof RevokeSupportGrantResponse>;
+
+export const SupportDiagnosticSummary = z.object({
+  organization: z.object({
+    id: z.string().uuid(),
+    name: z.string(),
+  }),
+  counts: z.object({
+    members: z.number().int().nonnegative(),
+    activePlans: z.number().int().nonnegative(),
+    memberships: z.number().int().nonnegative(),
+    outboxEvents: z.number().int().nonnegative(),
+  }),
+  cashSession: z
+    .object({
+      id: z.string().uuid(),
+      state: z.string(),
+      openedAt: z.string().datetime(),
+    })
+    .nullable(),
+  offlinePolicy: z.object({
+    enabled: z.boolean(),
+    freshnessHours: z.number().int().nonnegative(),
+  }),
+  timestamp: z.string().datetime(),
+  grant: z.object({
+    id: z.string().uuid(),
+    supportEmail: z.string().email(),
+    scope: SupportGrantScope,
+    expiresAt: z.string().datetime(),
+  }),
+});
+export type SupportDiagnosticSummary = z.infer<typeof SupportDiagnosticSummary>;
+

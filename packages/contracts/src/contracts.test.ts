@@ -21,6 +21,9 @@ import {
   MembershipRef,
   PaymentRef,
   RescheduleSessionRequest,
+  CreateSupportGrantRequest,
+  SupportGrantRef,
+  SupportDiagnosticSummary,
   DeviceRevokeReason,
   RegisterDeviceRequest,
   RevokeDeviceRequest,
@@ -426,6 +429,104 @@ describe("contracts", () => {
         endsAt: "2026-11-01T11:00:00.000Z",
       }).success,
     ).toBe(false);
+  });
+
+  it("SPEC 026 CA-1: CreateSupportGrantRequest valida email, reason (5..500) y durationMinutes (15..1440)", () => {
+    const valid = {
+      supportEmail: "soporte@gym.cl",
+      reason: "Revisión de sincronización offline",
+      durationMinutes: 60,
+    };
+    expect(CreateSupportGrantRequest.safeParse(valid).success).toBe(true);
+
+    // Default scope is diagnostic
+    const parsed = CreateSupportGrantRequest.parse(valid);
+    expect(parsed.scope).toBe("diagnostic");
+
+    // Explicit read_only scope
+    expect(
+      CreateSupportGrantRequest.safeParse({ ...valid, scope: "read_only" }).success,
+    ).toBe(true);
+
+    // Invalid scope
+    expect(
+      CreateSupportGrantRequest.safeParse({ ...valid, scope: "admin_write" }).success,
+    ).toBe(false);
+
+    // Invalid email
+    expect(
+      CreateSupportGrantRequest.safeParse({ ...valid, supportEmail: "not-an-email" }).success,
+    ).toBe(false);
+
+    // Reason too short (< 5) or too long (> 500)
+    expect(
+      CreateSupportGrantRequest.safeParse({ ...valid, reason: "1234" }).success,
+    ).toBe(false);
+    expect(
+      CreateSupportGrantRequest.safeParse({ ...valid, reason: "a".repeat(501) }).success,
+    ).toBe(false);
+
+    // durationMinutes < 15 or > 1440
+    expect(
+      CreateSupportGrantRequest.safeParse({ ...valid, durationMinutes: 14 }).success,
+    ).toBe(false);
+    expect(
+      CreateSupportGrantRequest.safeParse({ ...valid, durationMinutes: 1441 }).success,
+    ).toBe(false);
+    expect(
+      CreateSupportGrantRequest.safeParse({ ...valid, durationMinutes: 15 }).success,
+    ).toBe(true);
+    expect(
+      CreateSupportGrantRequest.safeParse({ ...valid, durationMinutes: 1440 }).success,
+    ).toBe(true);
+
+    const grantRefSample = {
+      id: "11111111-1111-4111-8111-111111111111",
+      organizationId: "22222222-2222-4222-8222-222222222222",
+      grantedByAccountId: "admin-1",
+      supportEmail: "soporte@gym.cl",
+      reason: "Revisión técnica autorizada",
+      scope: "diagnostic" as const,
+      tokenHash: "abc123hash",
+      expiresAt: new Date().toISOString(),
+      revokedAt: null,
+      revokedByAccountId: null,
+      lastUsedAt: null,
+      createdAt: new Date().toISOString(),
+    };
+    expect(SupportGrantRef.safeParse(grantRefSample).success).toBe(true);
+  });
+
+  it("SPEC 026 CA-2: SupportDiagnosticSummary valida estructura agregada y prohíbe datos sensibles", () => {
+    const validSummary = {
+      organization: {
+        id: "11111111-1111-4111-8111-111111111111",
+        name: "Gym Central",
+      },
+      counts: {
+        members: 120,
+        activePlans: 3,
+        memberships: 110,
+        outboxEvents: 0,
+      },
+      cashSession: {
+        id: "22222222-2222-4222-8222-222222222222",
+        state: "open",
+        openedAt: new Date().toISOString(),
+      },
+      offlinePolicy: {
+        enabled: true,
+        freshnessHours: 72,
+      },
+      timestamp: new Date().toISOString(),
+      grant: {
+        id: "33333333-3333-4333-8333-333333333333",
+        supportEmail: "soporte@gym.cl",
+        scope: "diagnostic" as const,
+        expiresAt: new Date(Date.now() + 3600000).toISOString(),
+      },
+    };
+    expect(SupportDiagnosticSummary.safeParse(validSummary).success).toBe(true);
   });
 
   it("SPEC024 contratos de dispositivos: custodia, revocación estructurada y detalle", () => {

@@ -1,6 +1,6 @@
 # Spec 026 — Acceso temporal de soporte (D-06) con expiración estricta, autorización del administrador y auditoría inmutable
 
-Estado: Abierta — lista para implementación (Ola 1 G2)
+Estado: Cerrada — implementada y verificada (Ola 1 G2)
 Nivel: Tier 1 — seguridad, control de acceso temporal de soporte técnico (`D-06`), aislamiento multi-tenant (`REQ-1`) y auditoría (`REQ-11`).
 Autoridad: decisión explícita del usuario 2026-10-19 (`A1`, `A2`); [PRD.md](../PRD.md) `REQ-1`, `REQ-11`, `CAL-1`, `CAL-3`; [ADR 0002](../docs/adr/0002-arquitectura-base.md) y [ADR 0012](../docs/adr/0012-controles-operativos-juridicos-g2.md). Commits locales autorizados; revisión humana al cierre.
 Contexto (Notion): https://app.notion.com/p/3f529b8ebe2981d6a2e8dce35e0920c3
@@ -65,6 +65,7 @@ Escenario BDD-1: Ciclo completo de concesión temporal de soporte D-06, uso audi
 - apps/api/src/services/support-access.ts
 - apps/api/src/support-access.integration.test.ts
 - apps/web/src/api.ts
+- apps/web/src/offline-custody.test.tsx
 - apps/web/src/pages/Team.tsx
 - apps/web/src/support-access.test.tsx
 - docs/adr/0012-controles-operativos-juridicos-g2.md
@@ -85,4 +86,8 @@ Escenario BDD-1: Ciclo completo de concesión temporal de soporte D-06, uso audi
 
 ## 6. Evidencia y checkpoint
 
-- Pendiente de ejecución por el agente asignado a la Issue de la Unidad `026`.
+- **Estado final:** Implementada, verificada y cerrada (2026-10-19). Revisión humana Tier 1 requerida antes del despliegue.
+- CA-1: `pnpm --filter @gym/api exec vitest run src/support-access.integration.test.ts -t "CA-1"` ejecutado con éxito (1 passed) y `pnpm --filter @gym/contracts test src/contracts.test.ts` (21 passed). Concesión de soporte con duración 15..1440 min, almacenamiento estricto de tokenHash SHA-256, devolución de token en claro por única vez, solo rol admin autorizado y revocación cross-tenant rechazada con 404 (anti-enumeración).
+- CA-2: `pnpm --filter @gym/api exec vitest run src/support-access.integration.test.ts -t "CA-2"` ejecutado con éxito (1 passed). `GET /api/v1/support/diagnostic-summary` valida cabecera `x-support-grant-token`, rechaza tokens inválidos/expirados/revocados con `401 UNAUTHENTICATED`, actualiza `lastUsedAt`, audita `support.diagnostic.read` en `audit_log` y retorna métricas operativas del tenant sin exponer credenciales ni PII sensible.
+- CA-3: `pnpm --filter @gym/web exec vitest run src/support-access.test.tsx` ejecutado con éxito (3 passed). `Team.tsx` despliega la sección «Acceso temporal de soporte (D-06)», formulario de emisión con validación de expiración, modal interactivo de revelado único del token con copia a portapapeles, y confirmación de revocación inmediata.
+- CA-4: `./scripts/verify.sh` ejecutado con éxito (código de salida 0). Calidad de código, compilación, tipos y pruebas superadas en los 4 workspaces sin regresiones (`lint`, `typecheck`, `build`, `unit`, `verify-scope`).
